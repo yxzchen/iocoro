@@ -79,11 +79,25 @@ class task<void> {
  public:
   struct promise_type {
     std::exception_ptr exception_;
+    std::coroutine_handle<> continuation_;
 
     task get_return_object() { return task{std::coroutine_handle<promise_type>::from_promise(*this)}; }
 
     std::suspend_always initial_suspend() noexcept { return {}; }
-    std::suspend_always final_suspend() noexcept { return {}; }
+
+    auto final_suspend() noexcept {
+      struct final_awaiter {
+        bool await_ready() noexcept { return false; }
+        auto await_suspend(std::coroutine_handle<promise_type> h) noexcept -> std::coroutine_handle<> {
+          if (h.promise().continuation_) {
+            return h.promise().continuation_;
+          }
+          return std::noop_coroutine();
+        }
+        void await_resume() noexcept {}
+      };
+      return final_awaiter{};
+    }
 
     void unhandled_exception() { exception_ = std::current_exception(); }
 
@@ -114,6 +128,7 @@ class task<void> {
   auto await_ready() const noexcept -> bool { return false; }
 
   auto await_suspend(std::coroutine_handle<> awaiting) noexcept -> std::coroutine_handle<> {
+    coro_.promise().continuation_ = awaiting;
     return coro_;
   }
 

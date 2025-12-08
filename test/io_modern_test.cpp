@@ -31,9 +31,12 @@ task<void> tcp_example(io_context& ctx) {
 
     // Send simple command
     std::string cmd = "PING\r\n";
+    std::cout << "About to write " << cmd.size() << " bytes..." << std::endl;
+    std::cout.flush();
     co_await async_write(sock, std::span{cmd.data(), cmd.size()});
 
     std::cout << "Sent PING command" << std::endl;
+    std::cout.flush();
 
     // Read response
     char buf[1024];
@@ -42,10 +45,14 @@ task<void> tcp_example(io_context& ctx) {
     std::cout << "Received " << n << " bytes: "
               << std::string_view{buf, n} << std::endl;
 
+    sock.close();
+
   } catch (std::system_error const& e) {
     std::cout << "Connection failed (expected if no Redis server): "
               << e.what() << std::endl;
   }
+
+  ctx.stop();
 }
 
 // Example 3: Buffer usage

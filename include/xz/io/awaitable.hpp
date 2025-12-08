@@ -15,9 +15,15 @@ class awaitable_op {
 
   auto await_ready() const noexcept -> bool { return ready_; }
 
-  void await_suspend(std::coroutine_handle<> h) {
+  auto await_suspend(std::coroutine_handle<> h) -> bool {
     awaiting_ = h;
+    suspended_ = false;
     start_operation();
+    suspended_ = true;
+    if (ready_) {
+      return false;
+    }
+    return true;
   }
 
   auto await_resume() {
@@ -37,12 +43,15 @@ class awaitable_op {
       result_ = Result{std::forward<Args>(args)...};
     }
     ready_ = true;
-    if (awaiting_) awaiting_.resume();
+    if (suspended_ && awaiting_) {
+      awaiting_.resume();
+    }
   }
 
   std::coroutine_handle<> awaiting_;
   std::error_code ec_;
   bool ready_ = false;
+  bool suspended_ = false;
 
   [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, Result> result_{};
 };
@@ -60,9 +69,15 @@ class nothrow_awaitable_op {
 
   auto await_ready() const noexcept -> bool { return ready_; }
 
-  void await_suspend(std::coroutine_handle<> h) {
+  auto await_suspend(std::coroutine_handle<> h) -> bool {
     awaiting_ = h;
+    suspended_ = false;
     start_operation();
+    suspended_ = true;
+    if (ready_) {
+      return false;
+    }
+    return true;
   }
 
   auto await_resume() noexcept {
@@ -83,12 +98,15 @@ class nothrow_awaitable_op {
       result_ = Result{std::forward<Args>(args)...};
     }
     ready_ = true;
-    if (awaiting_) awaiting_.resume();
+    if (suspended_ && awaiting_) {
+      awaiting_.resume();
+    }
   }
 
   std::coroutine_handle<> awaiting_;
   std::error_code ec_;
   bool ready_ = false;
+  bool suspended_ = false;
 
   [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, Result> result_{};
 };

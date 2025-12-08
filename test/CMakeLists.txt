@@ -2,6 +2,7 @@ find_package(GTest REQUIRED)
 
 macro(make_test TEST_NAME)
   add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
+  target_compile_options(${TEST_NAME} PRIVATE -fcoroutines)
   target_link_libraries(${TEST_NAME} PRIVATE
     ioxz
     GTest::gtest
@@ -13,4 +14,9 @@ endmacro()
 make_test(io_test)
 
 add_executable(io_modern_test io_modern_test.cpp)
+target_compile_options(io_modern_test PRIVATE -fcoroutines)
 target_link_libraries(io_modern_test PRIVATE ioxz)
+
+add_executable(simple_redis_test simple_redis_test.cpp)
+target_compile_options(simple_redis_test PRIVATE -fcoroutines)
+target_link_libraries(simple_redis_test PRIVATE ioxz)
