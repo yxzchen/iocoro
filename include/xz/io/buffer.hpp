@@ -18,9 +18,9 @@ class dynamic_buffer {
   }
 
   // Capacity management
-  auto capacity() const noexcept -> std::size_t { return storage_.capacity(); }
-  auto size() const noexcept -> std::size_t { return write_pos_ - read_pos_; }
-  auto empty() const noexcept -> bool { return read_pos_ == write_pos_; }
+  [[nodiscard]] auto capacity() const noexcept -> std::size_t { return storage_.capacity(); }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return write_pos_ - read_pos_; }
+  [[nodiscard]] auto empty() const noexcept -> bool { return read_pos_ == write_pos_; }
 
   void reserve(std::size_t n) {
     if (n > capacity()) {
@@ -29,12 +29,12 @@ class dynamic_buffer {
   }
 
   // Reading interface
-  auto data() const noexcept -> char const* { return storage_.data() + read_pos_; }
-  auto readable() const noexcept -> std::span<char const> {
+  [[nodiscard]] auto data() const noexcept -> char const* { return storage_.data() + read_pos_; }
+  [[nodiscard]] auto readable() const noexcept -> std::span<char const> {
     return {storage_.data() + read_pos_, size()};
   }
 
-  auto view() const noexcept -> std::string_view {
+  [[nodiscard]] auto view() const noexcept -> std::string_view {
     return {storage_.data() + read_pos_, size()};
   }
 
@@ -44,7 +44,7 @@ class dynamic_buffer {
   }
 
   // Writing interface
-  auto prepare(std::size_t n) -> std::span<char> {
+  [[nodiscard]] auto prepare(std::size_t n) -> std::span<char> {
     ensure_space(n);
     if (write_pos_ + n > storage_.size()) {
       storage_.resize(write_pos_ + n);
@@ -114,12 +114,12 @@ class dynamic_buffer {
 template <std::size_t N>
 class static_buffer {
  public:
-  auto capacity() const noexcept -> std::size_t { return N; }
-  auto size() const noexcept -> std::size_t { return write_pos_ - read_pos_; }
-  auto empty() const noexcept -> bool { return read_pos_ == write_pos_; }
+  [[nodiscard]] auto capacity() const noexcept -> std::size_t { return N; }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return write_pos_ - read_pos_; }
+  [[nodiscard]] auto empty() const noexcept -> bool { return read_pos_ == write_pos_; }
 
-  auto data() const noexcept -> char const* { return storage_.data() + read_pos_; }
-  auto readable() const noexcept -> std::span<char const> {
+  [[nodiscard]] auto data() const noexcept -> char const* { return storage_.data() + read_pos_; }
+  [[nodiscard]] auto readable() const noexcept -> std::span<char const> {
     return {storage_.data() + read_pos_, size()};
   }
 
@@ -130,7 +130,7 @@ class static_buffer {
     }
   }
 
-  auto prepare(std::size_t n) -> std::span<char> {
+  [[nodiscard]] auto prepare(std::size_t n) -> std::span<char> {
     if (write_pos_ + n > N) {
       compact();
       if (write_pos_ + n > N) {

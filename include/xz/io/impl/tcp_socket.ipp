@@ -93,8 +93,7 @@ auto tcp_socket_impl::create_and_connect(ip::tcp_endpoint const& ep) -> std::err
   return {};
 }
 
-auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep, std::chrono::milliseconds timeout)
-    -> std::error_code {
+auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> std::error_code {
   if (is_open()) {
     return make_error_code(error::already_connected);
   }
@@ -174,6 +173,23 @@ void tcp_socket_impl::set_option_reuseaddr(bool enable) {
   }
 }
 
+namespace {
+
+auto sockaddr_to_endpoint(sockaddr_storage const& addr) -> ip::tcp_endpoint {
+  if (addr.ss_family == AF_INET) {
+    auto* in = reinterpret_cast<sockaddr_in const*>(&addr);
+    return {ip::address_v4{ntohl(in->sin_addr.s_addr)}, ntohs(in->sin_port)};
+  } else if (addr.ss_family == AF_INET6) {
+    auto* in6 = reinterpret_cast<sockaddr_in6 const*>(&addr);
+    ip::address_v6::bytes_type bytes;
+    std::memcpy(bytes.data(), &in6->sin6_addr, 16);
+    return {ip::address_v6{bytes}, ntohs(in6->sin6_port)};
+  }
+  throw std::system_error(make_error_code(error::invalid_argument));
+}
+
+}  // namespace
+
 auto tcp_socket_impl::local_endpoint() const -> ip::tcp_endpoint {
   if (!is_open()) {
     throw std::system_error(make_error_code(error::not_connected));
@@ -186,17 +202,7 @@ auto tcp_socket_impl::local_endpoint() const -> ip::tcp_endpoint {
     throw std::system_error(errno, std::generic_category());
   }
 
-  if (addr.ss_family == AF_INET) {
-    auto* in = reinterpret_cast<sockaddr_in*>(&addr);
-    return {ip::address_v4{ntohl(in->sin_addr.s_addr)}, ntohs(in->sin_port)};
-  } else if (addr.ss_family == AF_INET6) {
-    auto* in6 = reinterpret_cast<sockaddr_in6*>(&addr);
-    ip::address_v6::bytes_type bytes;
-    std::memcpy(bytes.data(), &in6->sin6_addr, 16);
-    return {ip::address_v6{bytes}, ntohs(in6->sin6_port)};
-  }
-
-  throw std::system_error(make_error_code(error::invalid_argument));
+  return sockaddr_to_endpoint(addr);
 }
 
 auto tcp_socket_impl::remote_endpoint() const -> ip::tcp_endpoint {
@@ -211,17 +217,7 @@ auto tcp_socket_impl::remote_endpoint() const -> ip::tcp_endpoint {
     throw std::system_error(errno, std::generic_category());
   }
 
-  if (addr.ss_family == AF_INET) {
-    auto* in = reinterpret_cast<sockaddr_in*>(&addr);
-    return {ip::address_v4{ntohl(in->sin_addr.s_addr)}, ntohs(in->sin_port)};
-  } else if (addr.ss_family == AF_INET6) {
-    auto* in6 = reinterpret_cast<sockaddr_in6*>(&addr);
-    ip::address_v6::bytes_type bytes;
-    std::memcpy(bytes.data(), &in6->sin6_addr, 16);
-    return {ip::address_v6{bytes}, ntohs(in6->sin6_port)};
-  }
-
-  throw std::system_error(make_error_code(error::invalid_argument));
+  return sockaddr_to_endpoint(addr);
 }
 
 }  // namespace xz::io::detail
@@ -260,12 +256,11 @@ auto tcp_socket::remote_endpoint() const -> ip::tcp_endpoint { return impl_->rem
 
 // Async operation implementations
 
-tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
-                                                std::chrono::milliseconds timeout)
-    : socket_(s), endpoint_(ep), timeout_(timeout) {}
+tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep)
+    : socket_(s), endpoint_(ep) {}
 
 void tcp_socket::async_connect_op::start_operation() {
-  auto ec = socket_.impl_->connect(endpoint_, timeout_);
+  auto ec = socket_.impl_->connect(endpoint_);
   if (ec && ec != std::errc::operation_in_progress) {
     complete(ec);
     return;

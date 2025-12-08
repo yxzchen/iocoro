@@ -264,9 +264,13 @@ void io_context_impl::process_timers() {
     if (it != active_timers_.end() && it->second) {
       active_timers_.erase(it);
 
-      // Execute callback without lock
+      // Extract callback to execute outside the lock
+      auto callback = std::move(entry.callback);
       timer_mutex_.unlock();
-      entry.callback();
+
+      // Execute callback - if it throws, mutex is already unlocked
+      callback();
+
       timer_mutex_.lock();
     }
   }

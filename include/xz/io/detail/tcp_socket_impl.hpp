@@ -29,7 +29,7 @@ class tcp_socket_impl {
   auto remote_endpoint() const -> ip::tcp_endpoint;
 
   // Internal methods for async operations
-  auto connect(ip::tcp_endpoint const& ep, std::chrono::milliseconds timeout) -> std::error_code;
+  auto connect(ip::tcp_endpoint const& ep) -> std::error_code;
   auto read_some(std::span<char> buffer) -> std::pair<std::error_code, std::size_t>;
   auto write_some(std::span<char const> buffer) -> std::pair<std::error_code, std::size_t>;
 

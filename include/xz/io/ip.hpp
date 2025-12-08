@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace xz::io::ip {
 
@@ -20,12 +21,12 @@ class address_v4 {
   static auto any() noexcept -> address_v4 { return address_v4{}; }
   static auto loopback() noexcept -> address_v4 { return address_v4{{127, 0, 0, 1}}; }
 
-  auto to_bytes() const noexcept -> bytes_type { return bytes_; }
-  auto to_uint() const noexcept -> uint32_t;
-  auto to_string() const -> std::string;
+  [[nodiscard]] auto to_bytes() const noexcept -> bytes_type { return bytes_; }
+  [[nodiscard]] auto to_uint() const noexcept -> uint32_t;
+  [[nodiscard]] auto to_string() const -> std::string;
 
-  auto operator==(address_v4 const& other) const noexcept -> bool { return bytes_ == other.bytes_; }
-  auto operator!=(address_v4 const& other) const noexcept -> bool { return !(*this == other); }
+  [[nodiscard]] auto operator==(address_v4 const& other) const noexcept -> bool { return bytes_ == other.bytes_; }
+  [[nodiscard]] auto operator!=(address_v4 const& other) const noexcept -> bool { return !(*this == other); }
 
  private:
   bytes_type bytes_{};
@@ -43,11 +44,11 @@ class address_v6 {
   static auto any() noexcept -> address_v6 { return address_v6{}; }
   static auto loopback() noexcept -> address_v6;
 
-  auto to_bytes() const noexcept -> bytes_type { return bytes_; }
-  auto to_string() const -> std::string;
+  [[nodiscard]] auto to_bytes() const noexcept -> bytes_type { return bytes_; }
+  [[nodiscard]] auto to_string() const -> std::string;
 
-  auto operator==(address_v6 const& other) const noexcept -> bool { return bytes_ == other.bytes_; }
-  auto operator!=(address_v6 const& other) const noexcept -> bool { return !(*this == other); }
+  [[nodiscard]] auto operator==(address_v6 const& other) const noexcept -> bool { return bytes_ == other.bytes_; }
+  [[nodiscard]] auto operator!=(address_v6 const& other) const noexcept -> bool { return !(*this == other); }
 
  private:
   bytes_type bytes_{};
@@ -57,23 +58,27 @@ class address_v6 {
 class tcp_endpoint {
  public:
   tcp_endpoint() = default;
-  tcp_endpoint(address_v4 addr, uint16_t port) : addr_v4_(addr), port_(port), is_v6_(false) {}
-  tcp_endpoint(address_v6 addr, uint16_t port) : addr_v6_(addr), port_(port), is_v6_(true) {}
+  tcp_endpoint(address_v4 addr, uint16_t port) : addr_(addr), port_(port) {}
+  tcp_endpoint(address_v6 addr, uint16_t port) : addr_(addr), port_(port) {}
 
-  auto get_address_v4() const -> ip::address_v4 { return addr_v4_; }
-  auto get_address_v6() const -> ip::address_v6 { return addr_v6_; }
-  auto port() const noexcept -> uint16_t { return port_; }
-  auto is_v6() const noexcept -> bool { return is_v6_; }
+  [[nodiscard]] auto get_address_v4() const noexcept -> address_v4 const& {
+    return std::get<address_v4>(addr_);
+  }
 
-  void port(uint16_t p) noexcept { port_ = p; }
+  [[nodiscard]] auto get_address_v6() const noexcept -> address_v6 const& {
+    return std::get<address_v6>(addr_);
+  }
 
-  auto to_string() const -> std::string;
+  [[nodiscard]] auto port() const noexcept -> uint16_t { return port_; }
+  [[nodiscard]] auto is_v6() const noexcept -> bool { return std::holds_alternative<address_v6>(addr_); }
+
+  void set_port(uint16_t p) noexcept { port_ = p; }
+
+  [[nodiscard]] auto to_string() const -> std::string;
 
  private:
-  ip::address_v4 addr_v4_;
-  ip::address_v6 addr_v6_;
+  std::variant<address_v4, address_v6> addr_;
   uint16_t port_ = 0;
-  bool is_v6_ = false;
 };
 
 }  // namespace xz::io::ip

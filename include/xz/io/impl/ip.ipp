@@ -79,10 +79,10 @@ auto address_v6::to_string() const -> std::string {
 
 auto tcp_endpoint::to_string() const -> std::string {
   std::ostringstream oss;
-  if (is_v6_) {
-    oss << '[' << addr_v6_.to_string() << "]:" << port_;
+  if (is_v6()) {
+    oss << '[' << get_address_v6().to_string() << "]:" << port_;
   } else {
-    oss << addr_v4_.to_string() << ':' << port_;
+    oss << get_address_v4().to_string() << ':' << port_;
   }
   return oss.str();
 }

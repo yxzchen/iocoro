@@ -44,7 +44,7 @@ class tcp_socket {
 
   /// Connect to remote endpoint (coroutine-based)
   struct [[nodiscard]] async_connect_op : awaitable_op<void> {
-    async_connect_op(tcp_socket& s, ip::tcp_endpoint ep, std::chrono::milliseconds timeout = {});
+    async_connect_op(tcp_socket& s, ip::tcp_endpoint ep);
 
    protected:
     void start_operation() override;
@@ -52,11 +52,10 @@ class tcp_socket {
    private:
     tcp_socket& socket_;
     ip::tcp_endpoint endpoint_;
-    std::chrono::milliseconds timeout_;
   };
 
-  auto async_connect(ip::tcp_endpoint ep, std::chrono::milliseconds timeout = {}) -> async_connect_op {
-    return async_connect_op{*this, ep, timeout};
+  auto async_connect(ip::tcp_endpoint ep) -> async_connect_op {
+    return async_connect_op{*this, ep};
   }
 
   /// Read some data (coroutine-based)

@@ -340,7 +340,7 @@ TEST_F(IOTest, DISABLED_TCPConnectToRedis) {
   auto connect_task = [](tcp_socket& s, bool& success, bool& fail) -> task<void> {
     try {
       auto ep = ip::tcp_endpoint{ip::address_v4::loopback(), 6379};
-      co_await s.async_connect(ep, 2s);
+      co_await s.async_connect(ep);
       success = true;
     } catch (std::system_error const&) {
       fail = true;

@@ -16,7 +16,3 @@ make_test(io_test)
 add_executable(io_modern_test io_modern_test.cpp)
 target_compile_options(io_modern_test PRIVATE -fcoroutines)
 target_link_libraries(io_modern_test PRIVATE ioxz)
-
-add_executable(simple_redis_test simple_redis_test.cpp)
-target_compile_options(simple_redis_test PRIVATE -fcoroutines)
-target_link_libraries(simple_redis_test PRIVATE ioxz)

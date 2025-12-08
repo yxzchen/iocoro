@@ -4,7 +4,7 @@
 
 namespace xz::io {
 
-namespace {
+namespace detail {
 
 class error_category_impl : public std::error_category {
  public:
@@ -42,15 +42,15 @@ class error_category_impl : public std::error_category {
   }
 };
 
-auto error_category() -> std::error_category const& {
+inline auto error_category() -> std::error_category const& {
   static error_category_impl instance;
   return instance;
 }
 
-}  // namespace
+}  // namespace detail
 
 auto make_error_code(error e) -> std::error_code {
-  return {static_cast<int>(e), error_category()};
+  return {static_cast<int>(e), detail::error_category()};
 }
 
 }  // namespace xz::io

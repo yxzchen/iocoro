@@ -25,7 +25,7 @@ task<void> tcp_example(io_context& ctx) {
 
     auto endpoint = ip::tcp_endpoint{ip::address_v4::loopback(), 6379};
 
-    co_await sock.async_connect(endpoint, std::chrono::seconds(2));
+    co_await sock.async_connect(endpoint);
 
     std::cout << "Connected to " << endpoint.to_string() << std::endl;
 
