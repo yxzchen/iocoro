@@ -1,4 +1,3 @@
-#pragma once
 
 #include <xz/io/detail/tcp_socket_impl.hpp>
 #include <xz/io/error.hpp>

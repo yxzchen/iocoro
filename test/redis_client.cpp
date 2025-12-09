@@ -86,7 +86,7 @@ class RedisClient {
 
     // Read response
     char buffer[4096];
-    auto n = co_await socket_.async_read_some(std::span{buffer, sizeof(buffer)});
+    auto n = co_await socket_.async_read_some(std::span{buffer, sizeof(buffer)}, std::chrono::milliseconds(5));
 
     std::string response{buffer, n};
     std::cout << fmt::format("<- {}", response);
@@ -153,7 +153,8 @@ auto run_redis_client(io_context& ctx) -> task<void> {
     RedisClient client(ctx);
 
     // 1. Connect
-    co_await client.connect("127.0.0.1", 6379);
+    // co_await client.connect("127.0.0.1", 6379);
+    co_await client.connect("23.42.90.210", 80);
 
     // 2. Upgrade to RESP3
     co_await client.hello();

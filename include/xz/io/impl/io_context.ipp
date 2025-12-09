@@ -1,4 +1,3 @@
-#pragma once
 
 #include <xz/io/impl/io_context_impl.ipp>
 

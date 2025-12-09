@@ -5,9 +5,11 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -69,7 +71,7 @@ class io_context_impl {
   auto process_events(std::chrono::milliseconds timeout) -> std::size_t;
   void process_timers();
   void process_posted();
-  auto get_timeout() const -> std::chrono::milliseconds;
+  auto get_timeout() -> std::chrono::milliseconds;
 
 #ifdef IOXZ_HAS_URING
   void submit_nop();  // Wake up io_uring

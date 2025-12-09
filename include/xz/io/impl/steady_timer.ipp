@@ -1,4 +1,3 @@
-#pragma once
 
 #include <xz/io/steady_timer.hpp>
 
