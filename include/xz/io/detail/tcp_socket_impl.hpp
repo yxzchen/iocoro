@@ -5,9 +5,11 @@
 #include <xz/io/ip.hpp>
 #include <xz/io/tcp_socket.hpp>
 
+#include <memory>
+
 namespace xz::io::detail {
 
-class tcp_socket_impl {
+class tcp_socket_impl : public std::enable_shared_from_this<tcp_socket_impl> {
  public:
   explicit tcp_socket_impl(io_context& ctx) : ctx_(ctx) {}
 

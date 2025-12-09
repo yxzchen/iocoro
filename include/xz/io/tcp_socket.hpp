@@ -23,16 +23,19 @@ class tcp_socket;
 template <typename Result>
 class async_io_operation : public awaitable_op<Result> {
  protected:
-  tcp_socket& socket_;
+  std::weak_ptr<detail::tcp_socket_impl> socket_impl_;
   std::chrono::milliseconds timeout_;
   detail::timer_handle timer_handle_;
 
   void setup_timeout();
   void cleanup_timer();
 
+  auto get_socket_impl() const -> std::shared_ptr<detail::tcp_socket_impl> { return socket_impl_.lock(); }
+
  public:
-  async_io_operation(tcp_socket& s, std::chrono::milliseconds timeout, std::stop_token stop)
-      : awaitable_op<Result>(std::move(stop)), socket_(s), timeout_(timeout) {}
+  async_io_operation(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
+                     std::chrono::milliseconds timeout, std::stop_token stop)
+      : awaitable_op<Result>(std::move(stop)), socket_impl_(std::move(socket_impl)), timeout_(timeout) {}
 };
 
 /// Asynchronous TCP socket
@@ -64,7 +67,7 @@ class tcp_socket {
 
   /// Connect to remote endpoint (coroutine-based)
   struct [[nodiscard]] async_connect_op : async_io_operation<void> {
-    async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
+    async_connect_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl, ip::tcp_endpoint ep,
                      std::chrono::milliseconds timeout = {},
                      std::stop_token stop = {});
 
@@ -78,12 +81,12 @@ class tcp_socket {
   auto async_connect(ip::tcp_endpoint ep,
                     std::chrono::milliseconds timeout = {},
                     std::stop_token stop = {}) -> async_connect_op {
-    return async_connect_op{*this, ep, timeout, std::move(stop)};
+    return async_connect_op{socket_impl_, ep, timeout, std::move(stop)};
   }
 
   /// Read some data (coroutine-based)
   struct [[nodiscard]] async_read_some_op : async_io_operation<std::size_t> {
-    async_read_some_op(tcp_socket& s, std::span<char> buf,
+    async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl, std::span<char> buf,
                        std::chrono::milliseconds timeout = {},
                        std::stop_token stop = {});
 
@@ -97,12 +100,12 @@ class tcp_socket {
   auto async_read_some(std::span<char> buffer,
                        std::chrono::milliseconds timeout = {},
                        std::stop_token stop = {}) -> async_read_some_op {
-    return async_read_some_op{*this, buffer, timeout, std::move(stop)};
+    return async_read_some_op{socket_impl_, buffer, timeout, std::move(stop)};
   }
 
   /// Write some data (coroutine-based)
   struct [[nodiscard]] async_write_some_op : async_io_operation<std::size_t> {
-    async_write_some_op(tcp_socket& s, std::span<char const> buf,
+    async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl, std::span<char const> buf,
                         std::chrono::milliseconds timeout = {},
                         std::stop_token stop = {});
 
@@ -116,7 +119,7 @@ class tcp_socket {
   auto async_write_some(std::span<char const> buffer,
                         std::chrono::milliseconds timeout = {},
                         std::stop_token stop = {}) -> async_write_some_op {
-    return async_write_some_op{*this, buffer, timeout, std::move(stop)};
+    return async_write_some_op{socket_impl_, buffer, timeout, std::move(stop)};
   }
 
   /// Socket options
@@ -133,7 +136,7 @@ class tcp_socket {
   friend struct async_read_some_op;
   friend struct async_write_some_op;
 
-  std::unique_ptr<detail::tcp_socket_impl> impl_;
+  std::shared_ptr<detail::tcp_socket_impl> socket_impl_;
 };
 
 /// Free functions for full read/write operations
@@ -165,10 +168,16 @@ inline auto async_write(tcp_socket& s, std::span<char const> buffer,
 template <typename Result>
 void async_io_operation<Result>::setup_timeout() {
   if (timeout_.count() > 0) {
-    timer_handle_ = socket_.get_executor().schedule_timer(
+    auto socket_impl = get_socket_impl();
+    if (!socket_impl) return;
+
+    timer_handle_ = socket_impl->get_executor().schedule_timer(
         timeout_,
-        [this]() {
-          socket_.get_executor().deregister_fd(socket_.native_handle());
+        [this, weak_socket_impl = socket_impl_]() {
+          auto socket_impl = weak_socket_impl.lock();
+          if (!socket_impl) return;
+
+          socket_impl->get_executor().deregister_fd(socket_impl->native_handle());
           timer_handle_.reset();
           if constexpr (std::is_void_v<Result>) {
             this->complete(make_error_code(error::timeout));
@@ -182,7 +191,10 @@ void async_io_operation<Result>::setup_timeout() {
 template <typename Result>
 void async_io_operation<Result>::cleanup_timer() {
   if (timer_handle_) {
-    socket_.get_executor().cancel_timer(timer_handle_);
+    auto socket_impl = get_socket_impl();
+    if (socket_impl) {
+      socket_impl->get_executor().cancel_timer(timer_handle_);
+    }
     timer_handle_.reset();
   }
 }

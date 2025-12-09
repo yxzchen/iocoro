@@ -110,7 +110,7 @@ auto tcp_socket_impl::read_some(std::span<char> buffer) -> expected<std::size_t,
 
   if (n < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      return unexpected(make_error_code(error::operation_aborted));
+      return unexpected(std::make_error_code(std::errc::operation_would_block));
     }
     return unexpected(std::error_code(errno, std::generic_category()));
   }
@@ -131,7 +131,7 @@ auto tcp_socket_impl::write_some(std::span<char const> buffer) -> expected<std::
 
   if (n < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      return unexpected(make_error_code(error::operation_aborted));
+      return unexpected(std::make_error_code(std::errc::operation_would_block));
     }
     return unexpected(std::error_code(errno, std::generic_category()));
   }
@@ -234,7 +234,7 @@ auto tcp_socket_impl::remote_endpoint() const -> expected<ip::tcp_endpoint, std:
 
 namespace xz::io {
 
-tcp_socket::tcp_socket(io_context& ctx) : impl_(std::make_unique<detail::tcp_socket_impl>(ctx)) {}
+tcp_socket::tcp_socket(io_context& ctx) : socket_impl_(std::make_shared<detail::tcp_socket_impl>(ctx)) {}
 
 tcp_socket::~tcp_socket() = default;
 
@@ -242,50 +242,57 @@ tcp_socket::tcp_socket(tcp_socket&&) noexcept = default;
 
 auto tcp_socket::operator=(tcp_socket&&) noexcept -> tcp_socket& = default;
 
-auto tcp_socket::get_executor() noexcept -> io_context& { return impl_->get_executor(); }
+auto tcp_socket::get_executor() noexcept -> io_context& { return socket_impl_->get_executor(); }
 
-auto tcp_socket::is_open() const noexcept -> bool { return impl_->is_open(); }
+auto tcp_socket::is_open() const noexcept -> bool { return socket_impl_->is_open(); }
 
-auto tcp_socket::native_handle() const noexcept -> int { return impl_->native_handle(); }
+auto tcp_socket::native_handle() const noexcept -> int { return socket_impl_->native_handle(); }
 
-void tcp_socket::close() { impl_->close(); }
+void tcp_socket::close() { socket_impl_->close(); }
 
 auto tcp_socket::close_nothrow() noexcept -> expected<void, std::error_code> {
-  return impl_->close_nothrow();
+  return socket_impl_->close_nothrow();
 }
 
 auto tcp_socket::set_option_nodelay(bool enable) -> expected<void, std::error_code> {
-  return impl_->set_option_nodelay(enable);
+  return socket_impl_->set_option_nodelay(enable);
 }
 
 auto tcp_socket::set_option_keepalive(bool enable) -> expected<void, std::error_code> {
-  return impl_->set_option_keepalive(enable);
+  return socket_impl_->set_option_keepalive(enable);
 }
 
 auto tcp_socket::set_option_reuseaddr(bool enable) -> expected<void, std::error_code> {
-  return impl_->set_option_reuseaddr(enable);
+  return socket_impl_->set_option_reuseaddr(enable);
 }
 
 auto tcp_socket::local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
-  return impl_->local_endpoint();
+  return socket_impl_->local_endpoint();
 }
 
 auto tcp_socket::remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
-  return impl_->remote_endpoint();
+  return socket_impl_->remote_endpoint();
 }
 
-tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
+tcp_socket::async_connect_op::async_connect_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
+                                                ip::tcp_endpoint ep,
                                                 std::chrono::milliseconds timeout,
                                                 std::stop_token stop)
-    : async_io_operation<void>(s, timeout, std::move(stop)), endpoint_(ep) {}
+    : async_io_operation<void>(std::move(socket_impl), timeout, std::move(stop)), endpoint_(ep) {}
 
 void tcp_socket::async_connect_op::start_operation() {
+  auto socket_impl = get_socket_impl();
+  if (!socket_impl) {
+    complete(make_error_code(error::operation_aborted));
+    return;
+  }
+
   if (stop_requested()) {
     complete(make_error_code(error::operation_aborted));
     return;
   }
 
-  auto result = socket_.impl_->connect(endpoint_);
+  auto result = socket_impl->connect(endpoint_);
   if (!result) {
     auto ec = result.error();
     if (ec != std::errc::operation_in_progress) {
@@ -297,51 +304,62 @@ void tcp_socket::async_connect_op::start_operation() {
   setup_timeout();
 
   struct connect_operation : io_context::operation_base {
-    tcp_socket& socket;
-    tcp_socket::async_connect_op& op;
+    std::weak_ptr<detail::tcp_socket_impl> socket_impl;
+    tcp_socket::async_connect_op* op;
 
-    connect_operation(tcp_socket& s, tcp_socket::async_connect_op& o) : socket(s), op(o) {}
+    connect_operation(std::weak_ptr<detail::tcp_socket_impl> s, tcp_socket::async_connect_op* o)
+        : socket_impl(std::move(s)), op(o) {}
 
     void execute() override {
+      auto socket_impl_ptr = socket_impl.lock();
+      if (!socket_impl_ptr) return;
+
       int error = 0;
       socklen_t len = sizeof(error);
-      ::getsockopt(socket.native_handle(), SOL_SOCKET, SO_ERROR, &error, &len);
+      ::getsockopt(socket_impl_ptr->native_handle(), SOL_SOCKET, SO_ERROR, &error, &len);
 
-      socket.get_executor().deregister_fd(socket.native_handle());
-      op.cleanup_timer();
+      socket_impl_ptr->get_executor().deregister_fd(socket_impl_ptr->native_handle());
+      op->cleanup_timer();
 
       if (error) {
-        op.complete(std::error_code(error, std::generic_category()));
+        op->complete(std::error_code(error, std::generic_category()));
       } else {
-        op.complete({});
+        op->complete({});
       }
     }
   };
 
-  socket_.get_executor().register_fd_write(
-      socket_.native_handle(),
-      std::make_unique<connect_operation>(socket_, *this));
+  socket_impl->get_executor().register_fd_write(
+      socket_impl->native_handle(),
+      std::make_unique<connect_operation>(socket_impl_, this));
 }
 
-tcp_socket::async_read_some_op::async_read_some_op(tcp_socket& s, std::span<char> buf,
+tcp_socket::async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
+                                                    std::span<char> buf,
                                                     std::chrono::milliseconds timeout,
                                                     std::stop_token stop)
-    : async_io_operation<std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
+    : async_io_operation<std::size_t>(std::move(socket_impl), timeout, std::move(stop)), buffer_(buf) {}
 
 void tcp_socket::async_read_some_op::start_operation() {
+  auto socket_impl = get_socket_impl();
+  if (!socket_impl) {
+    complete(make_error_code(error::operation_aborted), std::size_t{0});
+    return;
+  }
+
   if (stop_requested()) {
     complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }
 
-  auto result = socket_.impl_->read_some(buffer_);
+  auto result = socket_impl->read_some(buffer_);
   if (result) {
     complete({}, *result);
     return;
   }
 
   auto ec = result.error();
-  if (ec != make_error_code(error::operation_aborted)) {
+  if (ec != std::errc::operation_would_block) {
     complete(ec, std::size_t{0});
     return;
   }
@@ -349,50 +367,61 @@ void tcp_socket::async_read_some_op::start_operation() {
   setup_timeout();
 
   struct read_operation : io_context::operation_base {
-    tcp_socket& socket;
+    std::weak_ptr<detail::tcp_socket_impl> socket_impl;
     std::span<char> buffer;
-    tcp_socket::async_read_some_op& op;
+    tcp_socket::async_read_some_op* op;
 
-    read_operation(tcp_socket& s, std::span<char> buf, tcp_socket::async_read_some_op& o)
-        : socket(s), buffer(buf), op(o) {}
+    read_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char> buf,
+                   tcp_socket::async_read_some_op* o)
+        : socket_impl(std::move(s)), buffer(buf), op(o) {}
 
     void execute() override {
-      auto result = socket.impl_->read_some(buffer);
-      socket.get_executor().deregister_fd(socket.native_handle());
-      op.cleanup_timer();
+      auto socket_impl_ptr = socket_impl.lock();
+      if (!socket_impl_ptr) return;
+
+      auto result = socket_impl_ptr->read_some(buffer);
+      socket_impl_ptr->get_executor().deregister_fd(socket_impl_ptr->native_handle());
+      op->cleanup_timer();
 
       if (result) {
-        op.complete({}, *result);
+        op->complete({}, *result);
       } else {
-        op.complete(result.error(), std::size_t{0});
+        op->complete(result.error(), std::size_t{0});
       }
     }
   };
 
-  socket_.get_executor().register_fd_read(
-      socket_.native_handle(),
-      std::make_unique<read_operation>(socket_, buffer_, *this));
+  socket_impl->get_executor().register_fd_read(
+      socket_impl->native_handle(),
+      std::make_unique<read_operation>(socket_impl_, buffer_, this));
 }
 
-tcp_socket::async_write_some_op::async_write_some_op(tcp_socket& s, std::span<char const> buf,
+tcp_socket::async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
+                                                      std::span<char const> buf,
                                                       std::chrono::milliseconds timeout,
                                                       std::stop_token stop)
-    : async_io_operation<std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
+    : async_io_operation<std::size_t>(std::move(socket_impl), timeout, std::move(stop)), buffer_(buf) {}
 
 void tcp_socket::async_write_some_op::start_operation() {
+  auto socket_impl = get_socket_impl();
+  if (!socket_impl) {
+    complete(make_error_code(error::operation_aborted), std::size_t{0});
+    return;
+  }
+
   if (stop_requested()) {
     complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }
 
-  auto result = socket_.impl_->write_some(buffer_);
+  auto result = socket_impl->write_some(buffer_);
   if (result) {
     complete({}, *result);
     return;
   }
 
   auto ec = result.error();
-  if (ec != make_error_code(error::operation_aborted)) {
+  if (ec != std::errc::operation_would_block) {
     complete(ec, std::size_t{0});
     return;
   }
@@ -400,29 +429,33 @@ void tcp_socket::async_write_some_op::start_operation() {
   setup_timeout();
 
   struct write_operation : io_context::operation_base {
-    tcp_socket& socket;
+    std::weak_ptr<detail::tcp_socket_impl> socket_impl;
     std::span<char const> buffer;
-    tcp_socket::async_write_some_op& op;
+    tcp_socket::async_write_some_op* op;
 
-    write_operation(tcp_socket& s, std::span<char const> buf, tcp_socket::async_write_some_op& o)
-        : socket(s), buffer(buf), op(o) {}
+    write_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char const> buf,
+                    tcp_socket::async_write_some_op* o)
+        : socket_impl(std::move(s)), buffer(buf), op(o) {}
 
     void execute() override {
-      auto result = socket.impl_->write_some(buffer);
-      socket.get_executor().deregister_fd(socket.native_handle());
-      op.cleanup_timer();
+      auto socket_impl_ptr = socket_impl.lock();
+      if (!socket_impl_ptr) return;
+
+      auto result = socket_impl_ptr->write_some(buffer);
+      socket_impl_ptr->get_executor().deregister_fd(socket_impl_ptr->native_handle());
+      op->cleanup_timer();
 
       if (result) {
-        op.complete({}, *result);
+        op->complete({}, *result);
       } else {
-        op.complete(result.error(), std::size_t{0});
+        op->complete(result.error(), std::size_t{0});
       }
     }
   };
 
-  socket_.get_executor().register_fd_write(
-      socket_.native_handle(),
-      std::make_unique<write_operation>(socket_, buffer_, *this));
+  socket_impl->get_executor().register_fd_write(
+      socket_impl->native_handle(),
+      std::make_unique<write_operation>(socket_impl_, buffer_, this));
 }
 
 }  // namespace xz::io
