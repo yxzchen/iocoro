@@ -4,25 +4,23 @@
 #include <exception>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace xz::io {
 
 namespace detail {
-/// Promise type for non-void tasks
-template <typename T>
-struct task_promise {
+/// Base promise type with common functionality
+template <typename Derived>
+struct task_promise_base {
   std::exception_ptr exception_;
   std::coroutine_handle<> continuation_;
-  T value_;
-
-  auto get_return_object() -> auto;
 
   std::suspend_always initial_suspend() noexcept { return {}; }
 
   auto final_suspend() noexcept {
     struct final_awaiter {
       bool await_ready() noexcept { return false; }
-      auto await_suspend(std::coroutine_handle<task_promise> h) noexcept -> std::coroutine_handle<> {
+      auto await_suspend(std::coroutine_handle<Derived> h) noexcept -> std::coroutine_handle<> {
         if (h.promise().continuation_) {
           return h.promise().continuation_;
         }
@@ -34,6 +32,14 @@ struct task_promise {
   }
 
   void unhandled_exception() { exception_ = std::current_exception(); }
+};
+
+/// Promise type for non-void tasks
+template <typename T>
+struct task_promise : task_promise_base<task_promise<T>> {
+  T value_;
+
+  auto get_return_object() -> auto;
 
   template <typename U>
     requires std::convertible_to<U, T>
@@ -44,29 +50,8 @@ struct task_promise {
 
 /// Promise type for void tasks
 template <>
-struct task_promise<void> {
-  std::exception_ptr exception_;
-  std::coroutine_handle<> continuation_;
-
+struct task_promise<void> : task_promise_base<task_promise<void>> {
   auto get_return_object() -> auto;
-
-  std::suspend_always initial_suspend() noexcept { return {}; }
-
-  auto final_suspend() noexcept {
-    struct final_awaiter {
-      bool await_ready() noexcept { return false; }
-      auto await_suspend(std::coroutine_handle<task_promise> h) noexcept -> std::coroutine_handle<> {
-        if (h.promise().continuation_) {
-          return h.promise().continuation_;
-        }
-        return std::noop_coroutine();
-      }
-      void await_resume() noexcept {}
-    };
-    return final_awaiter{};
-  }
-
-  void unhandled_exception() { exception_ = std::current_exception(); }
 
   void return_void() noexcept {}
 };
