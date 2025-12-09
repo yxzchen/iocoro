@@ -12,7 +12,7 @@
 namespace xz::io {
 
 namespace detail {
-class io_context_impl;
+class io_context_impl_base;
 struct timer_entry;
 using timer_handle = std::shared_ptr<timer_entry>;
 }  // namespace detail
@@ -73,7 +73,7 @@ class io_context {
   void cancel_timer(detail::timer_handle handle);
 
  private:
-  std::unique_ptr<detail::io_context_impl> impl_;
+  std::unique_ptr<detail::io_context_impl_base> impl_;
 };
 
 }  // namespace xz::io
