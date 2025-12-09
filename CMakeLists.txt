@@ -6,13 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
 
+find_package(fmt REQUIRED)
+
 add_library(ioxz INTERFACE)
 target_include_directories(ioxz INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 target_compile_features(ioxz INTERFACE cxx_std_20)
-target_link_libraries(ioxz INTERFACE pthread)
+target_link_libraries(ioxz INTERFACE pthread fmt::fmt)
 
 option(BUILD_TESTS "Build tests" ON)
 

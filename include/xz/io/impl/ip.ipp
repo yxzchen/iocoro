@@ -3,14 +3,13 @@
 #include <xz/io/ip.hpp>
 
 #include <arpa/inet.h>
+#include <fmt/format.h>
 
 #include <array>
 #include <cstring>
-#include <sstream>
 #include <stdexcept>
 
 namespace xz::io::ip {
-
 
 address_v4::address_v4(uint32_t addr) {
   bytes_[0] = (addr >> 24) & 0xFF;
@@ -36,12 +35,8 @@ auto address_v4::to_uint() const noexcept -> uint32_t {
 }
 
 auto address_v4::to_string() const -> std::string {
-  std::ostringstream oss;
-  oss << static_cast<int>(bytes_[0]) << '.' << static_cast<int>(bytes_[1]) << '.'
-      << static_cast<int>(bytes_[2]) << '.' << static_cast<int>(bytes_[3]);
-  return oss.str();
+  return fmt::format("{}.{}.{}.{}", bytes_[0], bytes_[1], bytes_[2], bytes_[3]);
 }
-
 
 auto address_v6::from_string(std::string_view str) -> address_v6 {
   in6_addr addr{};
@@ -73,15 +68,11 @@ auto address_v6::to_string() const -> std::string {
   return buf;
 }
 
-
 auto tcp_endpoint::to_string() const -> std::string {
-  std::ostringstream oss;
   if (is_v6()) {
-    oss << '[' << get_address_v6().to_string() << "]:" << port_;
-  } else {
-    oss << get_address_v4().to_string() << ':' << port_;
+    return fmt::format("[{}]:{}", get_address_v6().to_string(), port_);
   }
-  return oss.str();
+  return fmt::format("{}:{}", get_address_v4().to_string(), port_);
 }
 
 }  // namespace xz::io::ip

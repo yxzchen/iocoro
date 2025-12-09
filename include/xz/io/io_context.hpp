@@ -15,7 +15,9 @@ namespace xz::io {
 
 namespace detail {
 class io_context_impl;
-}
+struct timer_entry;
+using timer_handle = std::shared_ptr<timer_entry>;
+}  // namespace detail
 
 /// The execution context for asynchronous I/O operations
 class io_context {
@@ -69,8 +71,8 @@ class io_context {
                              std::unique_ptr<operation_base> write_op);
   void deregister_fd(int fd);
 
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) -> uint64_t;
-  void cancel_timer(uint64_t id);
+  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) -> detail::timer_handle;
+  void cancel_timer(detail::timer_handle handle);
 
  private:
   std::unique_ptr<detail::io_context_impl> impl_;

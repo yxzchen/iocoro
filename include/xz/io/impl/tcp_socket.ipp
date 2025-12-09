@@ -23,12 +23,12 @@ void tcp_socket_impl::close() {
   }
 }
 
-void tcp_socket_impl::close(std::error_code& ec) noexcept {
-  ec.clear();
+auto tcp_socket_impl::close_nothrow() noexcept -> expected<void, std::error_code> {
   try {
     close();
+    return {};
   } catch (std::system_error const& e) {
-    ec = e.code();
+    return unexpected(e.code());
   }
 }
 
@@ -90,84 +90,90 @@ auto tcp_socket_impl::create_and_connect(ip::tcp_endpoint const& ep) -> std::err
   return {};
 }
 
-auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> std::error_code {
+auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> expected<void, std::error_code> {
   if (is_open()) {
-    return make_error_code(error::already_connected);
+    return unexpected(make_error_code(error::already_connected));
   }
 
-  return create_and_connect(ep);
+  auto ec = create_and_connect(ep);
+  if (ec) {
+    return unexpected(ec);
+  }
+  return {};
 }
 
-auto tcp_socket_impl::read_some(std::span<char> buffer) -> std::pair<std::error_code, std::size_t> {
+auto tcp_socket_impl::read_some(std::span<char> buffer) -> expected<std::size_t, std::error_code> {
   if (!is_open()) {
-    return {make_error_code(error::not_connected), 0};
+    return unexpected(make_error_code(error::not_connected));
   }
 
   ssize_t n = ::recv(fd_, buffer.data(), buffer.size(), 0);
 
   if (n < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      return {make_error_code(error::operation_aborted), 0};
+      return unexpected(make_error_code(error::operation_aborted));
     }
-    return {std::error_code(errno, std::generic_category()), 0};
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
 
   if (n == 0) {
-    return {make_error_code(error::eof), 0};
+    return unexpected(make_error_code(error::eof));
   }
 
-  return {{}, static_cast<std::size_t>(n)};
+  return static_cast<std::size_t>(n);
 }
 
-auto tcp_socket_impl::write_some(std::span<char const> buffer)
-    -> std::pair<std::error_code, std::size_t> {
+auto tcp_socket_impl::write_some(std::span<char const> buffer) -> expected<std::size_t, std::error_code> {
   if (!is_open()) {
-    return {make_error_code(error::not_connected), 0};
+    return unexpected(make_error_code(error::not_connected));
   }
 
   ssize_t n = ::send(fd_, buffer.data(), buffer.size(), MSG_NOSIGNAL);
 
   if (n < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      return {make_error_code(error::operation_aborted), 0};
+      return unexpected(make_error_code(error::operation_aborted));
     }
-    return {std::error_code(errno, std::generic_category()), 0};
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
 
-  return {{}, static_cast<std::size_t>(n)};
+  return static_cast<std::size_t>(n);
 }
 
-void tcp_socket_impl::set_option_nodelay(bool enable) {
+auto tcp_socket_impl::set_option_nodelay(bool enable) -> expected<void, std::error_code> {
   if (!is_open()) {
-    throw std::system_error(make_error_code(error::not_connected));
+    return unexpected(make_error_code(error::not_connected));
   }
 
   int flag = enable ? 1 : 0;
   if (::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
-    throw std::system_error(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
+  return {};
 }
 
-void tcp_socket_impl::set_option_keepalive(bool enable) {
+auto tcp_socket_impl::set_option_keepalive(bool enable) -> expected<void, std::error_code> {
   if (!is_open()) {
-    throw std::system_error(make_error_code(error::not_connected));
+    return unexpected(make_error_code(error::not_connected));
   }
 
   int flag = enable ? 1 : 0;
   if (::setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) < 0) {
-    throw std::system_error(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
+  return {};
 }
 
-void tcp_socket_impl::set_option_reuseaddr(bool enable) {
+auto tcp_socket_impl::set_option_reuseaddr(bool enable) -> expected<void, std::error_code> {
   if (!is_open()) {
-    throw std::system_error(make_error_code(error::not_connected));
+    return unexpected(make_error_code(error::not_connected));
   }
 
   int flag = enable ? 1 : 0;
   if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-    throw std::system_error(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
+  return {};
 }
 
 namespace {
@@ -187,34 +193,42 @@ auto sockaddr_to_endpoint(sockaddr_storage const& addr) -> ip::tcp_endpoint {
 
 }  // namespace
 
-auto tcp_socket_impl::local_endpoint() const -> ip::tcp_endpoint {
+auto tcp_socket_impl::local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
   if (!is_open()) {
-    throw std::system_error(make_error_code(error::not_connected));
+    return unexpected(make_error_code(error::not_connected));
   }
 
   sockaddr_storage addr{};
   socklen_t len = sizeof(addr);
 
   if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    throw std::system_error(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
 
-  return sockaddr_to_endpoint(addr);
+  try {
+    return sockaddr_to_endpoint(addr);
+  } catch (...) {
+    return unexpected(make_error_code(error::invalid_argument));
+  }
 }
 
-auto tcp_socket_impl::remote_endpoint() const -> ip::tcp_endpoint {
+auto tcp_socket_impl::remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
   if (!is_open()) {
-    throw std::system_error(make_error_code(error::not_connected));
+    return unexpected(make_error_code(error::not_connected));
   }
 
   sockaddr_storage addr{};
   socklen_t len = sizeof(addr);
 
   if (::getpeername(fd_, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    throw std::system_error(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
 
-  return sockaddr_to_endpoint(addr);
+  try {
+    return sockaddr_to_endpoint(addr);
+  } catch (...) {
+    return unexpected(make_error_code(error::invalid_argument));
+  }
 }
 
 }  // namespace xz::io::detail
@@ -237,29 +251,34 @@ auto tcp_socket::native_handle() const noexcept -> int { return impl_->native_ha
 
 void tcp_socket::close() { impl_->close(); }
 
-void tcp_socket::close(std::error_code& ec) noexcept { impl_->close(ec); }
+auto tcp_socket::close_nothrow() noexcept -> expected<void, std::error_code> {
+  return impl_->close_nothrow();
+}
 
-void tcp_socket::set_option_nodelay(bool enable) { impl_->set_option_nodelay(enable); }
+auto tcp_socket::set_option_nodelay(bool enable) -> expected<void, std::error_code> {
+  return impl_->set_option_nodelay(enable);
+}
 
-void tcp_socket::set_option_keepalive(bool enable) { impl_->set_option_keepalive(enable); }
+auto tcp_socket::set_option_keepalive(bool enable) -> expected<void, std::error_code> {
+  return impl_->set_option_keepalive(enable);
+}
 
-void tcp_socket::set_option_reuseaddr(bool enable) { impl_->set_option_reuseaddr(enable); }
+auto tcp_socket::set_option_reuseaddr(bool enable) -> expected<void, std::error_code> {
+  return impl_->set_option_reuseaddr(enable);
+}
 
-auto tcp_socket::local_endpoint() const -> ip::tcp_endpoint { return impl_->local_endpoint(); }
+auto tcp_socket::local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
+  return impl_->local_endpoint();
+}
 
-auto tcp_socket::remote_endpoint() const -> ip::tcp_endpoint { return impl_->remote_endpoint(); }
+auto tcp_socket::remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
+  return impl_->remote_endpoint();
+}
 
 tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
                                                 std::chrono::milliseconds timeout,
                                                 std::stop_token stop)
-    : awaitable_op<void>(std::move(stop)), socket_(s), endpoint_(ep), timeout_(timeout) {}
-
-void tcp_socket::async_connect_op::cleanup_timer() {
-  if (timer_id_ != 0) {
-    socket_.get_executor().cancel_timer(timer_id_);
-    timer_id_ = 0;
-  }
-}
+    : async_io_operation<async_connect_op, void>(s, timeout, std::move(stop)), endpoint_(ep) {}
 
 void tcp_socket::async_connect_op::start_operation() {
   if (stop_requested()) {
@@ -267,19 +286,16 @@ void tcp_socket::async_connect_op::start_operation() {
     return;
   }
 
-  auto ec = socket_.impl_->connect(endpoint_);
-  if (ec && ec != std::errc::operation_in_progress) {
-    complete(ec);
-    return;
+  auto result = socket_.impl_->connect(endpoint_);
+  if (!result) {
+    auto ec = result.error();
+    if (ec != std::errc::operation_in_progress) {
+      complete(ec);
+      return;
+    }
   }
 
-  if (timeout_.count() > 0) {
-    timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
-      socket_.get_executor().deregister_fd(socket_.native_handle());
-      timer_id_ = 0;
-      complete(make_error_code(error::timeout));
-    });
-  }
+  setup_timeout();
 
   struct connect_operation : io_context::operation_base {
     tcp_socket& socket;
@@ -311,14 +327,7 @@ void tcp_socket::async_connect_op::start_operation() {
 tcp_socket::async_read_some_op::async_read_some_op(tcp_socket& s, std::span<char> buf,
                                                     std::chrono::milliseconds timeout,
                                                     std::stop_token stop)
-    : awaitable_op<std::size_t>(std::move(stop)), socket_(s), buffer_(buf), timeout_(timeout) {}
-
-void tcp_socket::async_read_some_op::cleanup_timer() {
-  if (timer_id_ != 0) {
-    socket_.get_executor().cancel_timer(timer_id_);
-    timer_id_ = 0;
-  }
-}
+    : async_io_operation<async_read_some_op, std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
 
 void tcp_socket::async_read_some_op::start_operation() {
   if (stop_requested()) {
@@ -326,19 +335,19 @@ void tcp_socket::async_read_some_op::start_operation() {
     return;
   }
 
-  auto [ec, n] = socket_.impl_->read_some(buffer_);
-  if (!ec || ec != make_error_code(error::operation_aborted)) {
-    complete(ec, n);
+  auto result = socket_.impl_->read_some(buffer_);
+  if (result) {
+    complete({}, *result);
     return;
   }
 
-  if (timeout_.count() > 0) {
-    timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
-      socket_.get_executor().deregister_fd(socket_.native_handle());
-      timer_id_ = 0;
-      complete(make_error_code(error::timeout), std::size_t{0});
-    });
+  auto ec = result.error();
+  if (ec != make_error_code(error::operation_aborted)) {
+    complete(ec, std::size_t{0});
+    return;
   }
+
+  setup_timeout();
 
   struct read_operation : io_context::operation_base {
     tcp_socket& socket;
@@ -349,11 +358,15 @@ void tcp_socket::async_read_some_op::start_operation() {
         : socket(s), buffer(buf), op(o) {}
 
     void execute() override {
-      auto [ec, n] = socket.impl_->read_some(buffer);
+      auto result = socket.impl_->read_some(buffer);
       socket.get_executor().deregister_fd(socket.native_handle());
       op.cleanup_timer();
 
-      op.complete(ec, n);
+      if (result) {
+        op.complete({}, *result);
+      } else {
+        op.complete(result.error(), std::size_t{0});
+      }
     }
   };
 
@@ -365,14 +378,7 @@ void tcp_socket::async_read_some_op::start_operation() {
 tcp_socket::async_write_some_op::async_write_some_op(tcp_socket& s, std::span<char const> buf,
                                                       std::chrono::milliseconds timeout,
                                                       std::stop_token stop)
-    : awaitable_op<std::size_t>(std::move(stop)), socket_(s), buffer_(buf), timeout_(timeout) {}
-
-void tcp_socket::async_write_some_op::cleanup_timer() {
-  if (timer_id_ != 0) {
-    socket_.get_executor().cancel_timer(timer_id_);
-    timer_id_ = 0;
-  }
-}
+    : async_io_operation<async_write_some_op, std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
 
 void tcp_socket::async_write_some_op::start_operation() {
   if (stop_requested()) {
@@ -380,19 +386,19 @@ void tcp_socket::async_write_some_op::start_operation() {
     return;
   }
 
-  auto [ec, n] = socket_.impl_->write_some(buffer_);
-  if (!ec || ec != make_error_code(error::operation_aborted)) {
-    complete(ec, n);
+  auto result = socket_.impl_->write_some(buffer_);
+  if (result) {
+    complete({}, *result);
     return;
   }
 
-  if (timeout_.count() > 0) {
-    timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
-      socket_.get_executor().deregister_fd(socket_.native_handle());
-      timer_id_ = 0;
-      complete(make_error_code(error::timeout), std::size_t{0});
-    });
+  auto ec = result.error();
+  if (ec != make_error_code(error::operation_aborted)) {
+    complete(ec, std::size_t{0});
+    return;
   }
+
+  setup_timeout();
 
   struct write_operation : io_context::operation_base {
     tcp_socket& socket;
@@ -403,11 +409,15 @@ void tcp_socket::async_write_some_op::start_operation() {
         : socket(s), buffer(buf), op(o) {}
 
     void execute() override {
-      auto [ec, n] = socket.impl_->write_some(buffer);
+      auto result = socket.impl_->write_some(buffer);
       socket.get_executor().deregister_fd(socket.native_handle());
       op.cleanup_timer();
 
-      op.complete(ec, n);
+      if (result) {
+        op.complete({}, *result);
+      } else {
+        op.complete(result.error(), std::size_t{0});
+      }
     }
   };
 

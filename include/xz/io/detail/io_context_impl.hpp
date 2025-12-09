@@ -21,11 +21,14 @@ struct timer_entry {
   uint64_t id;
   std::chrono::steady_clock::time_point expiry;
   std::function<void()> callback;
+  std::atomic<bool> cancelled{false};
 
   auto operator>(timer_entry const& other) const -> bool {
     return expiry > other.expiry;
   }
 };
+
+using timer_handle = std::shared_ptr<timer_entry>;
 
 class io_context_impl {
  public:
@@ -51,8 +54,8 @@ class io_context_impl {
                              std::unique_ptr<io_context::operation_base> write_op);
   void deregister_fd(int fd);
 
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) -> uint64_t;
-  void cancel_timer(uint64_t id);
+  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) -> timer_handle;
+  void cancel_timer(timer_handle handle);
 
  private:
   auto process_events(std::chrono::milliseconds timeout) -> std::size_t;
@@ -75,8 +78,7 @@ class io_context_impl {
   std::unordered_map<int, fd_ops> fd_operations_;
   std::mutex fd_mutex_;
 
-  std::priority_queue<timer_entry, std::vector<timer_entry>, std::greater<>> timers_;
-  std::unordered_map<uint64_t, bool> active_timers_;
+  std::priority_queue<timer_handle, std::vector<timer_handle>, std::greater<>> timers_;
   uint64_t next_timer_id_ = 1;
   mutable std::mutex timer_mutex_;
 

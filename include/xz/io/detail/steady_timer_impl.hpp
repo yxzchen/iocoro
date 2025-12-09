@@ -12,15 +12,15 @@ class steady_timer_impl {
   auto get_executor() noexcept -> io_context& { return ctx_; }
 
   void cancel() {
-    if (timer_id_ != 0) {
-      ctx_.cancel_timer(timer_id_);
-      timer_id_ = 0;
+    if (timer_handle_) {
+      ctx_.cancel_timer(timer_handle_);
+      timer_handle_.reset();
     }
   }
 
   auto wait(steady_timer::duration d) -> std::error_code;
 
-  uint64_t timer_id_ = 0;
+  timer_handle timer_handle_;
 
  private:
   io_context& ctx_;

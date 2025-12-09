@@ -259,9 +259,8 @@ TEST_F(IOTest, TCPSocketConstruction) {
 
 TEST_F(IOTest, TCPSocketClose) {
   tcp_socket sock(ctx);
-  std::error_code ec;
-  sock.close(ec);
-  EXPECT_FALSE(ec);  // Closing an unopened socket should not error
+  auto result = sock.close_nothrow();
+  EXPECT_TRUE(result.has_value());  // Closing an unopened socket should not error
 }
 
 // Note: Actual connection tests require a running server

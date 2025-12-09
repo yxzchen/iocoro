@@ -22,9 +22,9 @@ io_context_impl::io_context_impl() {
     throw std::system_error(errno, std::generic_category(), "eventfd failed");
   }
 
-  epoll_event ev{};
-  ev.events = EPOLLIN | EPOLLET;
-  ev.data.fd = eventfd_;
+  epoll_event ev{
+      .events = EPOLLIN | EPOLLET,
+      .data = {.fd = eventfd_}};
   if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, eventfd_, &ev) < 0) {
     ::close(eventfd_);
     ::close(epoll_fd_);
@@ -102,9 +102,9 @@ void io_context_impl::dispatch(std::function<void()> f) {
 void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
-  epoll_event ev{};
-  ev.events = EPOLLIN | EPOLLET;
-  ev.data.fd = fd;
+  epoll_event ev{
+      .events = EPOLLIN | EPOLLET,
+      .data = {.fd = fd}};
 
   auto& ops = fd_operations_[fd];
   ops.read_op = std::move(op);
@@ -119,9 +119,9 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::opera
 void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
-  epoll_event ev{};
-  ev.events = EPOLLOUT | EPOLLET;
-  ev.data.fd = fd;
+  epoll_event ev{
+      .events = EPOLLOUT | EPOLLET,
+      .data = {.fd = fd}};
 
   auto& ops = fd_operations_[fd];
   ops.write_op = std::move(op);
@@ -137,9 +137,9 @@ void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::
                                             std::unique_ptr<io_context::operation_base> write_op) {
   std::lock_guard lock(fd_mutex_);
 
-  epoll_event ev{};
-  ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-  ev.data.fd = fd;
+  epoll_event ev{
+      .events = EPOLLIN | EPOLLOUT | EPOLLET,
+      .data = {.fd = fd}};
 
   auto& ops = fd_operations_[fd];
   ops.read_op = std::move(read_op);
@@ -163,25 +163,22 @@ void io_context_impl::deregister_fd(int fd) {
 }
 
 auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
-    -> uint64_t {
+    -> timer_handle {
   std::lock_guard lock(timer_mutex_);
 
   auto const id = next_timer_id_++;
   auto const expiry = std::chrono::steady_clock::now() + timeout;
 
-  timers_.push(timer_entry{id, expiry, std::move(callback)});
-  active_timers_[id] = true;
+  auto handle = std::shared_ptr<timer_entry>(new timer_entry{id, expiry, std::move(callback), false});
+  timers_.push(handle);
 
   wakeup();
-  return id;
+  return handle;
 }
 
-void io_context_impl::cancel_timer(uint64_t id) {
-  std::lock_guard lock(timer_mutex_);
-
-  auto it = active_timers_.find(id);
-  if (it != active_timers_.end()) {
-    it->second = false;
+void io_context_impl::cancel_timer(timer_handle handle) {
+  if (handle) {
+    handle->cancelled.store(true, std::memory_order_release);
   }
 }
 
@@ -246,23 +243,23 @@ void io_context_impl::process_timers() {
 
   auto const now = std::chrono::steady_clock::now();
 
-  while (!timers_.empty() && timers_.top().expiry <= now) {
-    auto entry = timers_.top();
+  while (!timers_.empty() && timers_.top()->expiry <= now) {
+    auto handle = timers_.top();
     timers_.pop();
 
-    auto it = active_timers_.find(entry.id);
-    if (it != active_timers_.end() && it->second) {
-      active_timers_.erase(it);
-
-      // Extract callback to execute outside the lock
-      auto callback = std::move(entry.callback);
-      timer_mutex_.unlock();
-
-      // Execute callback - if it throws, mutex is already unlocked
-      callback();
-
-      timer_mutex_.lock();
+    // Skip cancelled timers
+    if (handle->cancelled.load(std::memory_order_acquire)) {
+      continue;
     }
+
+    // Extract callback to execute outside the lock
+    auto callback = std::move(handle->callback);
+    timer_mutex_.unlock();
+
+    // Execute callback - if it throws, mutex is already unlocked
+    callback();
+
+    timer_mutex_.lock();
   }
 }
 
@@ -288,7 +285,7 @@ auto io_context_impl::get_timeout() const -> std::chrono::milliseconds {
   }
 
   auto const now = std::chrono::steady_clock::now();
-  auto const& next = timers_.top().expiry;
+  auto const& next = timers_.top()->expiry;
 
   if (next <= now) {
     return std::chrono::milliseconds(0);
@@ -350,10 +347,10 @@ void io_context::register_fd_readwrite(int fd, std::unique_ptr<operation_base> r
 void io_context::deregister_fd(int fd) { impl_->deregister_fd(fd); }
 
 auto io_context::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
-    -> uint64_t {
+    -> detail::timer_handle {
   return impl_->schedule_timer(timeout, std::move(callback));
 }
 
-void io_context::cancel_timer(uint64_t id) { impl_->cancel_timer(id); }
+void io_context::cancel_timer(detail::timer_handle handle) { impl_->cancel_timer(std::move(handle)); }
 
 }  // namespace xz::io

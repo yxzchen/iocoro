@@ -1,5 +1,6 @@
 #pragma once
 
+#include <xz/io/expected.hpp>
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
 #include <xz/io/tcp_socket.hpp>
@@ -19,19 +20,19 @@ class tcp_socket_impl {
   auto native_handle() const noexcept -> int { return fd_; }
 
   void close();
-  void close(std::error_code& ec) noexcept;
+  auto close_nothrow() noexcept -> expected<void, std::error_code>;
 
-  void set_option_nodelay(bool enable);
-  void set_option_keepalive(bool enable);
-  void set_option_reuseaddr(bool enable);
+  auto set_option_nodelay(bool enable) -> expected<void, std::error_code>;
+  auto set_option_keepalive(bool enable) -> expected<void, std::error_code>;
+  auto set_option_reuseaddr(bool enable) -> expected<void, std::error_code>;
 
-  auto local_endpoint() const -> ip::tcp_endpoint;
-  auto remote_endpoint() const -> ip::tcp_endpoint;
+  auto local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;
+  auto remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;
 
   // Internal methods for async operations
-  auto connect(ip::tcp_endpoint const& ep) -> std::error_code;
-  auto read_some(std::span<char> buffer) -> std::pair<std::error_code, std::size_t>;
-  auto write_some(std::span<char const> buffer) -> std::pair<std::error_code, std::size_t>;
+  auto connect(ip::tcp_endpoint const& ep) -> expected<void, std::error_code>;
+  auto read_some(std::span<char> buffer) -> expected<std::size_t, std::error_code>;
+  auto write_some(std::span<char const> buffer) -> expected<std::size_t, std::error_code>;
 
  private:
   auto create_and_connect(ip::tcp_endpoint const& ep) -> std::error_code;

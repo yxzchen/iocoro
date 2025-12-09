@@ -41,8 +41,8 @@ steady_timer::async_wait_op::async_wait_op(steady_timer& t, duration d)
 void steady_timer::async_wait_op::start_operation() {
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration_);
 
-  timer_.impl_->timer_id_ = timer_.get_executor().schedule_timer(ms, [this]() {
-    timer_.impl_->timer_id_ = 0;
+  timer_.impl_->timer_handle_ = timer_.get_executor().schedule_timer(ms, [this]() {
+    timer_.impl_->timer_handle_.reset();
     complete({});
   });
 }

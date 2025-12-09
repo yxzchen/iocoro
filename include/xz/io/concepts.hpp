@@ -25,10 +25,10 @@ concept write_handler = requires(T t, std::error_code ec, std::size_t bytes) {
 };
 
 /// Concept for awaitable types
-template <typename T>
-concept awaitable = requires(T t) {
+template <typename T, typename Promise = void>
+concept awaitable = requires(T&& t, std::coroutine_handle<Promise> h) {
   { t.await_ready() } -> std::convertible_to<bool>;
-  { t.await_suspend(std::coroutine_handle<>{}) };
+  { t.await_suspend(h) };
   { t.await_resume() };
 };
 

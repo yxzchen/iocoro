@@ -1,6 +1,7 @@
 #pragma once
 
 #include <xz/io/awaitable.hpp>
+#include <xz/io/expected.hpp>
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
 
@@ -38,12 +39,12 @@ class tcp_socket {
 
   /// Close the socket
   void close();
-  void close(std::error_code& ec) noexcept;
+  auto close_nothrow() noexcept -> expected<void, std::error_code>;
 
   /// Async operations
 
   /// Connect to remote endpoint (coroutine-based)
-  struct [[nodiscard]] async_connect_op : awaitable_op<void> {
+  struct [[nodiscard]] async_connect_op : async_io_operation<async_connect_op, void> {
     async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
                      std::chrono::milliseconds timeout = {},
                      std::stop_token stop = {});
@@ -52,12 +53,7 @@ class tcp_socket {
     void start_operation() override;
 
    private:
-    void cleanup_timer();
-
-    tcp_socket& socket_;
     ip::tcp_endpoint endpoint_;
-    std::chrono::milliseconds timeout_;
-    uint64_t timer_id_ = 0;
   };
 
   auto async_connect(ip::tcp_endpoint ep,
@@ -67,7 +63,7 @@ class tcp_socket {
   }
 
   /// Read some data (coroutine-based)
-  struct [[nodiscard]] async_read_some_op : awaitable_op<std::size_t> {
+  struct [[nodiscard]] async_read_some_op : async_io_operation<async_read_some_op, std::size_t> {
     async_read_some_op(tcp_socket& s, std::span<char> buf,
                        std::chrono::milliseconds timeout = {},
                        std::stop_token stop = {});
@@ -76,12 +72,7 @@ class tcp_socket {
     void start_operation() override;
 
    private:
-    void cleanup_timer();
-
-    tcp_socket& socket_;
     std::span<char> buffer_;
-    std::chrono::milliseconds timeout_;
-    uint64_t timer_id_ = 0;
   };
 
   auto async_read_some(std::span<char> buffer,
@@ -91,7 +82,7 @@ class tcp_socket {
   }
 
   /// Write some data (coroutine-based)
-  struct [[nodiscard]] async_write_some_op : awaitable_op<std::size_t> {
+  struct [[nodiscard]] async_write_some_op : async_io_operation<async_write_some_op, std::size_t> {
     async_write_some_op(tcp_socket& s, std::span<char const> buf,
                         std::chrono::milliseconds timeout = {},
                         std::stop_token stop = {});
@@ -100,12 +91,7 @@ class tcp_socket {
     void start_operation() override;
 
    private:
-    void cleanup_timer();
-
-    tcp_socket& socket_;
     std::span<char const> buffer_;
-    std::chrono::milliseconds timeout_;
-    uint64_t timer_id_ = 0;
   };
 
   auto async_write_some(std::span<char const> buffer,
@@ -115,13 +101,13 @@ class tcp_socket {
   }
 
   /// Socket options
-  void set_option_nodelay(bool enable);
-  void set_option_keepalive(bool enable);
-  void set_option_reuseaddr(bool enable);
+  auto set_option_nodelay(bool enable) -> expected<void, std::error_code>;
+  auto set_option_keepalive(bool enable) -> expected<void, std::error_code>;
+  auto set_option_reuseaddr(bool enable) -> expected<void, std::error_code>;
 
   /// Local/remote endpoints
-  auto local_endpoint() const -> ip::tcp_endpoint;
-  auto remote_endpoint() const -> ip::tcp_endpoint;
+  auto local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;
+  auto remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;
 
  private:
   friend struct async_connect_op;
@@ -153,6 +139,32 @@ inline auto async_write(tcp_socket& s, std::span<char const> buffer,
   while (total < buffer.size()) {
     auto n = co_await s.async_write_some(buffer.subspan(total), timeout, stop);
     total += n;
+  }
+}
+
+/// Inline implementation of async_io_operation methods
+template <typename Derived, typename Result>
+void async_io_operation<Derived, Result>::setup_timeout() {
+  if (timeout_.count() > 0) {
+    timer_handle_ = socket_.get_executor().schedule_timer(
+        timeout_,
+        [this]() {
+          socket_.get_executor().deregister_fd(socket_.native_handle());
+          timer_handle_.reset();
+          if constexpr (std::is_void_v<Result>) {
+            this->complete(make_error_code(error::timeout));
+          } else {
+            this->complete(make_error_code(error::timeout), Result{});
+          }
+        });
+  }
+}
+
+template <typename Derived, typename Result>
+void async_io_operation<Derived, Result>::cleanup_timer() {
+  if (timer_handle_) {
+    socket_.get_executor().cancel_timer(timer_handle_);
+    timer_handle_.reset();
   }
 }
 
