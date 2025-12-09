@@ -256,14 +256,39 @@ auto tcp_socket::remote_endpoint() const -> ip::tcp_endpoint { return impl_->rem
 
 // Async operation implementations
 
-tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep)
-    : socket_(s), endpoint_(ep) {}
+tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
+                                                std::chrono::milliseconds timeout,
+                                                std::stop_token stop)
+    : awaitable_op<void>(std::move(stop)), socket_(s), endpoint_(ep), timeout_(timeout) {}
+
+void tcp_socket::async_connect_op::cleanup_timer() {
+  if (timer_id_ != 0) {
+    socket_.get_executor().cancel_timer(timer_id_);
+    timer_id_ = 0;
+  }
+}
 
 void tcp_socket::async_connect_op::start_operation() {
+  // Check if already cancelled
+  if (stop_requested()) {
+    complete(make_error_code(error::operation_aborted));
+    return;
+  }
+
   auto ec = socket_.impl_->connect(endpoint_);
   if (ec && ec != std::errc::operation_in_progress) {
     complete(ec);
     return;
+  }
+
+  // Setup timeout if specified
+  if (timeout_.count() > 0) {
+    timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
+      // Timeout fired - cancel the connect
+      socket_.get_executor().deregister_fd(socket_.native_handle());
+      timer_id_ = 0;
+      complete(make_error_code(error::timeout));
+    });
   }
 
   // Register for write events (connection completion)
@@ -281,6 +306,9 @@ void tcp_socket::async_connect_op::start_operation() {
 
       socket.get_executor().deregister_fd(socket.native_handle());
 
+      // Cancel timeout timer
+      op.cleanup_timer();
+
       if (error) {
         op.complete(std::error_code(error, std::generic_category()));
       } else {
@@ -294,15 +322,39 @@ void tcp_socket::async_connect_op::start_operation() {
       std::make_unique<connect_operation>(socket_, *this));
 }
 
-tcp_socket::async_read_some_op::async_read_some_op(tcp_socket& s, std::span<char> buf)
-    : socket_(s), buffer_(buf) {}
+tcp_socket::async_read_some_op::async_read_some_op(tcp_socket& s, std::span<char> buf,
+                                                    std::chrono::milliseconds timeout,
+                                                    std::stop_token stop)
+    : awaitable_op<std::size_t>(std::move(stop)), socket_(s), buffer_(buf), timeout_(timeout) {}
+
+void tcp_socket::async_read_some_op::cleanup_timer() {
+  if (timer_id_ != 0) {
+    socket_.get_executor().cancel_timer(timer_id_);
+    timer_id_ = 0;
+  }
+}
 
 void tcp_socket::async_read_some_op::start_operation() {
+  // Check if already cancelled
+  if (stop_requested()) {
+    complete(make_error_code(error::operation_aborted), 0);
+    return;
+  }
+
   // Try immediate read
   auto [ec, n] = socket_.impl_->read_some(buffer_);
   if (!ec || ec != make_error_code(error::operation_aborted)) {
     complete(ec, n);
     return;
+  }
+
+  // Setup timeout if specified
+  if (timeout_.count() > 0) {
+    timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
+      socket_.get_executor().deregister_fd(socket_.native_handle());
+      timer_id_ = 0;
+      complete(make_error_code(error::timeout), 0);
+    });
   }
 
   // Register for read events
@@ -317,6 +369,10 @@ void tcp_socket::async_read_some_op::start_operation() {
     void execute() override {
       auto [ec, n] = socket.impl_->read_some(buffer);
       socket.get_executor().deregister_fd(socket.native_handle());
+
+      // Cancel timeout timer
+      op.cleanup_timer();
+
       op.complete(ec, n);
     }
   };
@@ -326,15 +382,39 @@ void tcp_socket::async_read_some_op::start_operation() {
       std::make_unique<read_operation>(socket_, buffer_, *this));
 }
 
-tcp_socket::async_write_some_op::async_write_some_op(tcp_socket& s, std::span<char const> buf)
-    : socket_(s), buffer_(buf) {}
+tcp_socket::async_write_some_op::async_write_some_op(tcp_socket& s, std::span<char const> buf,
+                                                      std::chrono::milliseconds timeout,
+                                                      std::stop_token stop)
+    : awaitable_op<std::size_t>(std::move(stop)), socket_(s), buffer_(buf), timeout_(timeout) {}
+
+void tcp_socket::async_write_some_op::cleanup_timer() {
+  if (timer_id_ != 0) {
+    socket_.get_executor().cancel_timer(timer_id_);
+    timer_id_ = 0;
+  }
+}
 
 void tcp_socket::async_write_some_op::start_operation() {
+  // Check if already cancelled
+  if (stop_requested()) {
+    complete(make_error_code(error::operation_aborted), 0);
+    return;
+  }
+
   // Try immediate write
   auto [ec, n] = socket_.impl_->write_some(buffer_);
   if (!ec || ec != make_error_code(error::operation_aborted)) {
     complete(ec, n);
     return;
+  }
+
+  // Setup timeout if specified
+  if (timeout_.count() > 0) {
+    timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
+      socket_.get_executor().deregister_fd(socket_.native_handle());
+      timer_id_ = 0;
+      complete(make_error_code(error::timeout), 0);
+    });
   }
 
   // Register for write events
@@ -349,6 +429,10 @@ void tcp_socket::async_write_some_op::start_operation() {
     void execute() override {
       auto [ec, n] = socket.impl_->write_some(buffer);
       socket.get_executor().deregister_fd(socket.native_handle());
+
+      // Cancel timeout timer
+      op.cleanup_timer();
+
       op.complete(ec, n);
     }
   };

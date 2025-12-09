@@ -44,50 +44,74 @@ class tcp_socket {
 
   /// Connect to remote endpoint (coroutine-based)
   struct [[nodiscard]] async_connect_op : awaitable_op<void> {
-    async_connect_op(tcp_socket& s, ip::tcp_endpoint ep);
+    async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
+                     std::chrono::milliseconds timeout = {},
+                     std::stop_token stop = {});
 
    protected:
     void start_operation() override;
 
    private:
+    void cleanup_timer();
+
     tcp_socket& socket_;
     ip::tcp_endpoint endpoint_;
+    std::chrono::milliseconds timeout_;
+    uint64_t timer_id_ = 0;
   };
 
-  auto async_connect(ip::tcp_endpoint ep) -> async_connect_op {
-    return async_connect_op{*this, ep};
+  auto async_connect(ip::tcp_endpoint ep,
+                    std::chrono::milliseconds timeout = {},
+                    std::stop_token stop = {}) -> async_connect_op {
+    return async_connect_op{*this, ep, timeout, std::move(stop)};
   }
 
   /// Read some data (coroutine-based)
   struct [[nodiscard]] async_read_some_op : awaitable_op<std::size_t> {
-    async_read_some_op(tcp_socket& s, std::span<char> buf);
+    async_read_some_op(tcp_socket& s, std::span<char> buf,
+                       std::chrono::milliseconds timeout = {},
+                       std::stop_token stop = {});
 
    protected:
     void start_operation() override;
 
    private:
+    void cleanup_timer();
+
     tcp_socket& socket_;
     std::span<char> buffer_;
+    std::chrono::milliseconds timeout_;
+    uint64_t timer_id_ = 0;
   };
 
-  auto async_read_some(std::span<char> buffer) -> async_read_some_op {
-    return async_read_some_op{*this, buffer};
+  auto async_read_some(std::span<char> buffer,
+                       std::chrono::milliseconds timeout = {},
+                       std::stop_token stop = {}) -> async_read_some_op {
+    return async_read_some_op{*this, buffer, timeout, std::move(stop)};
   }
 
   /// Write some data (coroutine-based)
   struct [[nodiscard]] async_write_some_op : awaitable_op<std::size_t> {
-    async_write_some_op(tcp_socket& s, std::span<char const> buf);
+    async_write_some_op(tcp_socket& s, std::span<char const> buf,
+                        std::chrono::milliseconds timeout = {},
+                        std::stop_token stop = {});
 
    protected:
     void start_operation() override;
 
    private:
+    void cleanup_timer();
+
     tcp_socket& socket_;
     std::span<char const> buffer_;
+    std::chrono::milliseconds timeout_;
+    uint64_t timer_id_ = 0;
   };
 
-  auto async_write_some(std::span<char const> buffer) -> async_write_some_op {
-    return async_write_some_op{*this, buffer};
+  auto async_write_some(std::span<char const> buffer,
+                        std::chrono::milliseconds timeout = {},
+                        std::stop_token stop = {}) -> async_write_some_op {
+    return async_write_some_op{*this, buffer, timeout, std::move(stop)};
   }
 
   /// Socket options
@@ -110,20 +134,24 @@ class tcp_socket {
 /// Free functions for full read/write operations
 
 /// Read exactly n bytes
-inline auto async_read(tcp_socket& s, std::span<char> buffer) -> task<void> {
+inline auto async_read(tcp_socket& s, std::span<char> buffer,
+                       std::chrono::milliseconds timeout = {},
+                       std::stop_token stop = {}) -> task<void> {
   std::size_t total = 0;
   while (total < buffer.size()) {
-    auto n = co_await s.async_read_some(buffer.subspan(total));
+    auto n = co_await s.async_read_some(buffer.subspan(total), timeout, stop);
     if (n == 0) throw std::system_error(make_error_code(error::eof));
     total += n;
   }
 }
 
 /// Write all data
-inline auto async_write(tcp_socket& s, std::span<char const> buffer) -> task<void> {
+inline auto async_write(tcp_socket& s, std::span<char const> buffer,
+                        std::chrono::milliseconds timeout = {},
+                        std::stop_token stop = {}) -> task<void> {
   std::size_t total = 0;
   while (total < buffer.size()) {
-    auto n = co_await s.async_write_some(buffer.subspan(total));
+    auto n = co_await s.async_write_some(buffer.subspan(total), timeout, stop);
     total += n;
   }
 }
