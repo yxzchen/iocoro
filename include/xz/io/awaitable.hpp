@@ -19,7 +19,7 @@ class awaitable_op {
  public:
   awaitable_op() = default;
   explicit awaitable_op(std::stop_token stop) : stop_token_(std::move(stop)) {}
-  virtual ~awaitable_op() noexcept { stop_callback_.reset(); }
+  virtual ~awaitable_op() noexcept = default;
 
   auto await_ready() noexcept -> bool { return ready_; }
 
