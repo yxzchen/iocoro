@@ -9,6 +9,9 @@ enum class error {
   /// Operation cancelled
   operation_aborted = 1,
 
+  /// Operation cancelled
+  operation_failed = 1,
+
   /// Connection refused
   connection_refused,
 
