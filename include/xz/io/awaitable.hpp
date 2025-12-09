@@ -92,25 +92,4 @@ class awaitable_op {
   [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, std::optional<Result>> result_{};
 };
 
-// Forward declaration for async_io_operation
-class tcp_socket;
-class io_context;
-
-/// CRTP base class for async I/O operations with timeout support
-/// Implementation is inline in tcp_socket.hpp after tcp_socket is fully defined
-template <typename Derived, typename Result>
-class async_io_operation : public awaitable_op<Result> {
- protected:
-  tcp_socket& socket_;
-  std::chrono::milliseconds timeout_;
-  detail::timer_handle timer_handle_;
-
-  void setup_timeout();
-  void cleanup_timer();
-
- public:
-  async_io_operation(tcp_socket& s, std::chrono::milliseconds timeout, std::stop_token stop)
-      : awaitable_op<Result>(std::move(stop)), socket_(s), timeout_(timeout) {}
-};
-
 }  // namespace xz::io

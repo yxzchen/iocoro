@@ -278,7 +278,7 @@ auto tcp_socket::remote_endpoint() const -> expected<ip::tcp_endpoint, std::erro
 tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
                                                 std::chrono::milliseconds timeout,
                                                 std::stop_token stop)
-    : async_io_operation<async_connect_op, void>(s, timeout, std::move(stop)), endpoint_(ep) {}
+    : async_io_operation<void>(s, timeout, std::move(stop)), endpoint_(ep) {}
 
 void tcp_socket::async_connect_op::start_operation() {
   if (stop_requested()) {
@@ -327,7 +327,7 @@ void tcp_socket::async_connect_op::start_operation() {
 tcp_socket::async_read_some_op::async_read_some_op(tcp_socket& s, std::span<char> buf,
                                                     std::chrono::milliseconds timeout,
                                                     std::stop_token stop)
-    : async_io_operation<async_read_some_op, std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
+    : async_io_operation<std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
 
 void tcp_socket::async_read_some_op::start_operation() {
   if (stop_requested()) {
@@ -378,7 +378,7 @@ void tcp_socket::async_read_some_op::start_operation() {
 tcp_socket::async_write_some_op::async_write_some_op(tcp_socket& s, std::span<char const> buf,
                                                       std::chrono::milliseconds timeout,
                                                       std::stop_token stop)
-    : async_io_operation<async_write_some_op, std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
+    : async_io_operation<std::size_t>(s, timeout, std::move(stop)), buffer_(buf) {}
 
 void tcp_socket::async_write_some_op::start_operation() {
   if (stop_requested()) {
