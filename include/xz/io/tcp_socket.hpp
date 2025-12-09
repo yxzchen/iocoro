@@ -4,6 +4,7 @@
 #include <xz/io/expected.hpp>
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
+#include <xz/io/detail/tcp_socket_impl.hpp>
 
 #include <chrono>
 #include <memory>
@@ -11,10 +12,6 @@
 #include <system_error>
 
 namespace xz::io {
-
-namespace detail {
-class tcp_socket_impl;
-}
 
 // Forward declaration
 class tcp_socket;
