@@ -4,13 +4,8 @@
 #include <xz/io/io_context.hpp>
 
 #include <chrono>
-#include <memory>
 
 namespace xz::io {
-
-namespace detail {
-class steady_timer_impl;
-}
 
 /// A timer based on steady_clock
 class steady_timer {
@@ -18,24 +13,29 @@ class steady_timer {
   using duration = std::chrono::steady_clock::duration;
   using time_point = std::chrono::steady_clock::time_point;
 
-  explicit steady_timer(io_context& ctx);
-  ~steady_timer();
+  explicit steady_timer(io_context& ctx) : ctx_(ctx) {}
+  ~steady_timer() = default;
 
   // Non-copyable, movable
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
-  steady_timer(steady_timer&&) noexcept;
-  auto operator=(steady_timer&&) noexcept -> steady_timer&;
+  steady_timer(steady_timer&&) noexcept = default;
+  auto operator=(steady_timer&&) noexcept -> steady_timer& = default;
 
   /// Get the associated io_context
-  auto get_executor() noexcept -> io_context&;
+  auto get_executor() noexcept -> io_context& { return ctx_; }
 
   /// Cancel the timer
-  void cancel();
+  void cancel() {
+    if (timer_handle_) {
+      ctx_.cancel_timer(timer_handle_);
+      timer_handle_.reset();
+    }
+  }
 
   /// Async wait operation
   struct [[nodiscard]] async_wait_op : awaitable_op<void> {
-    async_wait_op(steady_timer& t, duration d);
+    async_wait_op(steady_timer& t, duration d) : timer_(t), duration_(d) {}
 
    protected:
     void start_operation() override;
@@ -58,7 +58,8 @@ class steady_timer {
 
  private:
   friend struct async_wait_op;
-  std::unique_ptr<detail::steady_timer_impl> impl_;
+  io_context& ctx_;
+  detail::timer_handle timer_handle_;
 };
 
 }  // namespace xz::io
