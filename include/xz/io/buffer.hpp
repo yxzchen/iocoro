@@ -17,7 +17,6 @@ class dynamic_buffer {
  public:
   explicit dynamic_buffer(std::size_t initial_capacity = 8192) { storage_.reserve(initial_capacity); }
 
-  // Capacity management
   [[nodiscard]] auto capacity() const noexcept -> std::size_t { return storage_.capacity(); }
   [[nodiscard]] auto size() const noexcept -> std::size_t { return write_pos_ - read_pos_; }
   [[nodiscard]] auto empty() const noexcept -> bool { return read_pos_ == write_pos_; }
@@ -28,7 +27,6 @@ class dynamic_buffer {
     }
   }
 
-  // Reading interface
   [[nodiscard]] auto data() const noexcept -> char const* { return storage_.data() + read_pos_; }
   [[nodiscard]] auto readable() const noexcept -> std::span<char const> {
     return {storage_.data() + read_pos_, size()};
@@ -38,27 +36,33 @@ class dynamic_buffer {
 
   void consume(std::size_t n) noexcept {
     read_pos_ = std::min(read_pos_ + n, write_pos_);
+    if (read_pos_ == write_pos_) {
+      read_pos_ = write_pos_ = 0;
+    }
     if (read_pos_ > (storage_.capacity() >> 1)) {
       compact();
     }
   }
 
-  // Writing interface
   [[nodiscard]] auto prepare(std::size_t n) -> std::span<char> {
     if (write_pos_ + n > storage_.capacity()) {
       compact();
 
       if (write_pos_ + n > storage_.capacity()) {
         auto new_cap = std::max(storage_.capacity() * 2, write_pos_ + n);
-        storage_.resize(new_cap);
+        storage_.reserve(new_cap);
       }
     }
+
+    if (write_pos_ + n > storage_.size()) {
+      storage_.resize(write_pos_ + n);
+    }
+
     return {storage_.data() + write_pos_, n};
   }
 
-  void commit(std::size_t n) noexcept { write_pos_ = std::min(write_pos_ + n, storage_.size()); }
+  void commit(std::size_t n) noexcept { write_pos_ += n; }
 
-  // Convenience methods
   void append(std::span<char const> data) {
     auto buf = prepare(data.size());
     std::memcpy(buf.data(), data.data(), data.size());
@@ -119,7 +123,7 @@ class static_buffer {
     return {storage_.data() + write_pos_, n};
   }
 
-  void commit(std::size_t n) noexcept { write_pos_ = std::min(write_pos_ + n, N); }
+  void commit(std::size_t n) noexcept { write_pos_ += n; }
 
   void clear() noexcept {
     read_pos_ = 0;
