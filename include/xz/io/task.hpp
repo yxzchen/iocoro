@@ -2,9 +2,9 @@
 
 #include <coroutine>
 #include <exception>
+#include <optional>
 #include <type_traits>
 #include <utility>
-#include <variant>
 
 namespace xz::io {
 
@@ -37,14 +37,14 @@ struct task_promise_base {
 /// Promise type for non-void tasks
 template <typename T>
 struct task_promise : task_promise_base<task_promise<T>> {
-  T value_;
+  std::optional<T> value_;
 
   auto get_return_object() -> auto;
 
   template <typename U>
     requires std::convertible_to<U, T>
   void return_value(U&& value) {
-    value_ = std::forward<U>(value);
+    value_.emplace(std::forward<U>(value));
   }
 };
 
@@ -95,7 +95,7 @@ class task {
       std::rethrow_exception(coro_.promise().exception_);
     }
     if constexpr (!std::is_void_v<T>) {
-      return std::move(coro_.promise().value_);
+      return std::move(*coro_.promise().value_);
     }
   }
 
