@@ -11,20 +11,17 @@
 namespace xz::io::detail {
 
 io_context_impl::io_context_impl() {
-  // Create epoll instance
   epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
   if (epoll_fd_ < 0) {
     throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
   }
 
-  // Create eventfd for wakeup
   eventfd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (eventfd_ < 0) {
     ::close(epoll_fd_);
     throw std::system_error(errno, std::generic_category(), "eventfd failed");
   }
 
-  // Add eventfd to epoll
   epoll_event ev{};
   ev.events = EPOLLIN | EPOLLET;
   ev.data.fd = eventfd_;
@@ -202,25 +199,19 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
 
   std::size_t count = 0;
 
-  // Process timers
   process_timers();
-
-  // Process posted operations
   process_posted();
 
-  // Process I/O events
   for (int i = 0; i < nfds; ++i) {
     int fd = events[i].data.fd;
     uint32_t ev = events[i].events;
 
-    // Handle eventfd
     if (fd == eventfd_) {
       uint64_t value;
       [[maybe_unused]] auto _ = ::read(eventfd_, &value, sizeof(value));
       continue;
     }
 
-    // Get operations
     std::unique_ptr<io_context::operation_base> read_op;
     std::unique_ptr<io_context::operation_base> write_op;
 
@@ -237,7 +228,6 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
       }
     }
 
-    // Execute operations
     if (read_op) {
       read_op->execute();
       ++count;
@@ -313,8 +303,6 @@ void io_context_impl::wakeup() {
 }
 
 }  // namespace xz::io::detail
-
-// io_context implementation
 
 namespace xz::io {
 

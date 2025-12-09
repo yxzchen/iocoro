@@ -11,7 +11,6 @@
 
 namespace xz::io::ip {
 
-// address_v4 implementation
 
 address_v4::address_v4(uint32_t addr) {
   bytes_[0] = (addr >> 24) & 0xFF;
@@ -43,7 +42,6 @@ auto address_v4::to_string() const -> std::string {
   return oss.str();
 }
 
-// address_v6 implementation
 
 auto address_v6::from_string(std::string_view str) -> address_v6 {
   in6_addr addr{};
@@ -75,7 +73,6 @@ auto address_v6::to_string() const -> std::string {
   return buf;
 }
 
-// tcp_endpoint implementation
 
 auto tcp_endpoint::to_string() const -> std::string {
   std::ostringstream oss;

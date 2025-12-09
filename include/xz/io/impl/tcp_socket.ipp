@@ -46,21 +46,18 @@ auto tcp_socket_impl::set_nonblocking() -> std::error_code {
 }
 
 auto tcp_socket_impl::create_and_connect(ip::tcp_endpoint const& ep) -> std::error_code {
-  // Create socket
   int family = ep.is_v6() ? AF_INET6 : AF_INET;
   fd_ = ::socket(family, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (fd_ < 0) {
     return std::error_code(errno, std::generic_category());
   }
 
-  // Set non-blocking
   if (auto ec = set_nonblocking(); ec) {
     ::close(fd_);
     fd_ = -1;
     return ec;
   }
 
-  // Connect
   if (ep.is_v6()) {
     sockaddr_in6 addr{};
     addr.sin6_family = AF_INET6;
@@ -222,8 +219,6 @@ auto tcp_socket_impl::remote_endpoint() const -> ip::tcp_endpoint {
 
 }  // namespace xz::io::detail
 
-// tcp_socket implementation
-
 namespace xz::io {
 
 tcp_socket::tcp_socket(io_context& ctx) : impl_(std::make_unique<detail::tcp_socket_impl>(ctx)) {}
@@ -254,8 +249,6 @@ auto tcp_socket::local_endpoint() const -> ip::tcp_endpoint { return impl_->loca
 
 auto tcp_socket::remote_endpoint() const -> ip::tcp_endpoint { return impl_->remote_endpoint(); }
 
-// Async operation implementations
-
 tcp_socket::async_connect_op::async_connect_op(tcp_socket& s, ip::tcp_endpoint ep,
                                                 std::chrono::milliseconds timeout,
                                                 std::stop_token stop)
@@ -269,7 +262,6 @@ void tcp_socket::async_connect_op::cleanup_timer() {
 }
 
 void tcp_socket::async_connect_op::start_operation() {
-  // Check if already cancelled
   if (stop_requested()) {
     complete(make_error_code(error::operation_aborted));
     return;
@@ -281,17 +273,14 @@ void tcp_socket::async_connect_op::start_operation() {
     return;
   }
 
-  // Setup timeout if specified
   if (timeout_.count() > 0) {
     timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
-      // Timeout fired - cancel the connect
       socket_.get_executor().deregister_fd(socket_.native_handle());
       timer_id_ = 0;
       complete(make_error_code(error::timeout));
     });
   }
 
-  // Register for write events (connection completion)
   struct connect_operation : io_context::operation_base {
     tcp_socket& socket;
     tcp_socket::async_connect_op& op;
@@ -299,14 +288,11 @@ void tcp_socket::async_connect_op::start_operation() {
     connect_operation(tcp_socket& s, tcp_socket::async_connect_op& o) : socket(s), op(o) {}
 
     void execute() override {
-      // Check connection status
       int error = 0;
       socklen_t len = sizeof(error);
       ::getsockopt(socket.native_handle(), SOL_SOCKET, SO_ERROR, &error, &len);
 
       socket.get_executor().deregister_fd(socket.native_handle());
-
-      // Cancel timeout timer
       op.cleanup_timer();
 
       if (error) {
@@ -335,20 +321,17 @@ void tcp_socket::async_read_some_op::cleanup_timer() {
 }
 
 void tcp_socket::async_read_some_op::start_operation() {
-  // Check if already cancelled
   if (stop_requested()) {
     complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }
 
-  // Try immediate read
   auto [ec, n] = socket_.impl_->read_some(buffer_);
   if (!ec || ec != make_error_code(error::operation_aborted)) {
     complete(ec, n);
     return;
   }
 
-  // Setup timeout if specified
   if (timeout_.count() > 0) {
     timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
       socket_.get_executor().deregister_fd(socket_.native_handle());
@@ -357,7 +340,6 @@ void tcp_socket::async_read_some_op::start_operation() {
     });
   }
 
-  // Register for read events
   struct read_operation : io_context::operation_base {
     tcp_socket& socket;
     std::span<char> buffer;
@@ -369,8 +351,6 @@ void tcp_socket::async_read_some_op::start_operation() {
     void execute() override {
       auto [ec, n] = socket.impl_->read_some(buffer);
       socket.get_executor().deregister_fd(socket.native_handle());
-
-      // Cancel timeout timer
       op.cleanup_timer();
 
       op.complete(ec, n);
@@ -395,20 +375,17 @@ void tcp_socket::async_write_some_op::cleanup_timer() {
 }
 
 void tcp_socket::async_write_some_op::start_operation() {
-  // Check if already cancelled
   if (stop_requested()) {
     complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }
 
-  // Try immediate write
   auto [ec, n] = socket_.impl_->write_some(buffer_);
   if (!ec || ec != make_error_code(error::operation_aborted)) {
     complete(ec, n);
     return;
   }
 
-  // Setup timeout if specified
   if (timeout_.count() > 0) {
     timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
       socket_.get_executor().deregister_fd(socket_.native_handle());
@@ -417,7 +394,6 @@ void tcp_socket::async_write_some_op::start_operation() {
     });
   }
 
-  // Register for write events
   struct write_operation : io_context::operation_base {
     tcp_socket& socket;
     std::span<char const> buffer;
@@ -429,8 +405,6 @@ void tcp_socket::async_write_some_op::start_operation() {
     void execute() override {
       auto [ec, n] = socket.impl_->write_some(buffer);
       socket.get_executor().deregister_fd(socket.native_handle());
-
-      // Cancel timeout timer
       op.cleanup_timer();
 
       op.complete(ec, n);

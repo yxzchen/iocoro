@@ -26,8 +26,8 @@ namespace xz::io {
 ///   returns true to suspend the coroutine. Later, when the I/O completes, complete() is called
 ///   which resumes the suspended coroutine.
 ///
-/// The suspended_ flag prevents calling awaiting_.resume() during synchronous completion,
-/// as the coroutine handle is not yet in a suspended state within await_suspend().
+/// The in_await_suspend_ flag prevents calling awaiting_.resume() while still inside await_suspend(),
+/// as the coroutine handle is not yet in a suspended state until await_suspend() returns.
 template <typename Result = void>
 class awaitable_op {
  public:
@@ -36,28 +36,22 @@ class awaitable_op {
   virtual ~awaitable_op() = default;
 
   auto await_ready() const noexcept -> bool {
-    // Already ready if operation completed or cancellation requested
     return ready_ || stop_requested();
   }
 
-  // Returns false if operation completed synchronously (don't suspend)
-  // Returns true if operation is async (do suspend)
   [[nodiscard]] auto await_suspend(std::coroutine_handle<> h) -> bool {
     awaiting_ = h;
 
-    // Check if already cancelled
     if (stop_requested()) {
       ec_ = make_error_code(error::operation_aborted);
       ready_ = true;
-      return false;  // Don't suspend, operation already cancelled
+      return false;
     }
 
-    in_await_suspend_ = true;  // Mark that we're inside await_suspend()
+    in_await_suspend_ = true;
 
-    // Install stop callback before starting operation
     if (stop_token_) {
       stop_callback_.emplace(*stop_token_, [this]() {
-        // Cancellation requested - complete with operation_aborted
         if constexpr (std::is_void_v<Result>) {
           complete(make_error_code(error::operation_aborted));
         } else {
@@ -68,14 +62,12 @@ class awaitable_op {
 
     start_operation();
 
-    in_await_suspend_ = false;  // Now we've returned from start_operation()
+    in_await_suspend_ = false;
 
     if (ready_) {
-      // Operation completed synchronously - don't suspend
-      stop_callback_.reset();  // Cancel the stop callback
+      stop_callback_.reset();
       return false;
     }
-    // Operation is async - suspend and wait for complete() to resume us
     return true;
   }
 
@@ -103,8 +95,6 @@ class awaitable_op {
   virtual void start_operation() = 0;
 
   /// Complete the operation with the given result
-  /// Can be called from start_operation() (synchronous) or later (asynchronous)
-  /// Only resumes the coroutine if we've exited await_suspend()
   /// For non-void Result types, result value must always be provided (use Result{} for errors)
   template <typename... Args>
   void complete(std::error_code ec, Args&&... args) {
@@ -115,8 +105,6 @@ class awaitable_op {
       result_ = Result{std::forward<Args>(args)...};
     }
     ready_ = true;
-    // Only resume if we've exited await_suspend()
-    // For sync completion, await_suspend() will return false instead
     if (!in_await_suspend_ && awaiting_) {
       awaiting_.resume();
     }

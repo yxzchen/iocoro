@@ -18,7 +18,6 @@ auto steady_timer_impl::wait(steady_timer::duration d) -> std::error_code {
 
 }  // namespace xz::io::detail
 
-// steady_timer implementation
 
 namespace xz::io {
 
@@ -35,7 +34,6 @@ auto steady_timer::get_executor() noexcept -> io_context& { return impl_->get_ex
 
 void steady_timer::cancel() { impl_->cancel(); }
 
-// Async operation implementation
 
 steady_timer::async_wait_op::async_wait_op(steady_timer& t, duration d)
     : timer_(t), duration_(d) {}
