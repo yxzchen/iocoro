@@ -71,15 +71,6 @@ void buffer_example() {
   // Consume some data
   buf.consume(7);
   std::cout << "After consuming 7 bytes: " << buf.view() << std::endl;
-
-  // Static buffer
-  static_buffer<64> small_buf;
-  auto span = small_buf.prepare(5);
-  std::memcpy(span.data(), "Test", 4);
-  small_buf.commit(4);
-
-  auto readable = small_buf.readable();
-  std::cout << "Static buffer: " << std::string_view{readable.data(), readable.size()} << std::endl;
 }
 
 // Example 4: IP address parsing

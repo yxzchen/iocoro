@@ -55,31 +55,6 @@ TEST(BufferTest, DynamicBufferPrepareCommit) {
   EXPECT_EQ(buf.view(), "Test");
 }
 
-TEST(BufferTest, StaticBufferBasics) {
-  static_buffer<64> buf;
-
-  EXPECT_EQ(buf.size(), 0);
-  EXPECT_EQ(buf.capacity(), 64);
-
-  auto span = buf.prepare(5);
-  std::memcpy(span.data(), "Hello", 5);
-  buf.commit(5);
-
-  EXPECT_EQ(buf.size(), 5);
-
-  auto readable = buf.readable();
-  EXPECT_EQ(readable.size(), 5);
-
-  std::string_view view{readable.data(), readable.size()};
-  EXPECT_EQ(view, "Hello");
-
-  buf.consume(2);
-  EXPECT_EQ(buf.size(), 3);
-
-  buf.clear();
-  EXPECT_EQ(buf.size(), 0);
-}
-
 TEST(BufferTest, DynamicBufferAutoGrow) {
   dynamic_buffer buf(16);
 

@@ -16,3 +16,7 @@ make_test(io_test)
 add_executable(io_modern_test io_modern_test.cpp)
 target_compile_options(io_modern_test PRIVATE -fcoroutines)
 target_link_libraries(io_modern_test PRIVATE ioxz)
+
+add_executable(redis_client redis_client.cpp)
+target_compile_options(redis_client PRIVATE -fcoroutines)
+target_link_libraries(redis_client PRIVATE ioxz)
