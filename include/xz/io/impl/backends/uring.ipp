@@ -1,8 +1,7 @@
 
 #include <xz/io/detail/io_context_impl.hpp>
 
-#ifdef IOXZ_HAS_URING
-// Use io_uring implementation
+#include <liburing.h>
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -291,6 +290,3 @@ void io_context_impl::submit_nop() {
 }
 
 }  // namespace xz::io::detail
-
-
-#endif  // IOXZ_HAS_URING
