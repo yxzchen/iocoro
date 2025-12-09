@@ -1,6 +1,6 @@
 #pragma once
 
-#include <xz/io/detail/io_context_impl_epoll.hpp>
+#include <xz/io/detail/io_context_impl.hpp>
 
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -10,7 +10,7 @@
 
 namespace xz::io::detail {
 
-io_context_impl_epoll::io_context_impl_epoll() {
+io_context_impl::io_context_impl() {
   epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
   if (epoll_fd_ < 0) {
     throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
@@ -34,12 +34,12 @@ io_context_impl_epoll::io_context_impl_epoll() {
   owner_thread_.store({}, std::memory_order_release);
 }
 
-io_context_impl_epoll::~io_context_impl_epoll() {
+io_context_impl::~io_context_impl() {
   if (eventfd_ >= 0) ::close(eventfd_);
   if (epoll_fd_ >= 0) ::close(epoll_fd_);
 }
 
-auto io_context_impl_epoll::run() -> std::size_t {
+auto io_context_impl::run() -> std::size_t {
   stopped_.store(false, std::memory_order_release);
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
 
@@ -51,12 +51,12 @@ auto io_context_impl_epoll::run() -> std::size_t {
   return count;
 }
 
-auto io_context_impl_epoll::run_one() -> std::size_t {
+auto io_context_impl::run_one() -> std::size_t {
   auto timeout = get_timeout();
   return process_events(timeout);
 }
 
-auto io_context_impl_epoll::run_for(std::chrono::milliseconds timeout) -> std::size_t {
+auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
   stopped_.store(false, std::memory_order_release);
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
 
@@ -74,16 +74,16 @@ auto io_context_impl_epoll::run_for(std::chrono::milliseconds timeout) -> std::s
   return count;
 }
 
-void io_context_impl_epoll::stop() {
+void io_context_impl::stop() {
   stopped_.store(true, std::memory_order_release);
   wakeup();
 }
 
-void io_context_impl_epoll::restart() {
+void io_context_impl::restart() {
   stopped_.store(false, std::memory_order_release);
 }
 
-void io_context_impl_epoll::post(std::function<void()> f) {
+void io_context_impl::post(std::function<void()> f) {
   {
     std::lock_guard lock(posted_mutex_);
     posted_operations_.push(std::move(f));
@@ -91,7 +91,7 @@ void io_context_impl_epoll::post(std::function<void()> f) {
   wakeup();
 }
 
-void io_context_impl_epoll::dispatch(std::function<void()> f) {
+void io_context_impl::dispatch(std::function<void()> f) {
   if (owner_thread_.load(std::memory_order_acquire) == std::this_thread::get_id()) {
     f();
   } else {
@@ -99,7 +99,7 @@ void io_context_impl_epoll::dispatch(std::function<void()> f) {
   }
 }
 
-void io_context_impl_epoll::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
   epoll_event ev{
@@ -116,7 +116,7 @@ void io_context_impl_epoll::register_fd_read(int fd, std::unique_ptr<io_context:
   }
 }
 
-void io_context_impl_epoll::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
   epoll_event ev{
@@ -133,7 +133,7 @@ void io_context_impl_epoll::register_fd_write(int fd, std::unique_ptr<io_context
   }
 }
 
-void io_context_impl_epoll::register_fd_readwrite(int fd, std::unique_ptr<io_context::operation_base> read_op,
+void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::operation_base> read_op,
                                             std::unique_ptr<io_context::operation_base> write_op) {
   std::lock_guard lock(fd_mutex_);
 
@@ -155,14 +155,14 @@ void io_context_impl_epoll::register_fd_readwrite(int fd, std::unique_ptr<io_con
   }
 }
 
-void io_context_impl_epoll::deregister_fd(int fd) {
+void io_context_impl::deregister_fd(int fd) {
   std::lock_guard lock(fd_mutex_);
 
   ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   fd_operations_.erase(fd);
 }
 
-auto io_context_impl_epoll::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
+auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
     -> timer_handle {
   std::lock_guard lock(timer_mutex_);
 
@@ -176,13 +176,13 @@ auto io_context_impl_epoll::schedule_timer(std::chrono::milliseconds timeout, st
   return handle;
 }
 
-void io_context_impl_epoll::cancel_timer(timer_handle handle) {
+void io_context_impl::cancel_timer(timer_handle handle) {
   if (handle) {
     handle->cancelled.store(true, std::memory_order_release);
   }
 }
 
-auto io_context_impl_epoll::process_events(std::chrono::milliseconds timeout) -> std::size_t {
+auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::size_t {
   constexpr int max_events = 64;
   epoll_event events[max_events];
 
@@ -238,7 +238,7 @@ auto io_context_impl_epoll::process_events(std::chrono::milliseconds timeout) ->
   return count;
 }
 
-void io_context_impl_epoll::process_timers() {
+void io_context_impl::process_timers() {
   std::lock_guard lock(timer_mutex_);
 
   auto const now = std::chrono::steady_clock::now();
@@ -247,23 +247,18 @@ void io_context_impl_epoll::process_timers() {
     auto handle = timers_.top();
     timers_.pop();
 
-    // Skip cancelled timers
     if (handle->cancelled.load(std::memory_order_acquire)) {
       continue;
     }
 
-    // Extract callback to execute outside the lock
     auto callback = std::move(handle->callback);
     timer_mutex_.unlock();
-
-    // Execute callback - if it throws, mutex is already unlocked
     callback();
-
     timer_mutex_.lock();
   }
 }
 
-void io_context_impl_epoll::process_posted() {
+void io_context_impl::process_posted() {
   std::queue<std::function<void()>> ops;
 
   {
@@ -277,7 +272,7 @@ void io_context_impl_epoll::process_posted() {
   }
 }
 
-auto io_context_impl_epoll::get_timeout() const -> std::chrono::milliseconds {
+auto io_context_impl::get_timeout() const -> std::chrono::milliseconds {
   std::lock_guard lock(timer_mutex_);
 
   if (timers_.empty()) {
@@ -294,9 +289,10 @@ auto io_context_impl_epoll::get_timeout() const -> std::chrono::milliseconds {
   return std::chrono::duration_cast<std::chrono::milliseconds>(next - now);
 }
 
-void io_context_impl_epoll::wakeup() {
+void io_context_impl::wakeup() {
   uint64_t value = 1;
   [[maybe_unused]] auto _ = ::write(eventfd_, &value, sizeof(value));
 }
 
 }  // namespace xz::io::detail
+

@@ -2,18 +2,21 @@
 
 #include <xz/io/io_context.hpp>
 
-#include <sys/epoll.h>
-
 #include <atomic>
 #include <chrono>
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+#ifdef IOXZ_HAS_URING
+#include <liburing.h>
+#else
+#include <sys/epoll.h>
+#endif
 
 namespace xz::io::detail {
 
@@ -30,6 +33,7 @@ struct timer_entry {
 
 using timer_handle = std::shared_ptr<timer_entry>;
 
+/// io_context implementation - uses io_uring if available, otherwise epoll
 class io_context_impl {
  public:
   io_context_impl();
@@ -46,7 +50,11 @@ class io_context_impl {
   void post(std::function<void()> f);
   void dispatch(std::function<void()> f);
 
+#ifdef IOXZ_HAS_URING
+  auto native_handle() const noexcept -> int { return ring_.ring_fd; }
+#else
   auto native_handle() const noexcept -> int { return epoll_fd_; }
+#endif
 
   void register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op);
   void register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op);
@@ -62,10 +70,15 @@ class io_context_impl {
   void process_timers();
   void process_posted();
   auto get_timeout() const -> std::chrono::milliseconds;
-  void wakeup();
 
+#ifdef IOXZ_HAS_URING
+  void submit_nop();  // Wake up io_uring
+  struct io_uring ring_;
+#else
+  void wakeup();  // Wake up epoll
   int epoll_fd_ = -1;
   int eventfd_ = -1;
+#endif
 
   std::atomic<bool> stopped_{false};
   std::atomic<std::thread::id> owner_thread_;

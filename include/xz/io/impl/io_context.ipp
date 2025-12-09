@@ -1,17 +1,10 @@
 #pragma once
 
-#include <xz/io/detail/io_context_impl_base.hpp>
-#include <xz/io/impl/io_context_impl_epoll.ipp>
-
-#ifdef IOXZ_HAS_URING
-#include <xz/io/impl/io_context_impl_uring.ipp>
-#endif
-
-#include <xz/io/impl/io_context_impl_factory.ipp>
+#include <xz/io/impl/io_context_impl.ipp>
 
 namespace xz::io {
 
-io_context::io_context() : impl_(detail::make_io_context_impl()) {}
+io_context::io_context() : impl_(std::make_unique<detail::io_context_impl>()) {}
 
 io_context::~io_context() = default;
 
