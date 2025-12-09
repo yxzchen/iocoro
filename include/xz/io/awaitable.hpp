@@ -33,36 +33,42 @@ class awaitable_op {
  public:
   awaitable_op() = default;
   explicit awaitable_op(std::stop_token stop) : stop_token_(std::move(stop)) {}
+  virtual ~awaitable_op() = default;
 
   auto await_ready() const noexcept -> bool {
     // Already ready if operation completed or cancellation requested
-    return ready_ || (stop_token_ && stop_token_->stop_requested());
+    return ready_ || stop_requested();
   }
 
   // Returns false if operation completed synchronously (don't suspend)
   // Returns true if operation is async (do suspend)
-  auto await_suspend(std::coroutine_handle<> h) -> bool {
+  [[nodiscard]] auto await_suspend(std::coroutine_handle<> h) -> bool {
     awaiting_ = h;
 
     // Check if already cancelled
-    if (stop_token_ && stop_token_->stop_requested()) {
+    if (stop_requested()) {
       ec_ = make_error_code(error::operation_aborted);
       ready_ = true;
       return false;  // Don't suspend, operation already cancelled
     }
 
-    suspended_ = false;  // Mark that we're still in start_operation()
+    in_await_suspend_ = true;  // Mark that we're inside await_suspend()
 
     // Install stop callback before starting operation
     if (stop_token_) {
       stop_callback_.emplace(*stop_token_, [this]() {
         // Cancellation requested - complete with operation_aborted
-        complete(make_error_code(error::operation_aborted));
+        if constexpr (std::is_void_v<Result>) {
+          complete(make_error_code(error::operation_aborted));
+        } else {
+          complete(make_error_code(error::operation_aborted), Result{});
+        }
       });
     }
 
     start_operation();
-    suspended_ = true;   // Now we've returned from start_operation()
+
+    in_await_suspend_ = false;  // Now we've returned from start_operation()
 
     if (ready_) {
       // Operation completed synchronously - don't suspend
@@ -74,7 +80,8 @@ class awaitable_op {
   }
 
   auto await_resume() {
-    stop_callback_.reset();  // Clean up stop callback
+    // Don't reset stop_callback_ here - let destructor handle it
+    // to avoid potential issues if called from within the callback
     if (ec_) throw std::system_error(ec_);
     if constexpr (!std::is_void_v<Result>) {
       return std::move(result_);
@@ -97,17 +104,20 @@ class awaitable_op {
 
   /// Complete the operation with the given result
   /// Can be called from start_operation() (synchronous) or later (asynchronous)
-  /// Only resumes the coroutine if suspended_ is true (async completion)
+  /// Only resumes the coroutine if we've exited await_suspend()
+  /// For non-void Result types, result value must always be provided (use Result{} for errors)
   template <typename... Args>
   void complete(std::error_code ec, Args&&... args) {
+    static_assert(std::is_void_v<Result> || sizeof...(Args) > 0,
+                  "Non-void Result requires result value in complete()");
     ec_ = ec;
     if constexpr (sizeof...(Args) > 0 && !std::is_void_v<Result>) {
       result_ = Result{std::forward<Args>(args)...};
     }
     ready_ = true;
-    // Only resume if we're actually suspended (async completion)
+    // Only resume if we've exited await_suspend()
     // For sync completion, await_suspend() will return false instead
-    if (suspended_ && awaiting_) {
+    if (!in_await_suspend_ && awaiting_) {
       awaiting_.resume();
     }
   }
@@ -115,7 +125,7 @@ class awaitable_op {
   std::coroutine_handle<> awaiting_;
   std::error_code ec_;
   bool ready_ = false;
-  bool suspended_ = false;
+  bool in_await_suspend_ = false;
   std::optional<std::stop_token> stop_token_;
   std::optional<std::stop_callback<std::function<void()>>> stop_callback_;
 

@@ -337,7 +337,7 @@ void tcp_socket::async_read_some_op::cleanup_timer() {
 void tcp_socket::async_read_some_op::start_operation() {
   // Check if already cancelled
   if (stop_requested()) {
-    complete(make_error_code(error::operation_aborted), 0);
+    complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }
 
@@ -353,7 +353,7 @@ void tcp_socket::async_read_some_op::start_operation() {
     timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
       socket_.get_executor().deregister_fd(socket_.native_handle());
       timer_id_ = 0;
-      complete(make_error_code(error::timeout), 0);
+      complete(make_error_code(error::timeout), std::size_t{0});
     });
   }
 
@@ -397,7 +397,7 @@ void tcp_socket::async_write_some_op::cleanup_timer() {
 void tcp_socket::async_write_some_op::start_operation() {
   // Check if already cancelled
   if (stop_requested()) {
-    complete(make_error_code(error::operation_aborted), 0);
+    complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }
 
@@ -413,7 +413,7 @@ void tcp_socket::async_write_some_op::start_operation() {
     timer_id_ = socket_.get_executor().schedule_timer(timeout_, [this]() {
       socket_.get_executor().deregister_fd(socket_.native_handle());
       timer_id_ = 0;
-      complete(make_error_code(error::timeout), 0);
+      complete(make_error_code(error::timeout), std::size_t{0});
     });
   }
 
