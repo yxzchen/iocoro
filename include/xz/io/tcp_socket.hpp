@@ -4,7 +4,6 @@
 #include <xz/io/expected.hpp>
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
-#include <xz/io/detail/tcp_socket_impl.hpp>
 
 #include <chrono>
 #include <memory>
@@ -12,6 +11,12 @@
 #include <system_error>
 
 namespace xz::io {
+
+namespace detail {
+class tcp_socket_impl;
+struct timer_entry;
+using timer_handle = std::shared_ptr<timer_entry>;
+}
 
 // Forward declaration
 class tcp_socket;
@@ -158,41 +163,6 @@ inline auto async_write(tcp_socket& s, std::span<char const> buffer,
   while (total < buffer.size()) {
     auto n = co_await s.async_write_some(buffer.subspan(total), timeout, stop);
     total += n;
-  }
-}
-
-/// Inline implementation of async_io_operation methods
-template <typename Result>
-void async_io_operation<Result>::setup_timeout() {
-  if (timeout_.count() > 0) {
-    auto socket_impl = get_socket_impl();
-    if (!socket_impl) return;
-
-    timer_handle_ = socket_impl->get_executor().schedule_timer(
-        timeout_,
-        [this, weak_socket_impl = socket_impl_]() {
-          auto socket_impl = weak_socket_impl.lock();
-          if (!socket_impl) return;
-
-          socket_impl->get_executor().deregister_fd(socket_impl->native_handle());
-          timer_handle_.reset();
-          if constexpr (std::is_void_v<Result>) {
-            this->complete(make_error_code(error::timeout));
-          } else {
-            this->complete(make_error_code(error::timeout), Result{});
-          }
-        });
-  }
-}
-
-template <typename Result>
-void async_io_operation<Result>::cleanup_timer() {
-  if (timer_handle_) {
-    auto socket_impl = get_socket_impl();
-    if (socket_impl) {
-      socket_impl->get_executor().cancel_timer(timer_handle_);
-    }
-    timer_handle_.reset();
   }
 }
 
