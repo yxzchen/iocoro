@@ -1,7 +1,5 @@
 #pragma once
 
-#include <xz/io/detail/io_context_impl.hpp>
-
 #include <atomic>
 #include <chrono>
 #include <coroutine>
@@ -12,6 +10,12 @@
 #include <system_error>
 
 namespace xz::io {
+
+namespace detail {
+class io_context_impl;
+struct timer_entry;
+using timer_handle = std::shared_ptr<timer_entry>;
+}
 
 /// The execution context for asynchronous I/O operations
 class io_context {

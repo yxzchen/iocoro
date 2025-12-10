@@ -380,7 +380,14 @@ void tcp_socket::async_read_some_op::start_operation() {
       if (!socket_impl_ptr) return;
 
       auto result = socket_impl_ptr->read_some(buffer);
-      socket_impl_ptr->get_executor().deregister_fd(socket_impl_ptr->native_handle());
+
+      if (result.error() == std::errc::operation_would_block) {
+        socket_impl_ptr->get_executor().register_fd_read(
+            socket_impl_ptr->native_handle(),
+            std::make_unique<read_operation>(socket_impl, buffer, op));
+        return;
+      }
+
       op->cleanup_timer();
 
       if (result) {
@@ -442,7 +449,14 @@ void tcp_socket::async_write_some_op::start_operation() {
       if (!socket_impl_ptr) return;
 
       auto result = socket_impl_ptr->write_some(buffer);
-      socket_impl_ptr->get_executor().deregister_fd(socket_impl_ptr->native_handle());
+
+      if (result.error() == std::errc::operation_would_block) {
+        socket_impl_ptr->get_executor().register_fd_write(
+            socket_impl_ptr->native_handle(),
+            std::make_unique<write_operation>(socket_impl, buffer, op));
+        return;
+      }
+
       op->cleanup_timer();
 
       if (result) {
