@@ -2,15 +2,15 @@
 #include <xz/io/detail/tcp_socket_impl.hpp>
 #include <xz/io/error.hpp>
 
+#include <cerrno>
+#include <cstring>
+
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
-#include <cerrno>
-#include <cstring>
 
 namespace xz::io {
 

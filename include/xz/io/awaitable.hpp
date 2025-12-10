@@ -1,5 +1,8 @@
 #pragma once
 
+#include <xz/io/error.hpp>
+#include <xz/io/io_context.hpp>
+
 #include <coroutine>
 #include <functional>
 #include <memory>
@@ -8,9 +11,6 @@
 #include <system_error>
 #include <utility>
 #include <variant>
-
-#include "error.hpp"
-#include "io_context.hpp"
 
 namespace xz::io {
 
