@@ -420,7 +420,7 @@ void tcp_socket::async_read_some_op::start_operation() {
 
       auto result = socket_impl_ptr->read_some(buffer);
 
-      if (result.error() == std::errc::operation_would_block) {
+      if (!result && result.error() == std::errc::operation_would_block) {
         socket_impl_ptr->get_executor().register_fd_read(
             socket_impl_ptr->native_handle(),
             std::make_unique<read_operation>(socket_impl, buffer, op));
@@ -489,7 +489,7 @@ void tcp_socket::async_write_some_op::start_operation() {
 
       auto result = socket_impl_ptr->write_some(buffer);
 
-      if (result.error() == std::errc::operation_would_block) {
+      if (!result && result.error() == std::errc::operation_would_block) {
         socket_impl_ptr->get_executor().register_fd_write(
             socket_impl_ptr->native_handle(),
             std::make_unique<write_operation>(socket_impl, buffer, op));
