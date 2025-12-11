@@ -46,12 +46,12 @@ TEST(IoContextTest, StopAndRestart) {
 
   ctx.run();
   EXPECT_TRUE(ctx.stopped());
-  EXPECT_EQ(counter, 0);  // Second post shouldn't execute
+  EXPECT_EQ(counter, 0);
 
   ctx.restart();
   EXPECT_FALSE(ctx.stopped());
   ctx.run();
-  EXPECT_EQ(counter, 1);  // Now it should execute
+  EXPECT_EQ(counter, 1);
 }
 
 TEST(IoContextTest, Timer) {

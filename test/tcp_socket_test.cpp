@@ -166,16 +166,16 @@ TEST_F(TcpSocketTest, SetAndGetRedis) {
   EXPECT_NE(get_response.find("hello"), std::string::npos);
 }
 
-TEST_F(TcpSocketTest, DISABLED_Timeout) {
+TEST_F(TcpSocketTest, Timeout) {
   tcp_socket socket(ctx);
   // Connect to non-routable address to trigger timeout
-  auto endpoint = ip::tcp_endpoint{ip::address_v4{{10, 255, 255, 1}}, 9999};
+  auto endpoint = ip::tcp_endpoint{ip::address_v4::from_string("104.119.104.223"), 80};
 
   bool failed = false;
 
   auto test_task = [&]() -> task<void> {
     try {
-      co_await socket.async_connect(endpoint, 200ms);
+      co_await socket.async_connect(endpoint, 3ms);
     } catch (std::system_error const&) {
       failed = true;  // Should fail (either timeout or connection refused)
     }
