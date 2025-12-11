@@ -101,15 +101,20 @@ void io_context_impl::deregister_fd(int fd) {
   fd_operations_.erase(fd);
 }
 
-auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::size_t {
+auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait) -> std::size_t {
   std::size_t count = 0;
   count += process_timers();
   count += process_posted();
 
-  if (timeout < std::chrono::milliseconds(0) && !has_work()) {
+  if (!has_work()) {
     return count;
   }
 
+  auto timeout = get_timeout();
+  if (max_wait.has_value()) {
+    timeout = (timeout.count() < 0 ? *max_wait : std::min(timeout, *max_wait));
+  }
+  
   constexpr int max_events = 64;
   epoll_event events[max_events];
 

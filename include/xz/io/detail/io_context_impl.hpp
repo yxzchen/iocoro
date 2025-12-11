@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <set>
 #include <thread>
@@ -66,7 +67,7 @@ class io_context_impl {
   void cancel_timer(timer_handle handle);
 
  private:
-  auto process_events(std::chrono::milliseconds timeout) -> std::size_t;
+  auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt) -> std::size_t;
   auto process_timers() -> std::size_t;
   auto process_posted() -> std::size_t;
   auto get_timeout() -> std::chrono::milliseconds;
