@@ -106,8 +106,11 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
   count += process_timers();
   count += process_posted();
 
-  if (stopped_.load(std::memory_order_acquire)) {
-    return count;
+  {
+    std::lock_guard lock(fd_mutex_);
+    if (fd_operations_.empty()) {
+      return count;
+    }
   }
 
   constexpr int max_events = 64;

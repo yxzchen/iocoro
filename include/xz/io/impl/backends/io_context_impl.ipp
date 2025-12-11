@@ -5,7 +5,6 @@
 namespace xz::io::detail {
 
 auto io_context_impl::run() -> std::size_t {
-  stopped_.store(false, std::memory_order_release);
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
   std::size_t count = 0;
   while (!stopped_.load(std::memory_order_acquire) && has_work()) {
@@ -22,7 +21,6 @@ auto io_context_impl::run_one() -> std::size_t {
 }
 
 auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
-  stopped_.store(false, std::memory_order_release);
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
   auto const deadline = std::chrono::steady_clock::now() + timeout;
   std::size_t count = 0;

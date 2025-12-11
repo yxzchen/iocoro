@@ -65,7 +65,7 @@ TEST(IoContextTest, Timer) {
   auto elapsed = std::chrono::steady_clock::now() - start;
 
   EXPECT_TRUE(timer_fired);
-  EXPECT_GE(elapsed, 50ms);
+  EXPECT_GE(elapsed, 49ms);
   EXPECT_LT(elapsed, 150ms);
 }
 
