@@ -109,11 +109,8 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
   count += process_timers();
   count += process_posted();
 
-  {
-    std::lock_guard lock(fd_mutex_);
-    if (fd_operations_.empty()) {
-      return count;
-    }
+  if (timeout < std::chrono::milliseconds(0) && !has_work()) {
+    return count;
   }
 
   struct __kernel_timespec ts;
