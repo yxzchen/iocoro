@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <compare>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -25,8 +26,7 @@ class address_v4 {
   [[nodiscard]] auto to_uint() const noexcept -> uint32_t;
   [[nodiscard]] auto to_string() const -> std::string;
 
-  [[nodiscard]] auto operator==(address_v4 const& other) const noexcept -> bool { return bytes_ == other.bytes_; }
-  [[nodiscard]] auto operator!=(address_v4 const& other) const noexcept -> bool { return !(*this == other); }
+  [[nodiscard]] auto operator<=>(address_v4 const&) const noexcept = default;
 
  private:
   bytes_type bytes_{};
@@ -47,8 +47,7 @@ class address_v6 {
   [[nodiscard]] auto to_bytes() const noexcept -> bytes_type { return bytes_; }
   [[nodiscard]] auto to_string() const -> std::string;
 
-  [[nodiscard]] auto operator==(address_v6 const& other) const noexcept -> bool { return bytes_ == other.bytes_; }
-  [[nodiscard]] auto operator!=(address_v6 const& other) const noexcept -> bool { return !(*this == other); }
+  [[nodiscard]] auto operator<=>(address_v6 const&) const noexcept = default;
 
  private:
   bytes_type bytes_{};
@@ -69,7 +68,10 @@ class tcp_endpoint {
     return std::get<address_v6>(addr_);
   }
 
+  [[nodiscard]] auto address() const noexcept -> std::variant<address_v4, address_v6> const& { return addr_; }
+
   [[nodiscard]] auto port() const noexcept -> uint16_t { return port_; }
+  [[nodiscard]] auto is_v4() const noexcept -> bool { return std::holds_alternative<address_v4>(addr_); }
   [[nodiscard]] auto is_v6() const noexcept -> bool { return std::holds_alternative<address_v6>(addr_); }
 
   void set_port(uint16_t p) noexcept { port_ = p; }

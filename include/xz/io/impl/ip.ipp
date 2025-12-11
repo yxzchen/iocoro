@@ -5,6 +5,7 @@
 #include <fmt/format.h>
 
 #include <array>
+#include <bit>
 #include <cstring>
 #include <stdexcept>
 
@@ -44,9 +45,7 @@ auto address_v6::from_string(std::string_view str) -> address_v6 {
     throw std::invalid_argument("invalid IPv6 address");
   }
 
-  bytes_type bytes;
-  std::memcpy(bytes.data(), &addr, 16);
-  return address_v6{bytes};
+  return address_v6{std::bit_cast<bytes_type>(addr)};
 }
 
 auto address_v6::loopback() noexcept -> address_v6 {
@@ -57,8 +56,7 @@ auto address_v6::loopback() noexcept -> address_v6 {
 
 auto address_v6::to_string() const -> std::string {
   char buf[INET6_ADDRSTRLEN];
-  in6_addr addr{};
-  std::memcpy(&addr, bytes_.data(), 16);
+  auto addr = std::bit_cast<in6_addr>(bytes_);
 
   if (::inet_ntop(AF_INET6, &addr, buf, sizeof(buf)) == nullptr) {
     throw std::runtime_error("inet_ntop failed");
