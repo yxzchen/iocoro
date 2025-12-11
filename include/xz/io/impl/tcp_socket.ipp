@@ -25,7 +25,10 @@ void async_io_operation<Result>::setup_timeout() {
         timeout_,
         [this, weak_socket_impl = socket_impl_]() {
           auto socket_impl = weak_socket_impl.lock();
-          if (!socket_impl) return;
+          if (!socket_impl) {
+            this->complete(make_error_code(error::operation_aborted));
+            return;
+          }
 
           socket_impl->get_executor().deregister_fd(socket_impl->native_handle());
           timer_handle_.reset();
@@ -345,7 +348,10 @@ void tcp_socket::async_connect_op::start_operation() {
 
     void execute() override {
       auto socket_impl_ptr = socket_impl.lock();
-      if (!socket_impl_ptr) return;
+      if (!socket_impl_ptr) {
+        op->complete(make_error_code(error::operation_aborted));
+        return;
+      }
 
       int error = 0;
       socklen_t len = sizeof(error);
@@ -375,7 +381,7 @@ tcp_socket::async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_soc
 void tcp_socket::async_read_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted), std::size_t{0});
+    complete(make_error_code(error::operation_aborted));
     return;
   }
 
@@ -387,7 +393,7 @@ void tcp_socket::async_read_some_op::start_operation() {
 
   auto ec = result.error();
   if (ec != std::errc::operation_would_block) {
-    complete(ec, std::size_t{0});
+    complete(ec);
     return;
   }
 
@@ -404,7 +410,10 @@ void tcp_socket::async_read_some_op::start_operation() {
 
     void execute() override {
       auto socket_impl_ptr = socket_impl.lock();
-      if (!socket_impl_ptr) return;
+      if (!socket_impl_ptr) {
+        op->complete(make_error_code(error::operation_aborted));
+        return;
+      }
 
       auto result = socket_impl_ptr->read_some(buffer);
 
@@ -420,7 +429,7 @@ void tcp_socket::async_read_some_op::start_operation() {
       if (result) {
         op->complete({}, *result);
       } else {
-        op->complete(result.error(), std::size_t{0});
+        op->complete(result.error());
       }
     }
   };
@@ -438,7 +447,7 @@ tcp_socket::async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_s
 void tcp_socket::async_write_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted), std::size_t{0});
+    complete(make_error_code(error::operation_aborted));
     return;
   }
 
@@ -450,7 +459,7 @@ void tcp_socket::async_write_some_op::start_operation() {
 
   auto ec = result.error();
   if (ec != std::errc::operation_would_block) {
-    complete(ec, std::size_t{0});
+    complete(ec);
     return;
   }
 
@@ -467,7 +476,10 @@ void tcp_socket::async_write_some_op::start_operation() {
 
     void execute() override {
       auto socket_impl_ptr = socket_impl.lock();
-      if (!socket_impl_ptr) return;
+      if (!socket_impl_ptr) {
+        op->complete(make_error_code(error::operation_aborted));
+        return;
+      }
 
       auto result = socket_impl_ptr->write_some(buffer);
 
@@ -483,7 +495,7 @@ void tcp_socket::async_write_some_op::start_operation() {
       if (result) {
         op->complete({}, *result);
       } else {
-        op->complete(result.error(), std::size_t{0});
+        op->complete(result.error());
       }
     }
   };
