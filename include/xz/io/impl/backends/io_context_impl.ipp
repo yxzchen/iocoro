@@ -4,7 +4,6 @@
 
 namespace xz::io::detail {
 
-// Run event loop until stopped
 auto io_context_impl::run() -> std::size_t {
   stopped_.store(false, std::memory_order_release);
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
@@ -16,14 +15,12 @@ auto io_context_impl::run() -> std::size_t {
   return count;
 }
 
-// Run one iteration of event loop
 auto io_context_impl::run_one() -> std::size_t {
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
   auto timeout = get_timeout();
   return process_events(timeout);
 }
 
-// Run event loop for specified duration
 auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
   stopped_.store(false, std::memory_order_release);
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
@@ -40,18 +37,15 @@ auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t 
   return count;
 }
 
-// Stop the event loop
 void io_context_impl::stop() {
   stopped_.store(true, std::memory_order_release);
   wakeup();
 }
 
-// Restart the event loop
 void io_context_impl::restart() {
   stopped_.store(false, std::memory_order_release);
 }
 
-// Post work to be executed by the event loop
 void io_context_impl::post(std::function<void()> f) {
   {
     std::lock_guard lock(posted_mutex_);
@@ -60,7 +54,6 @@ void io_context_impl::post(std::function<void()> f) {
   wakeup();
 }
 
-// Dispatch work (execute immediately if on event loop thread, otherwise post)
 void io_context_impl::dispatch(std::function<void()> f) {
   if (owner_thread_.load(std::memory_order_acquire) == std::this_thread::get_id()) {
     f();
@@ -69,7 +62,6 @@ void io_context_impl::dispatch(std::function<void()> f) {
   }
 }
 
-// Schedule a timer
 auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
     -> timer_handle {
   std::lock_guard lock(timer_mutex_);
@@ -81,13 +73,11 @@ auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout, std::fun
   return handle;
 }
 
-// Cancel a timer
 void io_context_impl::cancel_timer(timer_handle handle) {
   if (!handle) return;
   handle->cancelled.store(true, std::memory_order_release);
 }
 
-// Process expired timers
 void io_context_impl::process_timers() {
   std::lock_guard lock(timer_mutex_);
   auto const now = std::chrono::steady_clock::now();
@@ -112,7 +102,6 @@ void io_context_impl::process_timers() {
   }
 }
 
-// Process posted operations
 void io_context_impl::process_posted() {
   std::queue<std::function<void()>> ops;
   {
@@ -126,7 +115,6 @@ void io_context_impl::process_posted() {
   }
 }
 
-// Get timeout for next event wait
 auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
   std::lock_guard lock(timer_mutex_);
 

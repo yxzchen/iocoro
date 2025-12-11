@@ -68,7 +68,7 @@ class io_context_impl {
   void process_timers();
   void process_posted();
   auto get_timeout() -> std::chrono::milliseconds;
-  void wakeup();  // Wake up event loop (backend-specific)
+  void wakeup();
 
 #ifdef IOXZ_HAS_URING
   struct io_uring ring_;

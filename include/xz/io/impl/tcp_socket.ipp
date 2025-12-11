@@ -14,7 +14,6 @@
 
 namespace xz::io {
 
-/// Template implementation of async_io_operation methods
 template <typename Result>
 void async_io_operation<Result>::setup_timeout() {
   if (timeout_.count() > 0) {

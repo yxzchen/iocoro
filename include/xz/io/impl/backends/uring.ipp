@@ -83,13 +83,12 @@ void io_context_impl::deregister_fd(int fd) {
 
   auto it = fd_operations_.find(fd);
   if (it != fd_operations_.end()) {
-    // Cancel pending polls by submitting poll_remove for active operations
     if (it->second.read_op) {
       struct io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
       if (sqe) {
         uintptr_t read_user_data = static_cast<uintptr_t>(fd) | (1ULL << 32);
         io_uring_prep_poll_remove(sqe, read_user_data);
-        io_uring_sqe_set_data(sqe, nullptr);  // Mark as poll_remove completion
+        io_uring_sqe_set_data(sqe, nullptr);
       }
     }
     if (it->second.write_op) {
@@ -97,7 +96,7 @@ void io_context_impl::deregister_fd(int fd) {
       if (sqe) {
         uintptr_t write_user_data = static_cast<uintptr_t>(fd) | (2ULL << 32);
         io_uring_prep_poll_remove(sqe, write_user_data);
-        io_uring_sqe_set_data(sqe, nullptr);  // Mark as poll_remove completion
+        io_uring_sqe_set_data(sqe, nullptr);
       }
     }
     io_uring_submit(&ring_);
