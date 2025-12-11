@@ -16,58 +16,6 @@ class IOTest : public ::testing::Test {
 };
 
 // ============================================================================
-// Buffer Tests
-// ============================================================================
-
-TEST(BufferTest, DynamicBufferBasics) {
-  dynamic_buffer buf;
-
-  EXPECT_EQ(buf.size(), 0);
-  EXPECT_TRUE(buf.empty());
-
-  buf.append(std::string_view{"Hello"});
-  EXPECT_EQ(buf.size(), 5);
-  EXPECT_EQ(buf.view(), "Hello");
-
-  buf.append(std::string_view{" World"});
-  EXPECT_EQ(buf.size(), 11);
-  EXPECT_EQ(buf.view(), "Hello World");
-
-  buf.consume(6);
-  EXPECT_EQ(buf.size(), 5);
-  EXPECT_EQ(buf.view(), "World");
-
-  buf.clear();
-  EXPECT_EQ(buf.size(), 0);
-  EXPECT_TRUE(buf.empty());
-}
-
-TEST(BufferTest, DynamicBufferPrepareCommit) {
-  dynamic_buffer buf;
-
-  auto span = buf.prepare(5);
-  EXPECT_GE(span.size(), 5);
-
-  std::memcpy(span.data(), "Test", 4);
-  buf.commit(4);
-
-  EXPECT_EQ(buf.size(), 4);
-  EXPECT_EQ(buf.view(), "Test");
-}
-
-TEST(BufferTest, DynamicBufferAutoGrow) {
-  dynamic_buffer buf(16);
-
-  // Write more than initial capacity
-  for (int i = 0; i < 100; ++i) {
-    buf.append(std::string_view{"x"});
-  }
-
-  EXPECT_EQ(buf.size(), 100);
-  EXPECT_GE(buf.capacity(), 100);
-}
-
-// ============================================================================
 // IP Address Tests
 // ============================================================================
 

@@ -9,7 +9,7 @@ enum class error {
   /// Operation cancelled
   operation_aborted = 1,
 
-  /// Operation cancelled
+  /// Operation failed
   operation_failed,
 
   /// Connection refused

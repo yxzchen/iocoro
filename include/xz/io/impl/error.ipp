@@ -13,6 +13,8 @@ class error_category_impl : public std::error_category {
     switch (static_cast<error>(ev)) {
       case error::operation_aborted:
         return "operation aborted";
+      case error::operation_failed:
+        return "operation failed";
       case error::connection_refused:
         return "connection refused";
       case error::connection_reset:

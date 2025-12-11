@@ -55,24 +55,6 @@ task<void> tcp_example(io_context& ctx) {
   ctx.stop();
 }
 
-// Example 3: Buffer usage
-void buffer_example() {
-  std::cout << "\nBuffer example:" << std::endl;
-
-  dynamic_buffer buf;
-
-  // Append data
-  buf.append(std::string_view{"Hello, "});
-  buf.append(std::string_view{"World!"});
-
-  std::cout << "Buffer contains: " << buf.view() << std::endl;
-  std::cout << "Size: " << buf.size() << " bytes" << std::endl;
-
-  // Consume some data
-  buf.consume(7);
-  std::cout << "After consuming 7 bytes: " << buf.view() << std::endl;
-}
-
 // Example 4: IP address parsing
 void ip_example() {
   std::cout << "\nIP address example:" << std::endl;
@@ -94,7 +76,6 @@ int main() {
   std::cout << "=== Modern C++20 I/O Library Examples ===" << std::endl;
 
   // Non-async examples
-  buffer_example();
   ip_example();
 
   // Async examples with io_context
