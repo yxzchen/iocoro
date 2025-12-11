@@ -26,16 +26,16 @@ void async_io_operation<Result>::setup_timeout() {
         [this, weak_socket_impl = socket_impl_]() {
           auto socket_impl = weak_socket_impl.lock();
           if (!socket_impl) {
-            this->complete(make_error_code(error::operation_aborted));
+            this->complete(error::operation_aborted);
             return;
           }
 
           socket_impl->get_executor().deregister_fd(socket_impl->native_handle());
           timer_handle_.reset();
           if constexpr (std::is_void_v<Result>) {
-            this->complete(make_error_code(error::timeout));
+            this->complete(error::timeout);
           } else {
-            this->complete(make_error_code(error::timeout), Result{});
+            this->complete(error::timeout, Result{});
           }
         });
   }
@@ -133,7 +133,7 @@ auto tcp_socket_impl::create_and_connect(ip::tcp_endpoint const& ep) -> std::err
 
 auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> std::error_code {
   if (is_open()) {
-    return make_error_code(error::already_connected);
+    return error::already_connected;
   }
 
   auto ec = create_and_connect(ep);
@@ -145,7 +145,7 @@ auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> std::error_code {
 
 auto tcp_socket_impl::read_some(std::span<char> buffer) -> expected<std::size_t, std::error_code> {
   if (!is_open()) {
-    return unexpected(make_error_code(error::not_connected));
+    return unexpected(error::not_connected);
   }
 
   ssize_t n = ::recv(fd_, buffer.data(), buffer.size(), 0);
@@ -158,7 +158,7 @@ auto tcp_socket_impl::read_some(std::span<char> buffer) -> expected<std::size_t,
   }
 
   if (n == 0) {
-    return unexpected(make_error_code(error::eof));
+    return unexpected(error::eof);
   }
 
   return static_cast<std::size_t>(n);
@@ -166,7 +166,7 @@ auto tcp_socket_impl::read_some(std::span<char> buffer) -> expected<std::size_t,
 
 auto tcp_socket_impl::write_some(std::span<char const> buffer) -> expected<std::size_t, std::error_code> {
   if (!is_open()) {
-    return unexpected(make_error_code(error::not_connected));
+    return unexpected(error::not_connected);
   }
 
   ssize_t n = ::send(fd_, buffer.data(), buffer.size(), MSG_NOSIGNAL);
@@ -183,7 +183,7 @@ auto tcp_socket_impl::write_some(std::span<char const> buffer) -> expected<std::
 
 auto tcp_socket_impl::set_option_nodelay(bool enable) -> expected<void, std::error_code> {
   if (!is_open()) {
-    return unexpected(make_error_code(error::not_connected));
+    return unexpected(error::not_connected);
   }
 
   int flag = enable ? 1 : 0;
@@ -195,7 +195,7 @@ auto tcp_socket_impl::set_option_nodelay(bool enable) -> expected<void, std::err
 
 auto tcp_socket_impl::set_option_keepalive(bool enable) -> expected<void, std::error_code> {
   if (!is_open()) {
-    return unexpected(make_error_code(error::not_connected));
+    return unexpected(error::not_connected);
   }
 
   int flag = enable ? 1 : 0;
@@ -207,7 +207,7 @@ auto tcp_socket_impl::set_option_keepalive(bool enable) -> expected<void, std::e
 
 auto tcp_socket_impl::set_option_reuseaddr(bool enable) -> expected<void, std::error_code> {
   if (!is_open()) {
-    return unexpected(make_error_code(error::not_connected));
+    return unexpected(error::not_connected);
   }
 
   int flag = enable ? 1 : 0;
@@ -229,14 +229,14 @@ auto sockaddr_to_endpoint(sockaddr_storage const& addr) -> ip::tcp_endpoint {
     std::memcpy(bytes.data(), &in6->sin6_addr, 16);
     return {ip::address_v6{bytes}, ntohs(in6->sin6_port)};
   }
-  throw std::system_error(make_error_code(error::invalid_argument));
+  throw std::system_error(error::invalid_argument);
 }
 
 }  // namespace
 
 auto tcp_socket_impl::local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
   if (!is_open()) {
-    return unexpected(make_error_code(error::not_connected));
+    return unexpected(error::not_connected);
   }
 
   sockaddr_storage addr{};
@@ -249,13 +249,13 @@ auto tcp_socket_impl::local_endpoint() const -> expected<ip::tcp_endpoint, std::
   try {
     return sockaddr_to_endpoint(addr);
   } catch (...) {
-    return unexpected(make_error_code(error::invalid_argument));
+    return unexpected(error::invalid_argument);
   }
 }
 
 auto tcp_socket_impl::remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
   if (!is_open()) {
-    return unexpected(make_error_code(error::not_connected));
+    return unexpected(error::not_connected);
   }
 
   sockaddr_storage addr{};
@@ -268,7 +268,7 @@ auto tcp_socket_impl::remote_endpoint() const -> expected<ip::tcp_endpoint, std:
   try {
     return sockaddr_to_endpoint(addr);
   } catch (...) {
-    return unexpected(make_error_code(error::invalid_argument));
+    return unexpected(error::invalid_argument);
   }
 }
 
@@ -324,7 +324,7 @@ tcp_socket::async_connect_op::async_connect_op(std::weak_ptr<detail::tcp_socket_
 void tcp_socket::async_connect_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted));
+    complete(error::operation_aborted);
     return;
   }
 
@@ -348,7 +348,7 @@ void tcp_socket::async_connect_op::start_operation() {
     void execute() override {
       auto socket_impl_ptr = socket_impl.lock();
       if (!socket_impl_ptr) {
-        op->complete(make_error_code(error::operation_aborted));
+        op->complete(error::operation_aborted);
         return;
       }
 
@@ -380,7 +380,7 @@ tcp_socket::async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_soc
 void tcp_socket::async_read_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted));
+    complete(error::operation_aborted);
     return;
   }
 
@@ -410,7 +410,7 @@ void tcp_socket::async_read_some_op::start_operation() {
     void execute() override {
       auto socket_impl_ptr = socket_impl.lock();
       if (!socket_impl_ptr) {
-        op->complete(make_error_code(error::operation_aborted));
+        op->complete(error::operation_aborted);
         return;
       }
 
@@ -446,7 +446,7 @@ tcp_socket::async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_s
 void tcp_socket::async_write_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted));
+    complete(error::operation_aborted);
     return;
   }
 
@@ -476,7 +476,7 @@ void tcp_socket::async_write_some_op::start_operation() {
     void execute() override {
       auto socket_impl_ptr = socket_impl.lock();
       if (!socket_impl_ptr) {
-        op->complete(make_error_code(error::operation_aborted));
+        op->complete(error::operation_aborted);
         return;
       }
 
