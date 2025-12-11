@@ -17,6 +17,7 @@ auto io_context_impl::run() -> std::size_t {
 
 // Run one iteration of event loop
 auto io_context_impl::run_one() -> std::size_t {
+  owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
   auto timeout = get_timeout();
   return process_events(timeout);
 }
