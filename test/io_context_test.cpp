@@ -105,67 +105,41 @@ TEST(IoContextTest, DispatchOnSameThread) {
   ctx.run();
 }
 
-TEST(IoContextTest, WorkGuardClassPreventsExit) {
+TEST(IoContextTest, WorkGuardWithSeparateThread) {
   xz::io::io_context ctx;
-  std::atomic<bool> ran{false};
+  std::atomic<bool> event_loop_running{false};
+  std::atomic<bool> event_loop_exited{false};
 
+  std::thread t2;
   {
     xz::io::work_guard<xz::io::io_context> guard(ctx);
 
-    ctx.post([&ran]() { ran.store(true); });
-
-    // Run with timeout - should keep running due to work guard
-    auto start = std::chrono::steady_clock::now();
-    ctx.run_for(100ms);
-    auto elapsed = std::chrono::steady_clock::now() - start;
-
-    // Should have run for approximately 100ms (not immediately exited)
-    EXPECT_GE(elapsed, std::chrono::milliseconds(90));
-    EXPECT_TRUE(ran.load());
-  }
-
-  // Work guard destroyed, event loop can now exit
-  ran.store(false);
-  auto start = std::chrono::steady_clock::now();
-  ctx.run_for(10ms);
-  auto elapsed = std::chrono::steady_clock::now() - start;
-
-  // Should exit quickly
-  EXPECT_LT(elapsed, std::chrono::milliseconds(20));
-  EXPECT_FALSE(ran.load());
-}
-
-TEST(IoContextTest, WorkGuardRemovalWakesEventLoop) {
-  xz::io::io_context ctx;
-
-  // Add a work guard and start the event loop in a background thread
-  {
-    xz::io::work_guard<xz::io::io_context> guard(ctx);
-
-    std::atomic<bool> running{true};
-    std::atomic<bool> exited{false};
-
-    std::thread t([&]() {
-      while (running) {
-        ctx.run_one();
-      }
-      exited.store(true);
+    t2 = std::thread([&]() {
+      event_loop_running.store(true);
+      ctx.run();  // Will keep running because of work guard
+      event_loop_exited.store(true);
     });
 
-    // Give the event loop time to start
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Give event loop time to start
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    // Remove the work guard - this should wake up the event loop
-    guard.~work_guard();
+    EXPECT_TRUE(event_loop_running.load());
+    EXPECT_FALSE(event_loop_exited.load());  // Should still be running
 
-    // Give it time to exit
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Verify work guard is keeping it alive by posting a task
+    std::atomic<bool> task_executed{false};
+    ctx.post([&task_executed]() { task_executed.store(true); });
 
-    running.store(false);
-    ctx.run_one();  // Wake it up one more time to process the stop
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_TRUE(task_executed.load());
 
-    t.join();
-
-    EXPECT_TRUE(exited.load());
+    // Destroy work guard (goes out of scope)
   }
+
+  // Give event loop time to exit after work guard is removed
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  EXPECT_TRUE(event_loop_exited.load());
+
+  t2.join();
 }
