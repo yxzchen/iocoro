@@ -149,6 +149,10 @@ auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
 }
 
 auto io_context_impl::has_work() -> bool {
+  if (work_guard_counter_.load(std::memory_order_acquire) > 0) {
+    return true;
+  }
+
   {
     std::lock_guard lock(fd_mutex_);
     if (!fd_operations_.empty()) {
@@ -175,6 +179,18 @@ auto io_context_impl::has_work() -> bool {
   }
 
   return false;
+}
+
+void io_context_impl::add_work_guard() noexcept {
+  work_guard_counter_.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void io_context_impl::remove_work_guard() noexcept {
+  auto old_value = work_guard_counter_.fetch_sub(1, std::memory_order_acq_rel);
+
+  if (old_value == 1) {
+    wakeup();
+  }
 }
 
 }  // namespace xz::io::detail

@@ -58,4 +58,8 @@ auto io_context::schedule_timer(std::chrono::milliseconds timeout, std::function
 
 void io_context::cancel_timer(detail::timer_handle handle) { impl_->cancel_timer(std::move(handle)); }
 
+void io_context::add_work_guard() noexcept { impl_->add_work_guard(); }
+
+void io_context::remove_work_guard() noexcept { impl_->remove_work_guard(); }
+
 }  // namespace xz::io

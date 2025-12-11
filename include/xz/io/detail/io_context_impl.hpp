@@ -66,6 +66,9 @@ class io_context_impl {
   auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) -> timer_handle;
   void cancel_timer(timer_handle handle);
 
+  void add_work_guard() noexcept;
+  void remove_work_guard() noexcept;
+
  private:
   auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt) -> std::size_t;
   auto process_timers() -> std::size_t;
@@ -98,6 +101,8 @@ class io_context_impl {
 
   std::queue<std::function<void()>> posted_operations_;
   std::mutex posted_mutex_;
+
+  std::atomic<std::size_t> work_guard_counter_{0};
 };
 
 }  // namespace xz::io::detail
