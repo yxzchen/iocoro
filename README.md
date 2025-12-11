@@ -12,30 +12,36 @@ ioxz provides a minimal, modern interface for asynchronous network I/O using C++
 
 ```cpp
 #include <xz/io.hpp>
+#include <xz/io/src.hpp>
 
+#include <chrono>
+#include <iostream>
+
+using namespace std::chrono_literals;
 using namespace xz::io;
 
-auto example() -> task<void> {
-    io_context ctx;
-    tcp_socket socket(ctx);
+auto example(io_context& ctx) -> task<void> {
+  tcp_socket socket(ctx);
 
-    // Connect
-    auto endpoint = ip::tcp_endpoint{ip::address_v4::from_string("127.0.0.1"), 6379};
-    co_await socket.async_connect(endpoint, 1000ms);
+  // Connect
+  auto endpoint = ip::tcp_endpoint{ip::address_v4::from_string("127.0.0.1"), 6379};
+  co_await socket.async_connect(endpoint, 1000ms);
 
-    // Write
-    std::string data = "PING\r\n";
-    co_await socket.async_write_some(std::span{data.data(), data.size()});
+  // Write
+  std::string data = "PING\r\n";
+  co_await socket.async_write_some(std::span{data.data(), data.size()});
 
-    // Read
-    char buffer[256];
-    auto n = co_await socket.async_read_some(std::span{buffer, 256});
+  // Read
+  char buffer[256];
+  auto n = co_await socket.async_read_some(std::span{buffer, 256});
+
+  std::cout << "Response: " << std::string_view(buffer, n) << std::endl;
 }
 
 int main() {
-    io_context ctx;
-    co_spawn(ctx, example(), use_detached);
-    ctx.run();
+  io_context ctx;
+  co_spawn(ctx, example(ctx), use_detached);
+  ctx.run();
 }
 ```
 
