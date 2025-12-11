@@ -183,7 +183,7 @@ TEST_F(IOTest, TCPSocketConstruction) {
 TEST_F(IOTest, TCPSocketClose) {
   tcp_socket sock(ctx);
   auto result = sock.close_nothrow();
-  EXPECT_TRUE(result.has_value());  // Closing an unopened socket should not error
+  EXPECT_FALSE(result);  // Closing an unopened socket should not error (result == {})
 }
 
 // Note: Actual connection tests require a running server

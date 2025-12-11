@@ -64,12 +64,12 @@ void tcp_socket_impl::close() {
   }
 }
 
-auto tcp_socket_impl::close_nothrow() noexcept -> expected<void, std::error_code> {
+auto tcp_socket_impl::close_nothrow() noexcept -> std::error_code {
   try {
     close();
     return {};
   } catch (std::system_error const& e) {
-    return unexpected(e.code());
+    return e.code();
   }
 }
 
@@ -181,38 +181,38 @@ auto tcp_socket_impl::write_some(std::span<char const> buffer) -> expected<std::
   return static_cast<std::size_t>(n);
 }
 
-auto tcp_socket_impl::set_option_nodelay(bool enable) -> expected<void, std::error_code> {
+auto tcp_socket_impl::set_option_nodelay(bool enable) -> std::error_code {
   if (!is_open()) {
-    return unexpected(error::not_connected);
+    return error::not_connected;
   }
 
   int flag = enable ? 1 : 0;
   if (::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return std::error_code(errno, std::generic_category());
   }
   return {};
 }
 
-auto tcp_socket_impl::set_option_keepalive(bool enable) -> expected<void, std::error_code> {
+auto tcp_socket_impl::set_option_keepalive(bool enable) -> std::error_code {
   if (!is_open()) {
-    return unexpected(error::not_connected);
+    return error::not_connected;
   }
 
   int flag = enable ? 1 : 0;
   if (::setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) < 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return std::error_code(errno, std::generic_category());
   }
   return {};
 }
 
-auto tcp_socket_impl::set_option_reuseaddr(bool enable) -> expected<void, std::error_code> {
+auto tcp_socket_impl::set_option_reuseaddr(bool enable) -> std::error_code {
   if (!is_open()) {
-    return unexpected(error::not_connected);
+    return error::not_connected;
   }
 
   int flag = enable ? 1 : 0;
   if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return std::error_code(errno, std::generic_category());
   }
   return {};
 }
@@ -292,19 +292,19 @@ auto tcp_socket::native_handle() const noexcept -> int { return socket_impl_->na
 
 void tcp_socket::close() { socket_impl_->close(); }
 
-auto tcp_socket::close_nothrow() noexcept -> expected<void, std::error_code> {
+auto tcp_socket::close_nothrow() noexcept -> std::error_code {
   return socket_impl_->close_nothrow();
 }
 
-auto tcp_socket::set_option_nodelay(bool enable) -> expected<void, std::error_code> {
+auto tcp_socket::set_option_nodelay(bool enable) -> std::error_code {
   return socket_impl_->set_option_nodelay(enable);
 }
 
-auto tcp_socket::set_option_keepalive(bool enable) -> expected<void, std::error_code> {
+auto tcp_socket::set_option_keepalive(bool enable) -> std::error_code {
   return socket_impl_->set_option_keepalive(enable);
 }
 
-auto tcp_socket::set_option_reuseaddr(bool enable) -> expected<void, std::error_code> {
+auto tcp_socket::set_option_reuseaddr(bool enable) -> std::error_code {
   return socket_impl_->set_option_reuseaddr(enable);
 }
 

@@ -63,7 +63,7 @@ class tcp_socket {
 
   /// Close the socket
   void close();
-  auto close_nothrow() noexcept -> expected<void, std::error_code>;
+  auto close_nothrow() noexcept -> std::error_code;
 
   /// Async operations
 
@@ -119,9 +119,9 @@ class tcp_socket {
   }
 
   /// Socket options
-  auto set_option_nodelay(bool enable) -> expected<void, std::error_code>;
-  auto set_option_keepalive(bool enable) -> expected<void, std::error_code>;
-  auto set_option_reuseaddr(bool enable) -> expected<void, std::error_code>;
+  auto set_option_nodelay(bool enable) -> std::error_code;
+  auto set_option_keepalive(bool enable) -> std::error_code;
+  auto set_option_reuseaddr(bool enable) -> std::error_code;
 
   /// Local/remote endpoints
   auto local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;

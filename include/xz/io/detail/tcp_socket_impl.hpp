@@ -19,11 +19,11 @@ class tcp_socket_impl {
   auto native_handle() const noexcept -> int { return fd_; }
 
   void close();
-  auto close_nothrow() noexcept -> expected<void, std::error_code>;
+  auto close_nothrow() noexcept -> std::error_code;
 
-  auto set_option_nodelay(bool enable) -> expected<void, std::error_code>;
-  auto set_option_keepalive(bool enable) -> expected<void, std::error_code>;
-  auto set_option_reuseaddr(bool enable) -> expected<void, std::error_code>;
+  auto set_option_nodelay(bool enable) -> std::error_code;
+  auto set_option_keepalive(bool enable) -> std::error_code;
+  auto set_option_reuseaddr(bool enable) -> std::error_code;
 
   auto local_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;
   auto remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;
