@@ -168,7 +168,10 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 
 void io_context_impl::wakeup() {
   uint64_t value = 1;
-  [[maybe_unused]] auto _ = ::write(eventfd_, &value, sizeof(value));
+  ssize_t n;
+  do {
+      n = ::write(eventfd_, &value, sizeof(value));
+  } while (n < 0 && errno == EINTR);
 }
 
 }  // namespace xz::io::detail

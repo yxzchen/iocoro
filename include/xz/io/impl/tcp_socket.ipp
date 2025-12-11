@@ -129,7 +129,7 @@ auto tcp_socket_impl::create_and_connect(ip::tcp_endpoint const& ep) -> std::err
   return {};
 }
 
-auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> std::error_code {
+auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) noexcept -> std::error_code {
   if (is_open()) {
     return error::already_connected;
   }
@@ -141,7 +141,7 @@ auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> std::error_code {
   return {};
 }
 
-auto tcp_socket_impl::read_some(std::span<char> buffer) -> expected<std::size_t, std::error_code> {
+auto tcp_socket_impl::read_some(std::span<char> buffer) noexcept -> expected<std::size_t, std::error_code> {
   if (!is_open()) {
     return unexpected(error::not_connected);
   }
@@ -162,7 +162,7 @@ auto tcp_socket_impl::read_some(std::span<char> buffer) -> expected<std::size_t,
   return static_cast<std::size_t>(n);
 }
 
-auto tcp_socket_impl::write_some(std::span<char const> buffer) -> expected<std::size_t, std::error_code> {
+auto tcp_socket_impl::write_some(std::span<char const> buffer) noexcept -> expected<std::size_t, std::error_code> {
   if (!is_open()) {
     return unexpected(error::not_connected);
   }
