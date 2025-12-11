@@ -150,8 +150,8 @@ auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
 
 auto io_context_impl::has_work() -> bool {
   {
-    std::lock_guard lock(posted_mutex_);
-    if (!posted_operations_.empty()) {
+    std::lock_guard lock(fd_mutex_);
+    if (!fd_operations_.empty()) {
       return true;
     }
   }
@@ -168,8 +168,8 @@ auto io_context_impl::has_work() -> bool {
   }
 
   {
-    std::lock_guard lock(fd_mutex_);
-    if (!fd_operations_.empty()) {
+    std::lock_guard lock(posted_mutex_);
+    if (!posted_operations_.empty()) {
       return true;
     }
   }
