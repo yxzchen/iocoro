@@ -14,8 +14,6 @@ namespace xz::io {
 
 namespace detail {
 class tcp_socket_impl;
-struct timer_entry;
-using timer_handle = std::shared_ptr<timer_entry>;
 }  // namespace detail
 
 // Forward declaration
