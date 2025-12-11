@@ -1,4 +1,5 @@
 
+#include <xz/io/io_context.hpp>
 #include <xz/io/detail/io_context_impl.hpp>
 
 #ifdef IOXZ_HAS_URING
