@@ -10,7 +10,8 @@ auto io_context_impl::run() -> std::size_t {
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
   std::size_t count = 0;
   while (!stopped_.load(std::memory_order_acquire)) {
-    count += run_one();
+    auto timeout = get_timeout();
+    count += process_events(timeout);
   }
   return count;
 }
@@ -32,7 +33,9 @@ auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t 
     auto const now = std::chrono::steady_clock::now();
     if (now >= deadline) break;
     auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
-    count += process_events(remaining);
+    auto timer_timeout = get_timeout();
+    auto wait_timeout = (timer_timeout.count() < 0) ? remaining : std::min(remaining, timer_timeout);
+    count += process_events(wait_timeout);
   }
   return count;
 }
