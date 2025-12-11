@@ -2,7 +2,7 @@
 
 A header-only C++20 coroutine-based async I/O library.
 
-**Status**: This is a prototype library developed specifically for [redisxz](https://github.com/xyz/redisxz), a modern Redis client.
+**Status**: This is a prototype library developed specifically for [redisxz](https://github.com/yxzchen/redisxz), a modern Redis client.
 
 ## Overview
 
@@ -11,7 +11,7 @@ ioxz provides a minimal, modern interface for asynchronous network I/O using C++
 ## Quick Example
 
 ```cpp
-#include <xz/io/io.hpp>
+#include <xz/io.hpp>
 
 using namespace xz::io;
 

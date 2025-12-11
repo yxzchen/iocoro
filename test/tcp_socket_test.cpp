@@ -1,4 +1,4 @@
-#include <xz/io/io.hpp>
+#include <xz/io.hpp>
 #include <xz/io/src.hpp>
 
 #include <gtest/gtest.h>
