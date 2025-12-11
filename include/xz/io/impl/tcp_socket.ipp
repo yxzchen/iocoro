@@ -131,14 +131,14 @@ auto tcp_socket_impl::create_and_connect(ip::tcp_endpoint const& ep) -> std::err
   return {};
 }
 
-auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> expected<void, std::error_code> {
+auto tcp_socket_impl::connect(ip::tcp_endpoint const& ep) -> std::error_code {
   if (is_open()) {
-    return unexpected(make_error_code(error::already_connected));
+    return make_error_code(error::already_connected);
   }
 
   auto ec = create_and_connect(ep);
   if (ec) {
-    return unexpected(ec);
+    return ec;
   }
   return {};
 }
@@ -328,9 +328,8 @@ void tcp_socket::async_connect_op::start_operation() {
     return;
   }
 
-  auto result = socket_impl->connect(endpoint_);
-  if (!result) {
-    auto ec = result.error();
+  auto ec = socket_impl->connect(endpoint_);
+  if (ec) {
     if (ec != std::errc::operation_in_progress) {
       complete(ec);
       return;
