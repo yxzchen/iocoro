@@ -106,9 +106,8 @@ void io_context_impl::process_timers() {
 
     timers_.pop();
 
-    auto callback = std::move(handle->callback);
     timer_mutex_.unlock();
-    callback();
+    handle->callback();
     timer_mutex_.lock();
   }
 }

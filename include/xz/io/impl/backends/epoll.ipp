@@ -41,12 +41,12 @@ io_context_impl::~io_context_impl() {
 void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
-  epoll_event ev{
-      .events = EPOLLIN | EPOLLET,
-      .data = {.fd = fd}};
-
   auto& ops = fd_operations_[fd];
   ops.read_op = std::move(op);
+
+  epoll_event ev{
+      .events = EPOLLIN | (ops.write_op ? EPOLLOUT : 0u) | EPOLLET,
+      .data = {.fd = fd}};
 
   int res = ::epoll_ctl(epoll_fd_, ops.write_op ? EPOLL_CTL_MOD : EPOLL_CTL_ADD, fd, &ev);
   if (res < 0 && errno != EEXIST) {
@@ -58,12 +58,12 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::opera
 void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
-  epoll_event ev{
-      .events = EPOLLOUT | EPOLLET,
-      .data = {.fd = fd}};
-
   auto& ops = fd_operations_[fd];
   ops.write_op = std::move(op);
+
+  epoll_event ev{
+      .events = EPOLLOUT | (ops.read_op ? EPOLLIN : 0u) | EPOLLET,
+      .data = {.fd = fd}};
 
   int res = ::epoll_ctl(epoll_fd_, ops.read_op ? EPOLL_CTL_MOD : EPOLL_CTL_ADD, fd, &ev);
   if (res < 0 && errno != EEXIST) {
@@ -102,6 +102,9 @@ void io_context_impl::deregister_fd(int fd) {
 }
 
 auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::size_t {
+  process_timers();
+  process_posted();
+
   constexpr int max_events = 64;
   epoll_event events[max_events];
 
@@ -115,16 +118,13 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
 
   std::size_t count = 0;
 
-  process_timers();
-  process_posted();
-
   for (int i = 0; i < nfds; ++i) {
     int fd = events[i].data.fd;
     uint32_t ev = events[i].events;
 
     if (fd == eventfd_) {
       uint64_t value;
-      [[maybe_unused]] auto _ = ::read(eventfd_, &value, sizeof(value));
+      while (::read(eventfd_, &value, sizeof(value)) > 0);
       continue;
     }
 
@@ -139,6 +139,7 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
         if (ev & EPOLLOUT) write_op = std::move(it->second.write_op);
 
         if (!it->second.read_op && !it->second.write_op) {
+          ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
           fd_operations_.erase(it);
         }
       }

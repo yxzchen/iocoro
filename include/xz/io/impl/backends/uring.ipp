@@ -80,12 +80,29 @@ void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::
 
 void io_context_impl::deregister_fd(int fd) {
   std::lock_guard lock(fd_mutex_);
-  struct io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
-  if (sqe) {
-    io_uring_prep_poll_remove(sqe, static_cast<__u64>(fd));
+
+  auto it = fd_operations_.find(fd);
+  if (it != fd_operations_.end()) {
+    // Cancel pending polls by submitting poll_remove for active operations
+    if (it->second.read_op) {
+      struct io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
+      if (sqe) {
+        uintptr_t read_user_data = static_cast<uintptr_t>(fd) | (1ULL << 32);
+        io_uring_prep_poll_remove(sqe, read_user_data);
+        io_uring_sqe_set_data(sqe, nullptr);  // Mark as poll_remove completion
+      }
+    }
+    if (it->second.write_op) {
+      struct io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
+      if (sqe) {
+        uintptr_t write_user_data = static_cast<uintptr_t>(fd) | (2ULL << 32);
+        io_uring_prep_poll_remove(sqe, write_user_data);
+        io_uring_sqe_set_data(sqe, nullptr);  // Mark as poll_remove completion
+      }
+    }
     io_uring_submit(&ring_);
+    fd_operations_.erase(it);
   }
-  fd_operations_.erase(fd);
 }
 
 auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::size_t {
