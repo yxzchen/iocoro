@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.15)
 project(ioxz VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -36,9 +36,9 @@ if(LIBURING_FOUND)
     target_link_libraries(ioxz INTERFACE ${LIBURING_LIBRARY})
 endif()
 
-option(BUILD_TESTS "Build tests" OFF)
+option(IOXZ_BUILD_TESTS "Build tests" OFF)
 
-if(BUILD_TESTS)
+if(IOXZ_BUILD_TESTS)
     enable_testing()
     add_subdirectory(test)
 endif()

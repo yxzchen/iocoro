@@ -1,89 +1,131 @@
 # ioxz
 
-**Prototype async I/O library for modern C++**
+A header-only C++20 coroutine-based async I/O library.
 
-ioxz is a header-only asynchronous I/O library built for [redisxz](https://github.com/xyz/redisxz), a modern Redis client. It provides a clean, coroutine-based API for async operations with support for multiple backends.
+**Status**: This is a prototype library developed specifically for [redisxz](https://github.com/xyz/redisxz), a modern Redis client.
 
-## Features
+## Overview
 
-- **C++20 Coroutines**: Native async/await support
-- **Dual Backend**: io_uring (preferred) or epoll fallback
-- **Header-Only**: Easy integration, no linking required
-- **Type-Safe Error Handling**: Uses `expected<T, E>` pattern
-- **Zero-Copy**: Efficient buffer management with `std::span`
-- **Work Guard**: RAII `work_guard` class keeps event loop running
-
-## Work Guard
-
-The `work_guard<T>` template class prevents executor `T`'s `run()` from exiting when there are no pending operations. It uses RAII for automatic lifecycle management:
-
-```cpp
-{
-    work_guard<io_context> guard(ctx);  // Adds work guard
-    // ... do async work ...
-}  // Automatically removes work guard when guard is destroyed
-```
-
-The template accepts any executor type that has `add_work_guard()` and `remove_work_guard()` methods.
-
-## Build Requirements
-
-- C++20 compiler (GCC 10+, Clang 12+, MSVC 19.28+)
-- CMake 3.20+
-- fmt library
-- liburing (optional, for io_uring support)
-- Google Test (for building tests)
+ioxz provides a minimal, modern interface for asynchronous network I/O using C++20 coroutines. It supports io_uring on Linux (with epoll fallback) and aims to provide zero-overhead abstractions for building high-performance async applications.
 
 ## Quick Example
 
 ```cpp
 #include <xz/io/io.hpp>
-#include <xz/io/ip.hpp>
-#include <xz/io/task.hpp>
 
 using namespace xz::io;
 
-auto async_example() -> task<void> {
+auto example() -> task<void> {
     io_context ctx;
     tcp_socket socket(ctx);
 
-    // Use RAII work_guard to keep event loop running
-    work_guard<io_context> guard(ctx);
-
-    // Connect to Redis
-    auto endpoint = ip::tcp_endpoint{
-        ip::address_v4{{127, 0, 0, 1}}, 6379
-    };
+    // Connect
+    auto endpoint = ip::tcp_endpoint{ip::address_v4::from_string("127.0.0.1"), 6379};
     co_await socket.async_connect(endpoint, 1000ms);
 
-    // Send PING command
-    std::string cmd = "*1\r\n$4\r\nPING\r\n";
-    co_await socket.async_write_some(std::span<const char>{cmd.data(), cmd.size()});
+    // Write
+    std::string data = "PING\r\n";
+    co_await socket.async_write_some(std::span{data.data(), data.size()});
 
-    // Read response
+    // Read
     char buffer[256];
-    auto bytes_read = co_await socket.async_read_some(std::span<char>{buffer, sizeof(buffer)});
-    std::cout << "Response: " << std::string(buffer, bytes_read) << std::endl;
-
-    // Work guard automatically removed when guard goes out of scope
+    auto n = co_await socket.async_read_some(std::span{buffer, 256});
 }
 
 int main() {
     io_context ctx;
-    auto task = async_example();
-    task.resume();
-    ctx.run();  // Will keep running until work guard is removed
-    return 0;
+    co_spawn(ctx, example(), use_detached);
+    ctx.run();
 }
 ```
+
+## Features
+
+### Core Components
+- **`io_context`** - Event loop with io_uring/epoll backend
+- **`task<T>`** - Lazy coroutine type with symmetric transfer
+- **`co_spawn`** - Launch coroutines on an executor (detached mode)
+- **`awaitable_op<T>`** - Base awaitable type for async operations
+
+### Networking
+- **`tcp_socket`** - Asynchronous TCP socket
+  - `async_connect()` - Connect with timeout
+  - `async_read_some()` - Read with timeout
+  - `async_write_some()` - Write with timeout
+  - Socket options: TCP_NODELAY, SO_KEEPALIVE
+
+- **`ip::address_v4`** - IPv4 addresses
+- **`ip::address_v6`** - IPv6 addresses (basic support)
+- **`ip::tcp_endpoint`** - TCP endpoint (address + port)
+
+### Utilities
+- **`expected<T, E>`** - Result type for error handling
+- **`work_guard<T>`** - RAII guard to keep event loop running
+- **Timers** - Schedule callbacks with millisecond precision
+
+## Missing Features
+
+This is a minimal library focused on redisxz requirements. Notable omissions:
+
+- **No UDP support**
+- **No SSL/TLS** - Planned for redisxz
+- **No acceptor/server sockets** - Client-only
+- **No scatter-gather I/O**
+- **No file I/O operations**
+- **No async DNS resolution**
+- **No completion tokens** beyond `use_detached`
+- **No cancellation** - Can only close sockets
+- **No strand/serialization executor**
+- **Limited IPv6 support** - Basic structures only
+
+## Build Requirements
+
+- **Platform**: Linux only
+- **Compiler**: GCC 10+ (Clang/MSVC not tested)
+- **C++ Standard**: C++20 (for coroutines)
+- **CMake**: 3.15 or higher
+- **Kernel**: Linux 5.1+ for io_uring support (5.4+ recommended), falls back to epoll on older kernels
+- **Dependencies**:
+  - [fmt](https://github.com/fmtlib/fmt) - Formatting library
+  - [liburing](https://github.com/axboe/liburing) - Optional, for io_uring support
+  - [Google Test](https://github.com/google/googletest) - Optional, for tests
 
 ## Building
 
 ```bash
-cmake -B build -DIOXZ_BUILD_TESTS=OFF
+# Header-only - no build needed
+# Just add include/ to your include path
+
+# Build tests
+cmake -B build -DIOXZ_BUILD_TESTS=ON
 cmake --build build
+ctest --test-dir build
 ```
 
-## Status
+## Integration
 
-**This is a prototype library** developed specifically for redisxz. While functional, it is not intended for production use in other projects without thorough testing.
+### Using CMake FetchContent (Recommended)
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+    ioxz
+    GIT_REPOSITORY https://github.com/yxzchen/ioxz.git
+    GIT_TAG master
+)
+FetchContent_MakeAvailable(ioxz)
+
+target_link_libraries(your_target PRIVATE ioxz)
+```
+
+### Using Git Submodule
+
+```bash
+git submodule add https://github.com/yxzchen/ioxz.git third_party/ioxz
+```
+
+```cmake
+add_subdirectory(third_party/ioxz)
+target_link_libraries(your_target PRIVATE ioxz)
+```
