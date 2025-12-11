@@ -8,7 +8,7 @@ auto io_context_impl::run() -> std::size_t {
   stopped_.store(false, std::memory_order_release);
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
   std::size_t count = 0;
-  while (!stopped_.load(std::memory_order_acquire)) {
+  while (!stopped_.load(std::memory_order_acquire) && has_work()) {
     auto timeout = get_timeout();
     count += process_events(timeout);
   }
@@ -26,7 +26,7 @@ auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t 
   owner_thread_.store(std::this_thread::get_id(), std::memory_order_release);
   auto const deadline = std::chrono::steady_clock::now() + timeout;
   std::size_t count = 0;
-  while (!stopped_.load(std::memory_order_acquire)) {
+  while (!stopped_.load(std::memory_order_acquire) && has_work()) {
     auto const now = std::chrono::steady_clock::now();
     if (now >= deadline) break;
     auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
@@ -78,9 +78,10 @@ void io_context_impl::cancel_timer(timer_handle handle) {
   handle->cancelled.store(true, std::memory_order_release);
 }
 
-void io_context_impl::process_timers() {
+auto io_context_impl::process_timers() -> std::size_t {
   std::lock_guard lock(timer_mutex_);
   auto const now = std::chrono::steady_clock::now();
+  std::size_t count = 0;
 
   while (!timers_.empty()) {
     auto handle = timers_.top();
@@ -98,21 +99,37 @@ void io_context_impl::process_timers() {
 
     timer_mutex_.unlock();
     handle->callback();
+    ++count;
     timer_mutex_.lock();
   }
+
+  return count;
 }
 
-void io_context_impl::process_posted() {
+auto io_context_impl::process_posted() -> std::size_t {
   std::queue<std::function<void()>> ops;
   {
     std::lock_guard lock(posted_mutex_);
     ops.swap(posted_operations_);
   }
 
+  std::size_t count = 0;
   while (!ops.empty()) {
+    if (stopped_.load(std::memory_order_acquire)) {
+      // Put remaining operations back if stopped
+      std::lock_guard lock(posted_mutex_);
+      while (!ops.empty()) {
+        posted_operations_.push(std::move(ops.front()));
+        ops.pop();
+      }
+      break;
+    }
     ops.front()();
     ops.pop();
+    ++count;
   }
+
+  return count;
 }
 
 auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
@@ -135,6 +152,35 @@ auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
   }
 
   return std::chrono::milliseconds(-1);
+}
+
+auto io_context_impl::has_work() -> bool {
+  {
+    std::lock_guard lock(posted_mutex_);
+    if (!posted_operations_.empty()) {
+      return true;
+    }
+  }
+
+  {
+    std::lock_guard lock(timer_mutex_);
+    // Clean up cancelled timers
+    while (!timers_.empty() && timers_.top()->cancelled.load(std::memory_order_acquire)) {
+      timers_.pop();
+    }
+    if (!timers_.empty()) {
+      return true;
+    }
+  }
+
+  {
+    std::lock_guard lock(fd_mutex_);
+    if (!fd_operations_.empty()) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace xz::io::detail

@@ -105,8 +105,14 @@ void io_context_impl::deregister_fd(int fd) {
 }
 
 auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::size_t {
-  process_timers();
-  process_posted();
+  std::size_t count = 0;
+  count += process_timers();
+  count += process_posted();
+
+  // If stopped during processing, return immediately without waiting
+  if (stopped_.load(std::memory_order_acquire)) {
+    return count;
+  }
 
   struct __kernel_timespec ts;
   ts.tv_sec = timeout.count() / 1000;
@@ -116,14 +122,12 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
   int ret = io_uring_wait_cqe_timeout(&ring_, &cqe, timeout.count() < 0 ? nullptr : &ts);
 
   if (ret == -ETIME || ret == -EINTR) {
-    return 0;
+    return count;
   }
 
   if (ret < 0) {
     throw std::system_error(-ret, std::generic_category(), "io_uring_wait_cqe_timeout failed");
   }
-
-  std::size_t count = 0;
   unsigned head;
   unsigned processed = 0;
 

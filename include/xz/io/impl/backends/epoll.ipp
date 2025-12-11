@@ -102,8 +102,13 @@ void io_context_impl::deregister_fd(int fd) {
 }
 
 auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::size_t {
-  process_timers();
-  process_posted();
+  std::size_t count = 0;
+  count += process_timers();
+  count += process_posted();
+
+  if (stopped_.load(std::memory_order_acquire)) {
+    return count;
+  }
 
   constexpr int max_events = 64;
   epoll_event events[max_events];
@@ -112,11 +117,9 @@ auto io_context_impl::process_events(std::chrono::milliseconds timeout) -> std::
   int nfds = ::epoll_wait(epoll_fd_, events, max_events, timeout_ms);
 
   if (nfds < 0) {
-    if (errno == EINTR) return 0;
+    if (errno == EINTR) return count;
     throw std::system_error(errno, std::generic_category(), "epoll_wait failed");
   }
-
-  std::size_t count = 0;
 
   for (int i = 0; i < nfds; ++i) {
     int fd = events[i].data.fd;

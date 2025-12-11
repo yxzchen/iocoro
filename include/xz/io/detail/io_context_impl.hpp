@@ -67,10 +67,11 @@ class io_context_impl {
 
  private:
   auto process_events(std::chrono::milliseconds timeout) -> std::size_t;
-  void process_timers();
-  void process_posted();
+  auto process_timers() -> std::size_t;
+  auto process_posted() -> std::size_t;
   auto get_timeout() -> std::chrono::milliseconds;
   void wakeup();
+  auto has_work() -> bool;
 
 #ifdef IOXZ_HAS_URING
   struct io_uring ring_;
