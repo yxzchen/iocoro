@@ -143,7 +143,7 @@ inline auto async_read(tcp_socket& s, std::span<char> buffer,
   std::size_t total = 0;
   while (total < buffer.size()) {
     auto n = co_await s.async_read_some(buffer.subspan(total), timeout);
-    if (n == 0) throw std::system_error(make_error_code(error::eof));
+    if (n == 0) throw std::system_error(error::eof);
     total += n;
   }
 }

@@ -28,7 +28,7 @@ class awaitable_op {
     } catch (const std::system_error& se) {
       complete(se.code());
     } catch (...) {
-      complete(make_error_code(error::operation_failed));
+      complete(error::operation_failed);
     }
 
     if (ready_) {

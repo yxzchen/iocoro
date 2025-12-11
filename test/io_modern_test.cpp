@@ -6,16 +6,6 @@
 
 using namespace xz::io;
 
-// Example 1: Simple timer
-task<void> timer_example(io_context& ctx) {
-  std::cout << "Timer example: waiting 100ms..." << std::endl;
-
-  steady_timer timer(ctx);
-  co_await timer.async_wait(std::chrono::milliseconds(100));
-
-  std::cout << "Timer fired!" << std::endl;
-}
-
 // Example 2: TCP connection (will fail if no server, but demonstrates usage)
 task<void> tcp_example(io_context& ctx) {
   std::cout << "TCP example: attempting connection..." << std::endl;
@@ -82,10 +72,6 @@ int main() {
   std::cout << "\n=== Async Examples ===" << std::endl;
 
   io_context ctx;
-
-  // Run timer example
-  auto timer_task = timer_example(ctx);
-  timer_task.resume();
 
   // Run TCP example (will fail gracefully if no server)
   auto tcp_task = tcp_example(ctx);
