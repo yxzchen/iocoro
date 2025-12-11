@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <fmt/format.h>
 
-#include <array>
 #include <bit>
 #include <cstring>
 #include <stdexcept>

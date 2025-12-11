@@ -61,7 +61,7 @@ auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout, std::fun
   std::lock_guard lock(timer_mutex_);
   auto const id = next_timer_id_++;
   auto const expiry = std::chrono::steady_clock::now() + timeout;
-  auto handle = std::shared_ptr<timer_entry>(new timer_entry{id, expiry, std::move(callback), false});
+  auto handle = std::make_shared<timer_entry>(id, expiry, std::move(callback), false);
   timers_.push(handle);
   wakeup();
   return handle;

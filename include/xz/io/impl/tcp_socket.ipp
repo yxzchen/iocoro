@@ -217,17 +217,17 @@ auto tcp_socket_impl::set_option_reuseaddr(bool enable) -> std::error_code {
 
 namespace {
 
-auto sockaddr_to_endpoint(sockaddr_storage const& addr) -> ip::tcp_endpoint {
+auto sockaddr_to_endpoint(sockaddr_storage const& addr) -> expected<ip::tcp_endpoint, std::error_code> {
   if (addr.ss_family == AF_INET) {
     auto* in = reinterpret_cast<sockaddr_in const*>(&addr);
-    return {ip::address_v4{ntohl(in->sin_addr.s_addr)}, ntohs(in->sin_port)};
+    return ip::tcp_endpoint{ip::address_v4{ntohl(in->sin_addr.s_addr)}, ntohs(in->sin_port)};
   } else if (addr.ss_family == AF_INET6) {
     auto* in6 = reinterpret_cast<sockaddr_in6 const*>(&addr);
     ip::address_v6::bytes_type bytes;
     std::memcpy(bytes.data(), &in6->sin6_addr, 16);
-    return {ip::address_v6{bytes}, ntohs(in6->sin6_port)};
+    return ip::tcp_endpoint{ip::address_v6{bytes}, ntohs(in6->sin6_port)};
   }
-  throw std::system_error(error::invalid_argument);
+  return unexpected(error::invalid_argument);
 }
 
 }  // namespace
@@ -244,11 +244,7 @@ auto tcp_socket_impl::local_endpoint() const -> expected<ip::tcp_endpoint, std::
     return unexpected(std::error_code(errno, std::generic_category()));
   }
 
-  try {
-    return sockaddr_to_endpoint(addr);
-  } catch (...) {
-    return unexpected(error::invalid_argument);
-  }
+  return sockaddr_to_endpoint(addr);
 }
 
 auto tcp_socket_impl::remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
@@ -263,11 +259,7 @@ auto tcp_socket_impl::remote_endpoint() const -> expected<ip::tcp_endpoint, std:
     return unexpected(std::error_code(errno, std::generic_category()));
   }
 
-  try {
-    return sockaddr_to_endpoint(addr);
-  } catch (...) {
-    return unexpected(error::invalid_argument);
-  }
+  return sockaddr_to_endpoint(addr);
 }
 
 }  // namespace xz::io::detail
