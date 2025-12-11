@@ -15,7 +15,7 @@ namespace detail {
 class io_context_impl;
 struct timer_entry;
 using timer_handle = std::shared_ptr<timer_entry>;
-}
+}  // namespace detail
 
 /// The execution context for asynchronous I/O operations
 class io_context {
@@ -65,8 +65,7 @@ class io_context {
 
   void register_fd_read(int fd, std::unique_ptr<operation_base> op);
   void register_fd_write(int fd, std::unique_ptr<operation_base> op);
-  void register_fd_readwrite(int fd, std::unique_ptr<operation_base> read_op,
-                             std::unique_ptr<operation_base> write_op);
+  void register_fd_readwrite(int fd, std::unique_ptr<operation_base> read_op, std::unique_ptr<operation_base> write_op);
   void deregister_fd(int fd);
 
   auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) -> detail::timer_handle;

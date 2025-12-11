@@ -60,13 +60,9 @@ class tcp_endpoint {
   tcp_endpoint(address_v4 addr, uint16_t port) : addr_(addr), port_(port) {}
   tcp_endpoint(address_v6 addr, uint16_t port) : addr_(addr), port_(port) {}
 
-  [[nodiscard]] auto get_address_v4() const noexcept -> address_v4 const& {
-    return std::get<address_v4>(addr_);
-  }
+  [[nodiscard]] auto get_address_v4() const noexcept -> address_v4 const& { return std::get<address_v4>(addr_); }
 
-  [[nodiscard]] auto get_address_v6() const noexcept -> address_v6 const& {
-    return std::get<address_v6>(addr_);
-  }
+  [[nodiscard]] auto get_address_v6() const noexcept -> address_v6 const& { return std::get<address_v6>(addr_); }
 
   [[nodiscard]] auto address() const noexcept -> std::variant<address_v4, address_v6> const& { return addr_; }
 

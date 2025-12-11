@@ -26,9 +26,7 @@ struct timer_entry {
   std::function<void()> callback;
   std::atomic<bool> cancelled{false};
 
-  auto operator>(timer_entry const& other) const -> bool {
-    return expiry > other.expiry;
-  }
+  auto operator>(timer_entry const& other) const -> bool { return expiry > other.expiry; }
 };
 
 using timer_handle = std::shared_ptr<timer_entry>;

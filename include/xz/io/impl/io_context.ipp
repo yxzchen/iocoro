@@ -21,9 +21,7 @@ auto io_context::run() -> std::size_t { return impl_->run(); }
 
 auto io_context::run_one() -> std::size_t { return impl_->run_one(); }
 
-auto io_context::run_for(std::chrono::milliseconds timeout) -> std::size_t {
-  return impl_->run_for(timeout);
-}
+auto io_context::run_for(std::chrono::milliseconds timeout) -> std::size_t { return impl_->run_for(timeout); }
 
 void io_context::stop() { impl_->stop(); }
 

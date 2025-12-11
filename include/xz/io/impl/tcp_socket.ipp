@@ -21,23 +21,21 @@ void async_io_operation<Result>::setup_timeout() {
     auto socket_impl = get_socket_impl();
     if (!socket_impl) return;
 
-    timer_handle_ = socket_impl->get_executor().schedule_timer(
-        timeout_,
-        [this, weak_socket_impl = socket_impl_]() {
-          auto socket_impl = weak_socket_impl.lock();
-          if (!socket_impl) {
-            this->complete(error::operation_aborted);
-            return;
-          }
+    timer_handle_ = socket_impl->get_executor().schedule_timer(timeout_, [this, weak_socket_impl = socket_impl_]() {
+      auto socket_impl = weak_socket_impl.lock();
+      if (!socket_impl) {
+        this->complete(error::operation_aborted);
+        return;
+      }
 
-          socket_impl->get_executor().deregister_fd(socket_impl->native_handle());
-          timer_handle_.reset();
-          if constexpr (std::is_void_v<Result>) {
-            this->complete(error::timeout);
-          } else {
-            this->complete(error::timeout, Result{});
-          }
-        });
+      socket_impl->get_executor().deregister_fd(socket_impl->native_handle());
+      timer_handle_.reset();
+      if constexpr (std::is_void_v<Result>) {
+        this->complete(error::timeout);
+      } else {
+        this->complete(error::timeout, Result{});
+      }
+    });
   }
 }
 
@@ -292,9 +290,7 @@ auto tcp_socket::native_handle() const noexcept -> int { return socket_impl_->na
 
 void tcp_socket::close() { socket_impl_->close(); }
 
-auto tcp_socket::close_nothrow() noexcept -> std::error_code {
-  return socket_impl_->close_nothrow();
-}
+auto tcp_socket::close_nothrow() noexcept -> std::error_code { return socket_impl_->close_nothrow(); }
 
 auto tcp_socket::set_option_nodelay(bool enable) -> std::error_code {
   return socket_impl_->set_option_nodelay(enable);
@@ -367,14 +363,13 @@ void tcp_socket::async_connect_op::start_operation() {
     }
   };
 
-  socket_impl->get_executor().register_fd_write(
-      socket_impl->native_handle(),
-      std::make_unique<connect_operation>(socket_impl_, this));
+  socket_impl->get_executor().register_fd_write(socket_impl->native_handle(),
+                                                std::make_unique<connect_operation>(socket_impl_, this));
 }
 
 tcp_socket::async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                                                    std::span<char> buf,
-                                                    std::chrono::milliseconds timeout)
+                                                   std::span<char> buf,
+                                                   std::chrono::milliseconds timeout)
     : async_io_operation<std::size_t>(std::move(socket_impl), timeout), buffer_(buf) {}
 
 void tcp_socket::async_read_some_op::start_operation() {
@@ -403,8 +398,7 @@ void tcp_socket::async_read_some_op::start_operation() {
     std::span<char> buffer;
     tcp_socket::async_read_some_op* op;
 
-    read_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char> buf,
-                   tcp_socket::async_read_some_op* o)
+    read_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char> buf, tcp_socket::async_read_some_op* o)
         : socket_impl(std::move(s)), buffer(buf), op(o) {}
 
     void execute() override {
@@ -417,9 +411,8 @@ void tcp_socket::async_read_some_op::start_operation() {
       auto result = socket_impl_ptr->read_some(buffer);
 
       if (!result && result.error() == std::errc::operation_would_block) {
-        socket_impl_ptr->get_executor().register_fd_read(
-            socket_impl_ptr->native_handle(),
-            std::make_unique<read_operation>(socket_impl, buffer, op));
+        socket_impl_ptr->get_executor().register_fd_read(socket_impl_ptr->native_handle(),
+                                                         std::make_unique<read_operation>(socket_impl, buffer, op));
         return;
       }
 
@@ -433,9 +426,8 @@ void tcp_socket::async_read_some_op::start_operation() {
     }
   };
 
-  socket_impl->get_executor().register_fd_read(
-      socket_impl->native_handle(),
-      std::make_unique<read_operation>(socket_impl_, buffer_, this));
+  socket_impl->get_executor().register_fd_read(socket_impl->native_handle(),
+                                               std::make_unique<read_operation>(socket_impl_, buffer_, this));
 }
 
 tcp_socket::async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
@@ -483,9 +475,8 @@ void tcp_socket::async_write_some_op::start_operation() {
       auto result = socket_impl_ptr->write_some(buffer);
 
       if (!result && result.error() == std::errc::operation_would_block) {
-        socket_impl_ptr->get_executor().register_fd_write(
-            socket_impl_ptr->native_handle(),
-            std::make_unique<write_operation>(socket_impl, buffer, op));
+        socket_impl_ptr->get_executor().register_fd_write(socket_impl_ptr->native_handle(),
+                                                          std::make_unique<write_operation>(socket_impl, buffer, op));
         return;
       }
 
@@ -499,9 +490,8 @@ void tcp_socket::async_write_some_op::start_operation() {
     }
   };
 
-  socket_impl->get_executor().register_fd_write(
-      socket_impl->native_handle(),
-      std::make_unique<write_operation>(socket_impl_, buffer_, this));
+  socket_impl->get_executor().register_fd_write(socket_impl->native_handle(),
+                                                std::make_unique<write_operation>(socket_impl_, buffer_, this));
 }
 
 }  // namespace xz::io
