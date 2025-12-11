@@ -4,6 +4,8 @@
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
 
+#include <span>
+
 namespace xz::io::detail {
 
 class tcp_socket_impl {

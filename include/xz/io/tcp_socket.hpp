@@ -4,6 +4,7 @@
 #include <xz/io/expected.hpp>
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
+#include <xz/io/task.hpp>
 
 #include <chrono>
 #include <memory>
