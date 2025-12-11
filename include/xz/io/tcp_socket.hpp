@@ -36,8 +36,8 @@ class async_io_operation : public awaitable_op<Result> {
 
  public:
   async_io_operation(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                     std::chrono::milliseconds timeout, std::stop_token stop)
-      : awaitable_op<Result>(std::move(stop)), socket_impl_(std::move(socket_impl)), timeout_(timeout) {}
+                     std::chrono::milliseconds timeout)
+      : socket_impl_(std::move(socket_impl)), timeout_(timeout) {}
 };
 
 /// Asynchronous TCP socket
@@ -70,8 +70,7 @@ class tcp_socket {
   /// Connect to remote endpoint (coroutine-based)
   struct [[nodiscard]] async_connect_op : async_io_operation<void> {
     async_connect_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl, ip::tcp_endpoint ep,
-                     std::chrono::milliseconds timeout = {},
-                     std::stop_token stop = {});
+                     std::chrono::milliseconds timeout = {});
 
    protected:
     void start_operation() override;
@@ -81,16 +80,14 @@ class tcp_socket {
   };
 
   auto async_connect(ip::tcp_endpoint ep,
-                    std::chrono::milliseconds timeout = {},
-                    std::stop_token stop = {}) -> async_connect_op {
-    return async_connect_op{socket_impl_, ep, timeout, std::move(stop)};
+                    std::chrono::milliseconds timeout = {}) -> async_connect_op {
+    return async_connect_op{socket_impl_, ep, timeout};
   }
 
   /// Read some data (coroutine-based)
   struct [[nodiscard]] async_read_some_op : async_io_operation<std::size_t> {
     async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl, std::span<char> buf,
-                       std::chrono::milliseconds timeout = {},
-                       std::stop_token stop = {});
+                       std::chrono::milliseconds timeout = {});
 
    protected:
     void start_operation() override;
@@ -100,16 +97,14 @@ class tcp_socket {
   };
 
   auto async_read_some(std::span<char> buffer,
-                       std::chrono::milliseconds timeout = {},
-                       std::stop_token stop = {}) -> async_read_some_op {
-    return async_read_some_op{socket_impl_, buffer, timeout, std::move(stop)};
+                       std::chrono::milliseconds timeout = {}) -> async_read_some_op {
+    return async_read_some_op{socket_impl_, buffer, timeout};
   }
 
   /// Write some data (coroutine-based)
   struct [[nodiscard]] async_write_some_op : async_io_operation<std::size_t> {
     async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl, std::span<char const> buf,
-                        std::chrono::milliseconds timeout = {},
-                        std::stop_token stop = {});
+                        std::chrono::milliseconds timeout = {});
 
    protected:
     void start_operation() override;
@@ -119,9 +114,8 @@ class tcp_socket {
   };
 
   auto async_write_some(std::span<char const> buffer,
-                        std::chrono::milliseconds timeout = {},
-                        std::stop_token stop = {}) -> async_write_some_op {
-    return async_write_some_op{socket_impl_, buffer, timeout, std::move(stop)};
+                        std::chrono::milliseconds timeout = {}) -> async_write_some_op {
+    return async_write_some_op{socket_impl_, buffer, timeout};
   }
 
   /// Socket options
@@ -145,11 +139,10 @@ class tcp_socket {
 
 /// Read exactly n bytes
 inline auto async_read(tcp_socket& s, std::span<char> buffer,
-                       std::chrono::milliseconds timeout = {},
-                       std::stop_token stop = {}) -> task<void> {
+                       std::chrono::milliseconds timeout = {}) -> task<void> {
   std::size_t total = 0;
   while (total < buffer.size()) {
-    auto n = co_await s.async_read_some(buffer.subspan(total), timeout, stop);
+    auto n = co_await s.async_read_some(buffer.subspan(total), timeout);
     if (n == 0) throw std::system_error(make_error_code(error::eof));
     total += n;
   }
@@ -157,11 +150,10 @@ inline auto async_read(tcp_socket& s, std::span<char> buffer,
 
 /// Write all data
 inline auto async_write(tcp_socket& s, std::span<char const> buffer,
-                        std::chrono::milliseconds timeout = {},
-                        std::stop_token stop = {}) -> task<void> {
+                        std::chrono::milliseconds timeout = {}) -> task<void> {
   std::size_t total = 0;
   while (total < buffer.size()) {
-    auto n = co_await s.async_write_some(buffer.subspan(total), timeout, stop);
+    auto n = co_await s.async_write_some(buffer.subspan(total), timeout);
     total += n;
   }
 }

@@ -315,18 +315,12 @@ auto tcp_socket::remote_endpoint() const -> expected<ip::tcp_endpoint, std::erro
 
 tcp_socket::async_connect_op::async_connect_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
                                                 ip::tcp_endpoint ep,
-                                                std::chrono::milliseconds timeout,
-                                                std::stop_token stop)
-    : async_io_operation<void>(std::move(socket_impl), timeout, std::move(stop)), endpoint_(ep) {}
+                                                std::chrono::milliseconds timeout)
+    : async_io_operation<void>(std::move(socket_impl), timeout), endpoint_(ep) {}
 
 void tcp_socket::async_connect_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted));
-    return;
-  }
-
-  if (stop_requested()) {
     complete(make_error_code(error::operation_aborted));
     return;
   }
@@ -375,18 +369,12 @@ void tcp_socket::async_connect_op::start_operation() {
 
 tcp_socket::async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
                                                     std::span<char> buf,
-                                                    std::chrono::milliseconds timeout,
-                                                    std::stop_token stop)
-    : async_io_operation<std::size_t>(std::move(socket_impl), timeout, std::move(stop)), buffer_(buf) {}
+                                                    std::chrono::milliseconds timeout)
+    : async_io_operation<std::size_t>(std::move(socket_impl), timeout), buffer_(buf) {}
 
 void tcp_socket::async_read_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted), std::size_t{0});
-    return;
-  }
-
-  if (stop_requested()) {
     complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }
@@ -444,18 +432,12 @@ void tcp_socket::async_read_some_op::start_operation() {
 
 tcp_socket::async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
                                                       std::span<char const> buf,
-                                                      std::chrono::milliseconds timeout,
-                                                      std::stop_token stop)
-    : async_io_operation<std::size_t>(std::move(socket_impl), timeout, std::move(stop)), buffer_(buf) {}
+                                                      std::chrono::milliseconds timeout)
+    : async_io_operation<std::size_t>(std::move(socket_impl), timeout), buffer_(buf) {}
 
 void tcp_socket::async_write_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
-    complete(make_error_code(error::operation_aborted), std::size_t{0});
-    return;
-  }
-
-  if (stop_requested()) {
     complete(make_error_code(error::operation_aborted), std::size_t{0});
     return;
   }

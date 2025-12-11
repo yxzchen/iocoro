@@ -7,30 +7,22 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <stop_token>
 #include <system_error>
 #include <utility>
 #include <variant>
 
 namespace xz::io {
 
-/// Base awaitable operation for async operations with error code and stop token
+/// Base awaitable operation for async operations with error code
 template <typename Result = void>
 class awaitable_op {
  public:
   awaitable_op() = default;
-  explicit awaitable_op(std::stop_token stop) : stop_token_(std::move(stop)) {}
   virtual ~awaitable_op() noexcept = default;
 
   auto await_ready() noexcept -> bool { return ready_; }
 
   auto await_suspend(std::coroutine_handle<> h) -> bool {
-    if (stop_requested()) {
-      ec_ = make_error_code(error::operation_aborted);
-      ready_ = true;
-      return false;
-    }
-
     try {
       start_operation();
     } catch (const std::system_error& se) {
@@ -41,10 +33,6 @@ class awaitable_op {
 
     if (ready_) {
       return false;
-    }
-
-    if (stop_token_ && !stop_callback_) {
-      stop_callback_.emplace(*stop_token_, [this]() { complete(make_error_code(error::operation_aborted)); });
     }
 
     awaiting_ = h;
@@ -72,7 +60,6 @@ class awaitable_op {
     }
 
     ready_ = true;
-    stop_callback_.reset();
 
     if (awaiting_) {
       auto h = std::exchange(awaiting_, {});
@@ -80,14 +67,9 @@ class awaitable_op {
     }
   }
 
-  [[nodiscard]] bool stop_requested() const noexcept { return stop_token_ && stop_token_->stop_requested(); }
-
   std::coroutine_handle<> awaiting_;
   std::error_code ec_{};
   bool ready_ = false;
-
-  std::optional<std::stop_token> stop_token_;
-  std::optional<std::stop_callback<std::function<void()>>> stop_callback_;
 
   [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, std::optional<Result>> result_{};
 };
