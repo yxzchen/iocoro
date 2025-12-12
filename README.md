@@ -94,7 +94,7 @@ This is a minimal library focused on redisxz requirements. Notable omissions:
 - **CMake**: 3.15 or higher
 - **Kernel**: Linux 5.1+ for io_uring support (5.4+ recommended), falls back to epoll on older kernels
 - **Dependencies**:
-  - [fmt](https://github.com/fmtlib/fmt) - Formatting library
+  - [fmt](https://github.com/fmtlib/fmt) - Required only if `std::format` is not available (GCC 13+/Clang 15+ have it)
   - [liburing](https://github.com/axboe/liburing) - Optional, for io_uring support
   - [Google Test](https://github.com/google/googletest) - Optional, for tests
 
