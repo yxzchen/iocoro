@@ -44,11 +44,11 @@ struct awaitable_result<awaitable<T>> {
 template <typename T>
 using awaitable_result_t = typename awaitable_result<std::decay_t<T>>::type;
 
-// State that holds the user awaitable and wrapper handle, keeping itself alive
+// State that holds the user awaitable and wrapper, keeping itself alive
 template <typename T>
 struct detached_state {
   awaitable<T> user_awaitable;
-  std::coroutine_handle<> wrapper_handle;
+  std::optional<awaitable<void>> wrapper;
   std::shared_ptr<detached_state> self;
 
   explicit detached_state(awaitable<T>&& t) : user_awaitable(std::move(t)) {}
@@ -70,18 +70,23 @@ auto make_detached_wrapper(std::shared_ptr<detached_state<T>> state) -> awaitabl
   state->self.reset();
 }
 
+// Helper to start an awaitable by resuming its coroutine handle
+template <typename T>
+void start_awaitable(awaitable<T>& a) {
+  if (a.coro_) {
+    a.coro_.resume();
+  }
+}
+
 // Helper to spawn an awaitable on the executor
 template <typename Executor, typename T>
 void spawn_awaitable_detached(Executor& ex, awaitable<T>&& user_awaitable) {
   auto state = std::make_shared<detached_state<T>>(std::move(user_awaitable));
-
-  // Create wrapper and transfer ownership of its coroutine handle
-  auto wrapper = make_detached_wrapper(state);
-  state->wrapper_handle = wrapper.release();
+  state->wrapper.emplace(make_detached_wrapper(state));
   state->self = state; // Create self-reference to keep alive
 
   ex.post([state]() mutable {
-    state->wrapper_handle.resume();
+    start_awaitable(*state->wrapper);
   });
 }
 

@@ -22,6 +22,9 @@ namespace detail {
 template <typename T>
 struct detached_state;
 
+template <typename T>
+void start_awaitable(awaitable<T>& a);
+
 template <typename Executor, typename T>
 void spawn_awaitable_detached(Executor& ex, awaitable<T>&& user_awaitable);
 }  // namespace detail
@@ -183,15 +186,13 @@ class awaitable {
   }
 
  private:
-  // Release ownership of the coroutine handle (for internal use only)
-  auto release() noexcept -> std::coroutine_handle<> {
-    return std::exchange(coro_, {});
-  }
-
   handle_type coro_;
 
   template <typename U>
   friend struct detail::detached_state;
+
+  template <typename U>
+  friend void detail::start_awaitable(awaitable<U>& a);
 
   template <typename Executor, typename U>
   friend void detail::spawn_awaitable_detached(Executor& ex, awaitable<U>&& user_awaitable);
