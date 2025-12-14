@@ -44,15 +44,13 @@ struct awaitable_result<awaitable<T>> {
 template <typename T>
 using awaitable_result_t = typename awaitable_result<std::decay_t<T>>::type;
 
-// State that holds the user awaitable and wrapper, keeping itself alive
+// State that holds the factory function and wrapper, keeping itself alive
 template <typename T>
 struct detached_state {
-  std::optional<awaitable<T>> user_awaitable;
+  std::function<awaitable<T>()> factory;  // Factory to create awaitable, keeps lambda alive
   std::optional<awaitable<void>> wrapper;
   std::shared_ptr<detached_state> self;
-  std::optional<std::function<awaitable<T>()>> factory;  // Factory to create awaitable, keeps lambda alive
 
-  explicit detached_state(awaitable<T>&& t) : user_awaitable(std::move(t)) {}
   explicit detached_state(std::function<awaitable<T>()>&& f) : factory(std::move(f)) {}
 };
 
@@ -60,17 +58,11 @@ struct detached_state {
 template <typename T>
 auto make_detached_wrapper(std::shared_ptr<detached_state<T>> state) -> awaitable<void> {
   try {
-    // Use factory if available, otherwise use user_awaitable directly
+    // Execute factory to create and run awaitable
     if constexpr (std::is_void_v<T>) {
-      if (state->factory.has_value()) {
-        co_await std::move(state->factory.value())();
-      } else {
-        co_await std::move(*state->user_awaitable);
-      }
+      co_await state->factory();
     } else {
-      [[maybe_unused]] auto result = state->factory.has_value()
-        ? co_await std::move(state->factory.value())()
-        : co_await std::move(*state->user_awaitable);
+      [[maybe_unused]] auto result = co_await state->factory();
     }
   } catch (...) {
     // Detached mode: swallow exceptions
@@ -87,39 +79,34 @@ void start_awaitable(awaitable<T>& a) {
   }
 }
 
-// Helper to spawn an awaitable on the executor
-template <typename Executor, typename T>
-void spawn_awaitable_detached(Executor& ex, awaitable<T>&& user_awaitable) {
-  auto state = std::make_shared<detached_state<T>>(std::move(user_awaitable));
-  state->wrapper.emplace(make_detached_wrapper(state));
-  state->self = state; // Create self-reference to keep alive
-
-  ex.post([state]() mutable {
-    start_awaitable(*state->wrapper);
-  });
-}
-
 }  // namespace detail
 
-// co_spawn with detached completion token
+// co_spawn with detached completion token - direct awaitable overload
 template <typename Executor, typename T>
   requires std::is_same_v<std::decay_t<Executor>, io_context>
 void co_spawn(Executor& ex, awaitable<T>&& t, detached_t) {
-  detail::spawn_awaitable_detached(ex, std::move(t));
+  // Store awaitable in shared_ptr to make lambda copyable
+  auto awaitable_ptr = std::make_shared<awaitable<T>>(std::move(t));
+  auto state = std::make_shared<detail::detached_state<T>>(
+    [awaitable_ptr]() mutable -> awaitable<T> {
+      return std::move(*awaitable_ptr);
+    }
+  );
+  state->wrapper.emplace(detail::make_detached_wrapper(state));
+  state->self = state; // Create self-reference to keep alive
+
+  ex.post([state]() mutable {
+    detail::start_awaitable(*state->wrapper);
+  });
 }
 
-// co_spawn with callable that returns an awaitable
+// co_spawn with detached completion token - callable overload
 template <typename Executor, typename F>
   requires std::is_same_v<std::decay_t<Executor>, io_context> &&
-           std::invocable<F> &&
-           detail::is_awaitable_v<std::invoke_result_t<F>>
-void co_spawn(Executor& ex, F&& f, detached_t token) {
-  // Use factory pattern to keep lambda alive
-  using awaitable_t = std::invoke_result_t<F>;
-  using result_t = detail::awaitable_result_t<awaitable_t>;
-  auto state = std::make_shared<detail::detached_state<result_t>>(
-    std::function<awaitable_t()>{std::forward<F>(f)}
-  );
+           (!detail::is_awaitable_v<std::decay_t<F>>)
+void co_spawn(Executor& ex, F&& f, detached_t) {
+  using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
+  auto state = std::make_shared<detail::detached_state<result_t>>(std::forward<F>(f));
   state->wrapper.emplace(detail::make_detached_wrapper(state));
   state->self = state; // Create self-reference to keep alive
 
