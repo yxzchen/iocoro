@@ -1,5 +1,6 @@
 
 #include <xz/io/impl/backends/io_context_impl.ipp>
+#include <xz/io/operation_base.hpp>
 
 #include <cerrno>
 
@@ -38,7 +39,7 @@ io_context_impl::~io_context_impl() {
   if (epoll_fd_ >= 0) ::close(epoll_fd_);
 }
 
-void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
   auto& ops = fd_operations_[fd];
@@ -55,7 +56,7 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::opera
   }
 }
 
-void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
   auto& ops = fd_operations_[fd];
@@ -72,8 +73,8 @@ void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::oper
   }
 }
 
-void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::operation_base> read_op,
-                                            std::unique_ptr<io_context::operation_base> write_op) {
+void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<operation_base> read_op,
+                                            std::unique_ptr<operation_base> write_op) {
   std::lock_guard lock(fd_mutex_);
 
   epoll_event ev{
@@ -136,8 +137,8 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       continue;
     }
 
-    std::unique_ptr<io_context::operation_base> read_op;
-    std::unique_ptr<io_context::operation_base> write_op;
+    std::unique_ptr<operation_base> read_op;
+    std::unique_ptr<operation_base> write_op;
 
     {
       std::lock_guard lock(fd_mutex_);

@@ -1,5 +1,6 @@
 
 #include <xz/io/impl/backends/io_context_impl.ipp>
+#include <xz/io/operation_base.hpp>
 
 #include <cerrno>
 #include <system_error>
@@ -23,7 +24,7 @@ io_context_impl::~io_context_impl() {
   io_uring_queue_exit(&ring_);
 }
 
-void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
   auto& ops = fd_operations_[fd];
   ops.read_op = std::move(op);
@@ -39,7 +40,7 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::opera
   io_uring_submit(&ring_);
 }
 
-void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
   auto& ops = fd_operations_[fd];
   ops.write_op = std::move(op);
@@ -55,8 +56,8 @@ void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::oper
   io_uring_submit(&ring_);
 }
 
-void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::operation_base> read_op,
-                                            std::unique_ptr<io_context::operation_base> write_op) {
+void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<operation_base> read_op,
+                                            std::unique_ptr<operation_base> write_op) {
   std::lock_guard lock(fd_mutex_);
   auto& ops = fd_operations_[fd];
   ops.read_op = std::move(read_op);
@@ -146,7 +147,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     int fd = static_cast<int>(user_data & 0xFFFFFFFF);
     int op_type = static_cast<int>(user_data >> 32);
 
-    std::unique_ptr<io_context::operation_base> op;
+    std::unique_ptr<operation_base> op;
 
     {
       std::lock_guard lock(fd_mutex_);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <xz/io/operation_base.hpp>
+
 #include <atomic>
 #include <chrono>
 #include <coroutine>
@@ -45,12 +47,6 @@ class io_context {
   void dispatch(std::function<void()> f);
 
   auto native_handle() const noexcept -> int;
-
- public:
-  struct operation_base {
-    virtual ~operation_base() = default;
-    virtual void execute() = 0;
-  };
 
   void register_fd_read(int fd, std::unique_ptr<operation_base> op);
   void register_fd_write(int fd, std::unique_ptr<operation_base> op);

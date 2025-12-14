@@ -303,13 +303,12 @@ auto tcp_socket::local_endpoint() const -> expected<ip::tcp_endpoint, std::error
 auto tcp_socket::remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
   return socket_impl_->remote_endpoint();
 }
-
-tcp_socket::async_connect_op::async_connect_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                                                ip::tcp_endpoint ep,
-                                                std::chrono::milliseconds timeout)
+async_connect_op::async_connect_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
+                                    ip::tcp_endpoint ep,
+                                    std::chrono::milliseconds timeout)
     : async_io_operation<void>(std::move(socket_impl), timeout), endpoint_(ep) {}
 
-void tcp_socket::async_connect_op::start_operation() {
+void async_connect_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
     complete(error::operation_aborted);
@@ -326,11 +325,11 @@ void tcp_socket::async_connect_op::start_operation() {
 
   setup_timeout();
 
-  struct connect_operation : io_context::operation_base {
+  struct connect_operation : operation_base {
     std::weak_ptr<detail::tcp_socket_impl> socket_impl;
-    tcp_socket::async_connect_op* op;
+    async_connect_op* op;
 
-    connect_operation(std::weak_ptr<detail::tcp_socket_impl> s, tcp_socket::async_connect_op* o)
+    connect_operation(std::weak_ptr<detail::tcp_socket_impl> s, async_connect_op* o)
         : socket_impl(std::move(s)), op(o) {}
 
     void execute() override {
@@ -359,12 +358,12 @@ void tcp_socket::async_connect_op::start_operation() {
                                                 std::make_unique<connect_operation>(socket_impl_, this));
 }
 
-tcp_socket::async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                                                   std::span<char> buf,
-                                                   std::chrono::milliseconds timeout)
+async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
+                                        std::span<char> buf,
+                                        std::chrono::milliseconds timeout)
     : async_io_operation<std::size_t>(std::move(socket_impl), timeout), buffer_(buf) {}
 
-void tcp_socket::async_read_some_op::start_operation() {
+void async_read_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
     complete(error::operation_aborted);
@@ -385,12 +384,12 @@ void tcp_socket::async_read_some_op::start_operation() {
 
   setup_timeout();
 
-  struct read_operation : io_context::operation_base {
+  struct read_operation : operation_base {
     std::weak_ptr<detail::tcp_socket_impl> socket_impl;
     std::span<char> buffer;
-    tcp_socket::async_read_some_op* op;
+    async_read_some_op* op;
 
-    read_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char> buf, tcp_socket::async_read_some_op* o)
+    read_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char> buf, async_read_some_op* o)
         : socket_impl(std::move(s)), buffer(buf), op(o) {}
 
     void execute() override {
@@ -422,12 +421,12 @@ void tcp_socket::async_read_some_op::start_operation() {
                                                std::make_unique<read_operation>(socket_impl_, buffer_, this));
 }
 
-tcp_socket::async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                                                      std::span<char const> buf,
-                                                      std::chrono::milliseconds timeout)
+async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
+                                          std::span<char const> buf,
+                                          std::chrono::milliseconds timeout)
     : async_io_operation<std::size_t>(std::move(socket_impl), timeout), buffer_(buf) {}
 
-void tcp_socket::async_write_some_op::start_operation() {
+void async_write_some_op::start_operation() {
   auto socket_impl = get_socket_impl();
   if (!socket_impl) {
     complete(error::operation_aborted);
@@ -448,13 +447,13 @@ void tcp_socket::async_write_some_op::start_operation() {
 
   setup_timeout();
 
-  struct write_operation : io_context::operation_base {
+  struct write_operation : operation_base {
     std::weak_ptr<detail::tcp_socket_impl> socket_impl;
     std::span<char const> buffer;
-    tcp_socket::async_write_some_op* op;
+    async_write_some_op* op;
 
     write_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char const> buf,
-                    tcp_socket::async_write_some_op* o)
+                    async_write_some_op* o)
         : socket_impl(std::move(s)), buffer(buf), op(o) {}
 
     void execute() override {

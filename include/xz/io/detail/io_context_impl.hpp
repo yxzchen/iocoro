@@ -1,6 +1,7 @@
 #pragma once
 
 #include <xz/io/io_context.hpp>
+#include <xz/io/operation_base.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -57,10 +58,10 @@ class io_context_impl {
   auto native_handle() const noexcept -> int { return epoll_fd_; }
 #endif
 
-  void register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op);
-  void register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op);
-  void register_fd_readwrite(int fd, std::unique_ptr<io_context::operation_base> read_op,
-                             std::unique_ptr<io_context::operation_base> write_op);
+  void register_fd_read(int fd, std::unique_ptr<operation_base> op);
+  void register_fd_write(int fd, std::unique_ptr<operation_base> op);
+  void register_fd_readwrite(int fd, std::unique_ptr<operation_base> read_op,
+                             std::unique_ptr<operation_base> write_op);
   void deregister_fd(int fd);
 
   auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) -> timer_handle;
@@ -88,8 +89,8 @@ class io_context_impl {
   std::atomic<std::thread::id> owner_thread_;
 
   struct fd_ops {
-    std::unique_ptr<io_context::operation_base> read_op;
-    std::unique_ptr<io_context::operation_base> write_op;
+    std::unique_ptr<operation_base> read_op;
+    std::unique_ptr<operation_base> write_op;
   };
 
   std::unordered_map<int, fd_ops> fd_operations_;
