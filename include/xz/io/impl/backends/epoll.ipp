@@ -140,12 +140,15 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     std::unique_ptr<operation_base> read_op;
     std::unique_ptr<operation_base> write_op;
 
+    // Check for error conditions first
+    bool is_error = ev & (EPOLLERR | EPOLLHUP | EPOLLRDHUP);
+
     {
       std::lock_guard lock(fd_mutex_);
       auto it = fd_operations_.find(fd);
       if (it != fd_operations_.end()) {
-        if (ev & EPOLLIN) read_op = std::move(it->second.read_op);
-        if (ev & EPOLLOUT) write_op = std::move(it->second.write_op);
+        if (is_error || (ev & EPOLLIN)) read_op = std::move(it->second.read_op);
+        if (is_error || (ev & EPOLLOUT)) write_op = std::move(it->second.write_op);
 
         if (!it->second.read_op && !it->second.write_op) {
           ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
@@ -154,13 +157,24 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       }
     }
 
-    if (read_op) {
-      read_op->execute();
-      ++count;
-    }
-    if (write_op) {
-      write_op->execute();
-      ++count;
+    if (is_error) {
+      if (read_op) {
+        read_op->abort(std::make_error_code(std::errc::connection_reset));
+        ++count;
+      }
+      if (write_op) {
+        write_op->abort(std::make_error_code(std::errc::connection_reset));
+        ++count;
+      }
+    } else {
+      if (read_op) {
+        read_op->execute();
+        ++count;
+      }
+      if (write_op) {
+        write_op->execute();
+        ++count;
+      }
     }
   }
 

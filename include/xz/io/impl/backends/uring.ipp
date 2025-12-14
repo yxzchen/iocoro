@@ -166,7 +166,13 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     if (op) {
-      op->execute();
+      // Check for error conditions in the poll result
+      // For poll operations, negative results indicate errors, or POLLERR bit in the result
+      if (cqe->res < 0 || (cqe->res & POLLERR)) {
+        op->abort(std::make_error_code(std::errc::connection_reset));
+      } else {
+        op->execute();
+      }
       ++count;
     }
   }
