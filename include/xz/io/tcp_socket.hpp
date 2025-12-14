@@ -1,9 +1,9 @@
 #pragma once
 
-#include <xz/io/async_io_operation.hpp>
-#include <xz/io/async_connect_op.hpp>
-#include <xz/io/async_read_op.hpp>
-#include <xz/io/async_write_op.hpp>
+#include <xz/io/detail/async_io_operation.hpp>
+#include <xz/io/detail/async_connect_op.hpp>
+#include <xz/io/detail/async_read_op.hpp>
+#include <xz/io/detail/async_write_op.hpp>
 #include <xz/io/expected.hpp>
 #include <xz/io/ip.hpp>
 
@@ -17,6 +17,9 @@ namespace xz::io {
 namespace detail {
 class tcp_socket_impl;
 }  // namespace detail
+
+/// Forward declaration
+class tcp_socket;
 
 /// Asynchronous TCP socket
 class tcp_socket {

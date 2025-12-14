@@ -1,6 +1,6 @@
 #pragma once
 
-#include <xz/io/async_io_operation.hpp>
+#include <xz/io/detail/async_io_operation.hpp>
 #include <xz/io/expected.hpp>
 
 #include <memory>

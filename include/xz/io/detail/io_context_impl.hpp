@@ -1,7 +1,7 @@
 #pragma once
 
 #include <xz/io/io_context.hpp>
-#include <xz/io/operation_base.hpp>
+#include <xz/io/detail/operation_base.hpp>
 
 #include <atomic>
 #include <chrono>

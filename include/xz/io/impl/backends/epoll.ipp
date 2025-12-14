@@ -1,6 +1,6 @@
 
 #include <xz/io/impl/backends/io_context_impl.ipp>
-#include <xz/io/operation_base.hpp>
+#include <xz/io/detail/operation_base.hpp>
 
 #include <cerrno>
 
