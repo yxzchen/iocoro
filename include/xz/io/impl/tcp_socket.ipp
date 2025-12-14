@@ -352,6 +352,11 @@ void async_connect_op::start_operation() {
         op->complete({});
       }
     }
+
+    void abort(std::error_code ec) override {
+      op->cleanup_timer();
+      op->complete(ec);
+    }
   };
 
   socket_impl->get_executor().register_fd_write(socket_impl->native_handle(),
@@ -414,6 +419,11 @@ void async_read_some_op::start_operation() {
       } else {
         op->complete(result.error());
       }
+    }
+
+    void abort(std::error_code ec) override {
+      op->cleanup_timer();
+      op->complete(ec);
     }
   };
 
@@ -478,6 +488,11 @@ void async_write_some_op::start_operation() {
       } else {
         op->complete(result.error());
       }
+    }
+
+    void abort(std::error_code ec) override {
+      op->cleanup_timer();
+      op->complete(ec);
     }
   };
 

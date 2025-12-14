@@ -9,6 +9,7 @@ namespace xz::io {
 struct operation_base {
   virtual ~operation_base() = default;
   virtual void execute() = 0;
+  virtual void abort(std::error_code ec) = 0;
 };
 
 }  // namespace xz::io
