@@ -3,6 +3,7 @@
 #include <xz/io/error.hpp>
 #include <xz/io/io_context.hpp>
 
+#include <atomic>
 #include <coroutine>
 #include <functional>
 #include <memory>
@@ -36,7 +37,7 @@ class awaitable_op {
   awaitable_op() = default;
   virtual ~awaitable_op() noexcept = default;
 
-  auto await_ready() noexcept -> bool { return ready_; }
+  auto await_ready() noexcept -> bool { return ready_.load(std::memory_order_acquire); }
 
   auto await_suspend(std::coroutine_handle<> h) -> bool {
     try {
@@ -47,11 +48,11 @@ class awaitable_op {
       complete(error::operation_failed);
     }
 
-    if (ready_) {
+    if (ready_.load(std::memory_order_acquire)) {
       return false;
     }
 
-    awaiting_ = h;
+    awaiting_.store(h, std::memory_order_release);
     return true;
   }
 
@@ -67,7 +68,10 @@ class awaitable_op {
 
   template <typename... Args>
   void complete(std::error_code ec, Args&&... args) {
-    if (ready_) return;
+    bool expected = false;
+    if (!ready_.compare_exchange_strong(expected, true)) {
+      return;
+    }
 
     ec_ = ec;
 
@@ -75,17 +79,15 @@ class awaitable_op {
       result_.emplace(std::forward<Args>(args)...);
     }
 
-    ready_ = true;
-
-    if (awaiting_) {
-      auto h = std::exchange(awaiting_, {});
+    auto h = awaiting_.exchange({}, std::memory_order_acquire);
+    if (h) {
       h.resume();
     }
   }
 
-  std::coroutine_handle<> awaiting_;
+  std::atomic<std::coroutine_handle<>> awaiting_{};
   std::error_code ec_{};
-  bool ready_ = false;
+  std::atomic<bool> ready_{false};
 
   [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, std::optional<Result>> result_{};
 };
