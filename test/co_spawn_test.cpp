@@ -298,3 +298,112 @@ TEST(CoSpawnTest, CallableFactoryOutOfScope) {
   ctx.run();
   EXPECT_EQ(result.load(), 999);
 }
+
+TEST(CoSpawnTest, MoveParametersIntoCoroutine) {
+  io_context ctx;
+  std::atomic<int> sum_result{0};
+  std::atomic<bool> prefix_valid{false};
+  std::atomic<bool> executed{false};
+
+  // Coroutine function that takes parameters by value (enabling move)
+  auto process = [](std::vector<int> nums, std::string pref,
+                    std::atomic<int>& sum_ref,
+                    std::atomic<bool>& prefix_ref,
+                    std::atomic<bool>& exec_ref) -> awaitable<void> {
+    exec_ref.store(true);
+
+    int sum = 0;
+    for (int n : nums) {
+      sum += n;
+    }
+    sum_ref.store(sum);
+    prefix_ref.store(pref == "Moved: ");
+    co_return;
+  };
+
+  {
+    // Create complex objects that will be moved
+    std::vector<int> numbers = {1, 2, 3, 4, 5};
+    std::string prefix = "Moved: ";
+
+    // Move parameters into coroutine - no copy!
+    co_spawn(ctx, process(std::move(numbers), std::move(prefix),
+                          sum_result, prefix_valid, executed), use_detached);
+
+    // Original numbers and prefix are now moved-from (empty)
+    EXPECT_TRUE(numbers.empty()) << "Vector should be moved-from";
+    EXPECT_TRUE(prefix.empty()) << "String should be moved-from";
+
+    // All variables destroyed here
+  }
+
+  ctx.run();
+  EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
+  EXPECT_EQ(sum_result.load(), 15) << "Sum calculation failed";
+  EXPECT_TRUE(prefix_valid.load()) << "Prefix validation failed";
+}
+
+TEST(CoSpawnTest, MoveOnlyTypeAsParameter) {
+  io_context ctx;
+  std::atomic<bool> success{false};
+  std::atomic<bool> executed{false};
+
+  // Coroutine that accepts move-only type as parameter
+  auto process = [](std::unique_ptr<int> data,
+                    std::atomic<bool>& success_ref,
+                    std::atomic<bool>& exec_ref) -> awaitable<void> {
+    exec_ref.store(true);
+    success_ref.store(*data == 42);
+    co_return;
+  };
+
+  {
+    // Create move-only type
+    auto unique_data = std::make_unique<int>(42);
+
+    // Move unique_ptr into coroutine as parameter
+    co_spawn(ctx, process(std::move(unique_data), success, executed), use_detached);
+
+    // unique_data is now nullptr (moved-from)
+    EXPECT_EQ(unique_data, nullptr) << "unique_ptr should be moved-from";
+  }
+
+  ctx.run();
+  EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
+  EXPECT_TRUE(success.load()) << "Data validation failed";
+}
+
+TEST(CoSpawnTest, DirectMoveParametersIntoCoroutine) {
+  io_context ctx;
+  std::atomic<int> sum_result{0};
+  std::atomic<bool> executed{false};
+
+  // Coroutine that takes parameters by value (will be moved)
+  auto process = [](std::vector<int> nums, std::unique_ptr<std::string> msg,
+                    std::atomic<int>& sum_ref, std::atomic<bool>& exec_ref) -> awaitable<void> {
+    exec_ref.store(true);
+
+    int sum = 0;
+    for (int n : nums) {
+      sum += n;
+    }
+    sum_ref.store(sum);
+    co_return;
+  };
+
+  {
+    std::vector<int> numbers = {10, 20, 30};
+    auto message = std::make_unique<std::string>("test");
+
+    // Move parameters directly into coroutine
+    co_spawn(ctx, process(std::move(numbers), std::move(message), sum_result, executed), use_detached);
+
+    // Verify moved-from state
+    EXPECT_TRUE(numbers.empty()) << "Vector should be moved";
+    EXPECT_EQ(message, nullptr) << "unique_ptr should be moved";
+  }
+
+  ctx.run();
+  EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
+  EXPECT_EQ(sum_result.load(), 60) << "Sum should be 60";
+}
