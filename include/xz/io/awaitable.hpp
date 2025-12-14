@@ -13,6 +13,19 @@
 
 namespace xz::io {
 
+// Forward declaration
+template <typename T>
+class awaitable;
+
+namespace detail {
+// Forward declarations for friend
+template <typename T>
+struct detached_state;
+
+template <typename Executor, typename T>
+void spawn_awaitable_detached(Executor& ex, awaitable<T>&& user_awaitable);
+}  // namespace detail
+
 /// Base awaitable operation for async operations with error code
 template <typename Result = void>
 class awaitable_op {
@@ -169,14 +182,19 @@ class awaitable {
     }
   }
 
-  auto resume() -> bool {
-    if (!coro_ || coro_.done()) return false;
-    coro_.resume();
-    return !coro_.done();
+ private:
+  // Release ownership of the coroutine handle (for internal use only)
+  auto release() noexcept -> std::coroutine_handle<> {
+    return std::exchange(coro_, {});
   }
 
- private:
   handle_type coro_;
+
+  template <typename U>
+  friend struct detail::detached_state;
+
+  template <typename Executor, typename U>
+  friend void detail::spawn_awaitable_detached(Executor& ex, awaitable<U>&& user_awaitable);
 };
 
 namespace detail {

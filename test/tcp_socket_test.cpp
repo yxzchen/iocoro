@@ -12,12 +12,11 @@ class TcpSocketTest : public ::testing::Test {
  protected:
   io_context ctx;
 
-  // Helper to run an awaitable - just starts it, the awaitable integrates with event loop via async ops
+  // Helper to run an awaitable using co_spawn
   template<typename AwaitableFunc>
   void run_awaitable(AwaitableFunc&& func) {
-    auto t = func();
-    t.resume();  // Start the coroutine
-    ctx.run();   // Run event loop
+    co_spawn(ctx, func(), use_detached);
+    ctx.run();
   }
 };
 
