@@ -200,3 +200,101 @@ TEST(CoSpawnTest, MultipleNestedTasks) {
   ctx.run();
   EXPECT_EQ(sum.load(), 60);
 }
+
+TEST(CoSpawnTest, LambdaOutOfScopeBeforeExecution) {
+  io_context ctx;
+  std::atomic<int> result{0};
+  std::atomic<bool> executed{false};
+
+  // Create lambda and its captures in a nested scope
+  {
+    int value = 42;
+    std::string message = "test_message";
+
+    // Spawn a lambda that captures by value
+    co_spawn(ctx, [value, message, &result, &executed]() -> awaitable<void> {
+      // At this point, the original 'value' and 'message' variables are out of scope
+      // But the lambda should have captured copies
+      result.store(value);
+      executed.store(message == "test_message");
+      co_return;
+    }, use_detached);
+
+    // Lambda and captured variables go out of scope here
+  }
+
+  // Now run the event loop - the spawned coroutine should still work
+  ctx.run();
+
+  EXPECT_EQ(result.load(), 42);
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(CoSpawnTest, LambdaWithComplexCaptureOutOfScope) {
+  io_context ctx;
+  std::atomic<int> sum_result{0};
+  std::atomic<bool> prefix_valid{false};
+  std::atomic<bool> executed{false};
+
+  // Create a helper coroutine function that takes parameters instead of captures
+  // This is the correct pattern - pass data as parameters, not as lambda captures
+  auto process_data = [](std::vector<int> nums, std::string pref,
+                         std::atomic<int>& sum_ref,
+                         std::atomic<bool>& prefix_ref,
+                         std::atomic<bool>& exec_ref) -> awaitable<void> {
+    exec_ref.store(true);
+    int sum = 0;
+    for (int n : nums) {
+      sum += n;
+    }
+    sum_ref.store(sum);
+    prefix_ref.store(pref == "Number: ");
+    co_return;
+  };
+
+  {
+    // Create complex objects that will go out of scope
+    std::vector<int> numbers = {1, 2, 3, 4, 5};
+    std::string prefix = "Number: ";
+
+    // Spawn the coroutine - parameters are copied into the coroutine frame
+    co_spawn(ctx, process_data(numbers, prefix, sum_result, prefix_valid, executed), use_detached);
+
+    // All local variables destroyed here
+  }
+
+  ctx.run();
+  EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
+  EXPECT_EQ(sum_result.load(), 15) << "Sum calculation failed";
+  EXPECT_TRUE(prefix_valid.load()) << "Prefix validation failed";
+}
+
+TEST(CoSpawnTest, CallableFactoryOutOfScope) {
+  io_context ctx;
+  std::atomic<int> result{0};
+
+  // Helper that returns a lambda (factory pattern)
+  auto make_task = [](int value) {
+    return [value]() -> awaitable<void> {
+      // Simulate some work
+      co_return;
+    };
+  };
+
+  {
+    int temp_value = 100;
+    auto task = make_task(temp_value);
+
+    co_spawn(ctx, [task, &result]() -> awaitable<void> {
+      // task lambda is captured by value, temp_value is out of scope
+      co_await task();
+      result.store(999);
+      co_return;
+    }, use_detached);
+
+    // temp_value and task go out of scope
+  }
+
+  ctx.run();
+  EXPECT_EQ(result.load(), 999);
+}
