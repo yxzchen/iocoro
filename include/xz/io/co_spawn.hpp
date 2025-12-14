@@ -47,21 +47,30 @@ using awaitable_result_t = typename awaitable_result<std::decay_t<T>>::type;
 // State that holds the user awaitable and wrapper, keeping itself alive
 template <typename T>
 struct detached_state {
-  awaitable<T> user_awaitable;
+  std::optional<awaitable<T>> user_awaitable;
   std::optional<awaitable<void>> wrapper;
   std::shared_ptr<detached_state> self;
+  std::optional<std::function<awaitable<T>()>> factory;  // Factory to create awaitable, keeps lambda alive
 
   explicit detached_state(awaitable<T>&& t) : user_awaitable(std::move(t)) {}
+  explicit detached_state(std::function<awaitable<T>()>&& f) : factory(std::move(f)) {}
 };
 
 // Wrapper coroutine that captures shared state to keep everything alive
 template <typename T>
 auto make_detached_wrapper(std::shared_ptr<detached_state<T>> state) -> awaitable<void> {
   try {
+    // Use factory if available, otherwise use user_awaitable directly
     if constexpr (std::is_void_v<T>) {
-      co_await std::move(state->user_awaitable);
+      if (state->factory.has_value()) {
+        co_await std::move(state->factory.value())();
+      } else {
+        co_await std::move(*state->user_awaitable);
+      }
     } else {
-      [[maybe_unused]] auto result = co_await std::move(state->user_awaitable);
+      [[maybe_unused]] auto result = state->factory.has_value()
+        ? co_await std::move(state->factory.value())()
+        : co_await std::move(*state->user_awaitable);
     }
   } catch (...) {
     // Detached mode: swallow exceptions
@@ -105,8 +114,18 @@ template <typename Executor, typename F>
            std::invocable<F> &&
            detail::is_awaitable_v<std::invoke_result_t<F>>
 void co_spawn(Executor& ex, F&& f, detached_t token) {
-  auto t = std::forward<F>(f)();
-  co_spawn(ex, std::move(t), token);
+  // Use factory pattern to keep lambda alive
+  using awaitable_t = std::invoke_result_t<F>;
+  using result_t = detail::awaitable_result_t<awaitable_t>;
+  auto state = std::make_shared<detail::detached_state<result_t>>(
+    std::function<awaitable_t()>{std::forward<F>(f)}
+  );
+  state->wrapper.emplace(detail::make_detached_wrapper(state));
+  state->self = state; // Create self-reference to keep alive
+
+  ex.post([state]() mutable {
+    detail::start_awaitable(*state->wrapper);
+  });
 }
 
 }  // namespace xz::io
