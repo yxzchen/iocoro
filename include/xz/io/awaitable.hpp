@@ -74,4 +74,120 @@ class awaitable_op {
   [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, std::optional<Result>> result_{};
 };
 
+/// Coroutine type for async operations
+template <typename T = void>
+class awaitable;
+
+namespace detail {
+/// Base promise type with common functionality
+template <typename Derived>
+struct awaitable_promise_base {
+  std::exception_ptr exception_;
+  std::coroutine_handle<> continuation_;
+
+  std::suspend_always initial_suspend() noexcept { return {}; }
+
+  auto final_suspend() noexcept {
+    struct final_awaiter {
+      bool await_ready() noexcept { return false; }
+      auto await_suspend(std::coroutine_handle<Derived> h) noexcept -> std::coroutine_handle<> {
+        if (h.promise().continuation_) {
+          return h.promise().continuation_;
+        }
+        return std::noop_coroutine();
+      }
+      void await_resume() noexcept {}
+    };
+    return final_awaiter{};
+  }
+
+  void unhandled_exception() { exception_ = std::current_exception(); }
+};
+
+/// Promise type for non-void awaitables
+template <typename T>
+struct awaitable_promise : awaitable_promise_base<awaitable_promise<T>> {
+  std::optional<T> value_;
+
+  auto get_return_object() -> awaitable<T>;
+
+  template <typename U>
+    requires std::convertible_to<U, T>
+  void return_value(U&& value) {
+    value_.emplace(std::forward<U>(value));
+  }
+};
+
+/// Promise type for void awaitables
+template <>
+struct awaitable_promise<void> : awaitable_promise_base<awaitable_promise<void>> {
+  auto get_return_object() -> awaitable<void>;
+
+  void return_void() noexcept {}
+};
+}  // namespace detail
+
+/// A coroutine type that represents an asynchronous operation
+template <typename T>
+class awaitable {
+ public:
+  using promise_type = detail::awaitable_promise<T>;
+  using handle_type = std::coroutine_handle<promise_type>;
+
+  explicit awaitable(handle_type h) : coro_(h) {}
+
+  awaitable(awaitable&& other) noexcept : coro_(std::exchange(other.coro_, {})) {}
+
+  auto operator=(awaitable&& other) noexcept -> awaitable& {
+    if (this != &other) {
+      if (coro_) coro_.destroy();
+      coro_ = std::exchange(other.coro_, {});
+    }
+    return *this;
+  }
+
+  ~awaitable() {
+    if (coro_) coro_.destroy();
+  }
+
+  awaitable(awaitable const&) = delete;
+  auto operator=(awaitable const&) -> awaitable& = delete;
+
+  auto await_ready() const noexcept -> bool { return false; }
+
+  auto await_suspend(std::coroutine_handle<> awaiting) noexcept -> std::coroutine_handle<> {
+    coro_.promise().continuation_ = awaiting;
+    return coro_;
+  }
+
+  auto await_resume() {
+    if (coro_.promise().exception_) {
+      std::rethrow_exception(coro_.promise().exception_);
+    }
+    if constexpr (!std::is_void_v<T>) {
+      return std::move(*coro_.promise().value_);
+    }
+  }
+
+  auto resume() -> bool {
+    if (!coro_ || coro_.done()) return false;
+    coro_.resume();
+    return !coro_.done();
+  }
+
+ private:
+  handle_type coro_;
+};
+
+namespace detail {
+template <typename T>
+auto awaitable_promise<T>::get_return_object() -> awaitable<T> {
+  return awaitable<T>{std::coroutine_handle<awaitable_promise<T>>::from_promise(*this)};
+}
+
+inline auto awaitable_promise<void>::get_return_object() -> awaitable<void> {
+  return awaitable<void>{std::coroutine_handle<awaitable_promise<void>>::from_promise(*this)};
+}
+}  // namespace detail
+
 }  // namespace xz::io

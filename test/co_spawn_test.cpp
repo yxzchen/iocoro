@@ -13,7 +13,7 @@ TEST(CoSpawnTest, BasicDetached) {
   io_context ctx;
   std::atomic<int> counter{0};
 
-  auto simple_task = [&]() -> task<void> {
+  auto simple_task = [&]() -> awaitable<void> {
     counter++;
     co_return;
   };
@@ -28,7 +28,7 @@ TEST(CoSpawnTest, MultipleSpawns) {
   io_context ctx;
   std::atomic<int> counter{0};
 
-  auto increment_task = [&]() -> task<void> {
+  auto increment_task = [&]() -> awaitable<void> {
     counter++;
     co_return;
   };
@@ -46,7 +46,7 @@ TEST(CoSpawnTest, WithCallable) {
   std::atomic<bool> executed{false};
 
   // Pass a callable directly (lambda that returns a task)
-  co_spawn(ctx, [&]() -> task<void> {
+  co_spawn(ctx, [&]() -> awaitable<void> {
     executed.store(true);
     co_return;
   }, use_detached);
@@ -59,7 +59,7 @@ TEST(CoSpawnTest, WithTimer) {
   io_context ctx;
   std::atomic<bool> timer_fired{false};
 
-  auto timer_task = [&]() -> task<void> {
+  auto timer_task = [&]() -> awaitable<void> {
     // Create a simple async operation using a timer
     ctx.schedule_timer(50ms, [&]() {
       timer_fired.store(true);
@@ -83,13 +83,13 @@ TEST(CoSpawnTest, ExceptionHandling) {
   io_context ctx;
   std::atomic<int> counter{0};
 
-  auto throwing_task = [&]() -> task<void> {
+  auto throwing_task = [&]() -> awaitable<void> {
     counter++;
     throw std::runtime_error("test exception");
     co_return;
   };
 
-  auto normal_task = [&]() -> task<void> {
+  auto normal_task = [&]() -> awaitable<void> {
     counter++;
     co_return;
   };
@@ -113,7 +113,7 @@ TEST(CoSpawnTest, WithTcpSocket) {
 
   auto endpoint = ip::tcp_endpoint{ip::address_v4{{127, 0, 0, 1}}, 6379};
 
-  co_spawn(ctx, [&]() -> task<void> {
+  co_spawn(ctx, [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
       connected.store(true);
@@ -134,7 +134,7 @@ TEST(CoSpawnTest, ChainedOperations) {
 
   auto endpoint = ip::tcp_endpoint{ip::address_v4{{127, 0, 0, 1}}, 6379};
 
-  co_spawn(ctx, [&]() -> task<void> {
+  co_spawn(ctx, [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
 
@@ -169,11 +169,11 @@ TEST(CoSpawnTest, TaskWithReturnValue) {
   io_context ctx;
   std::atomic<int> result{0};
 
-  auto value_task = [&]() -> task<int> {
+  auto value_task = [&]() -> awaitable<int> {
     co_return 42;
   };
 
-  co_spawn(ctx, [&, value_task]() -> task<void> {
+  co_spawn(ctx, [&, value_task]() -> awaitable<void> {
     auto value = co_await value_task();
     result.store(value);
   }, use_detached);
@@ -186,12 +186,12 @@ TEST(CoSpawnTest, MultipleNestedTasks) {
   io_context ctx;
   std::atomic<int> sum{0};
 
-  auto add_value = [&](int value) -> task<void> {
+  auto add_value = [&](int value) -> awaitable<void> {
     sum.fetch_add(value);
     co_return;
   };
 
-  co_spawn(ctx, [&, add_value]() -> task<void> {
+  co_spawn(ctx, [&, add_value]() -> awaitable<void> {
     co_await add_value(10);
     co_await add_value(20);
     co_await add_value(30);

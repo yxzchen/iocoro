@@ -4,7 +4,6 @@
 #include <xz/io/expected.hpp>
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
-#include <xz/io/task.hpp>
 
 #include <chrono>
 #include <memory>
@@ -123,7 +122,7 @@ class tcp_socket {
 /// Free functions for full read/write operations
 
 /// Read exactly n bytes
-inline auto async_read(tcp_socket& s, std::span<char> buffer, std::chrono::milliseconds timeout = {}) -> task<void> {
+inline auto async_read(tcp_socket& s, std::span<char> buffer, std::chrono::milliseconds timeout = {}) -> awaitable<void> {
   std::size_t total = 0;
   while (total < buffer.size()) {
     auto n = co_await s.async_read_some(buffer.subspan(total), timeout);
@@ -134,7 +133,7 @@ inline auto async_read(tcp_socket& s, std::span<char> buffer, std::chrono::milli
 
 /// Write all data
 inline auto async_write(tcp_socket& s, std::span<char const> buffer, std::chrono::milliseconds timeout = {})
-    -> task<void> {
+    -> awaitable<void> {
   std::size_t total = 0;
   while (total < buffer.size()) {
     auto n = co_await s.async_write_some(buffer.subspan(total), timeout);

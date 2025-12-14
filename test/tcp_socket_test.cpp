@@ -12,9 +12,9 @@ class TcpSocketTest : public ::testing::Test {
  protected:
   io_context ctx;
 
-  // Helper to run a task - just starts it, the task integrates with event loop via async ops
-  template<typename TaskFunc>
-  void run_task(TaskFunc&& func) {
+  // Helper to run an awaitable - just starts it, the awaitable integrates with event loop via async ops
+  template<typename AwaitableFunc>
+  void run_awaitable(AwaitableFunc&& func) {
     auto t = func();
     t.resume();  // Start the coroutine
     ctx.run();   // Run event loop
@@ -33,7 +33,7 @@ TEST_F(TcpSocketTest, ConnectToRedis) {
 
   bool connected = false;
 
-  auto connect_task = [&]() -> task<void> {
+  auto connect_awaitable = [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
       connected = true;
@@ -42,7 +42,7 @@ TEST_F(TcpSocketTest, ConnectToRedis) {
     }
   };
 
-  run_task(connect_task);
+  run_awaitable(connect_awaitable);
 
   EXPECT_TRUE(connected) << "Failed to connect to Redis";
   EXPECT_TRUE(socket.is_open());
@@ -58,7 +58,7 @@ TEST_F(TcpSocketTest, SendPingToRedis) {
   bool success = false;
   std::string response;
 
-  auto test_task = [&]() -> task<void> {
+  auto test_awaitable = [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
     } catch (std::system_error const&) {
@@ -89,7 +89,7 @@ TEST_F(TcpSocketTest, SendPingToRedis) {
 
   };
 
-  run_task(test_task);
+  run_awaitable(test_awaitable);
 
   EXPECT_TRUE(success);
   EXPECT_NE(response.find("PONG"), std::string::npos);
@@ -102,7 +102,7 @@ TEST_F(TcpSocketTest, SetAndGetRedis) {
   bool success = false;
   std::string get_response;
 
-  auto test_task = [&]() -> task<void> {
+  auto test_awaitable = [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
     } catch (std::system_error const&) {
@@ -160,7 +160,7 @@ TEST_F(TcpSocketTest, SetAndGetRedis) {
 
   };
 
-  run_task(test_task);
+  run_awaitable(test_awaitable);
 
   EXPECT_TRUE(success);
   EXPECT_NE(get_response.find("hello"), std::string::npos);
@@ -173,7 +173,7 @@ TEST_F(TcpSocketTest, Timeout) {
 
   bool failed = false;
 
-  auto test_task = [&]() -> task<void> {
+  auto test_awaitable = [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 3ms);
     } catch (std::system_error const&) {
@@ -182,7 +182,7 @@ TEST_F(TcpSocketTest, Timeout) {
   };
 
   auto start = std::chrono::steady_clock::now();
-  run_task(test_task);
+  run_awaitable(test_awaitable);
   auto elapsed = std::chrono::steady_clock::now() - start;
 
   EXPECT_TRUE(failed);  // Should fail
@@ -196,7 +196,7 @@ TEST_F(TcpSocketTest, SocketOptions) {
 
   bool connected = false;
 
-  auto test_task = [&]() -> task<void> {
+  auto test_awaitable = [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
       connected = true;
@@ -205,7 +205,7 @@ TEST_F(TcpSocketTest, SocketOptions) {
     }
   };
 
-  run_task(test_task);
+  run_awaitable(test_awaitable);
 
   ASSERT_TRUE(connected);
 
@@ -223,7 +223,7 @@ TEST_F(TcpSocketTest, Endpoints) {
 
   bool connected = false;
 
-  auto test_task = [&]() -> task<void> {
+  auto test_awaitable = [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
       connected = true;
@@ -232,7 +232,7 @@ TEST_F(TcpSocketTest, Endpoints) {
     }
   };
 
-  run_task(test_task);
+  run_awaitable(test_awaitable);
 
   ASSERT_TRUE(connected);
 
