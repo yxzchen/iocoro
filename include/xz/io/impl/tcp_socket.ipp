@@ -1,6 +1,7 @@
 
 #include <xz/io/tcp_socket.hpp>
 #include <xz/io/detail/tcp_socket_impl.hpp>
+#include <xz/io/co_sleep.hpp>
 #include <xz/io/error.hpp>
 #include <xz/io/detail/current_executor.hpp>
 #include <xz/io/detail/operation_base.hpp>
@@ -13,7 +14,6 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <sys/poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -85,61 +85,6 @@ inline auto wait_writable(io_context& ctx, int fd) -> awaitable<void> {
   st->write = true;
   co_await fd_wait_awaiter{std::move(st)};
 }
-
-struct timer_wait_state {
-  io_context* ctx = nullptr;
-  detail::timer_handle handle{};
-  std::coroutine_handle<> h{};
-  bool done = false;
-
-  void complete() {
-    if (done) return;
-    done = true;
-    if (h) {
-      defer_resume(h);
-    }
-  }
-
-  void cancel() {
-    if (done) return;
-    done = true;
-    if (handle && ctx) {
-      ctx->cancel_timer(handle);
-    }
-    if (h) {
-      defer_resume(h);
-    }
-  }
-};
-
-struct timer_awaiter {
-  std::shared_ptr<timer_wait_state> st;
-  std::chrono::milliseconds duration;
-
-  auto await_ready() const noexcept -> bool { return duration.count() <= 0; }
-
-  auto await_suspend(std::coroutine_handle<> h) -> bool {
-    st->h = h;
-    st->handle = st->ctx->schedule_timer(duration, [s = st]() { s->complete(); });
-    return true;
-  }
-
-  void await_resume() noexcept {}
-};
-
-struct timeout_op {
-  std::shared_ptr<timer_wait_state> st;
-  std::chrono::milliseconds duration{};
-
-  auto task() -> awaitable<void> {
-    if (duration.count() <= 0) co_return;
-    co_await timer_awaiter{st, duration};
-  }
-
-  void cancel() {
-    if (st) st->cancel();
-  }
-};
 
 [[noreturn]] inline void throw_timeout() {
   throw std::system_error(error::timeout);
@@ -410,9 +355,8 @@ auto tcp_socket::async_connect(ip::tcp_endpoint ep, std::chrono::milliseconds ti
   }
 
   if (timeout.count() > 0) {
-    detail::timeout_op to{std::make_shared<detail::timer_wait_state>(), timeout};
-    to.st->ctx = &ctx;
-    auto [idx, result] = co_await when_any(detail::wait_writable(ctx, fd), to.task());
+    sleep_operation to{ctx, timeout};
+    auto [idx, result] = co_await when_any(detail::wait_writable(ctx, fd), to.wait());
     if (idx == 1) {
       ctx.deregister_fd(fd);
       detail::throw_timeout();
@@ -450,9 +394,8 @@ auto tcp_socket::async_read_some(std::span<char> buffer, std::chrono::millisecon
       }
 
       if (timeout.count() > 0) {
-        detail::timeout_op to{std::make_shared<detail::timer_wait_state>(), timeout};
-        to.st->ctx = &ctx;
-        auto [idx, v] = co_await when_any(detail::wait_readable(ctx, fd), to.task());
+        sleep_operation to{ctx, timeout};
+        auto [idx, v] = co_await when_any(detail::wait_readable(ctx, fd), to.wait());
         if (idx == 1) {
           ctx.deregister_fd(fd);
           detail::throw_timeout();
@@ -488,9 +431,8 @@ auto tcp_socket::async_write_some(std::span<char const> buffer, std::chrono::mil
       }
 
       if (timeout.count() > 0) {
-        detail::timeout_op to{std::make_shared<detail::timer_wait_state>(), timeout};
-        to.st->ctx = &ctx;
-        auto [idx, v] = co_await when_any(detail::wait_writable(ctx, fd), to.task());
+        sleep_operation to{ctx, timeout};
+        auto [idx, v] = co_await when_any(detail::wait_writable(ctx, fd), to.wait());
         if (idx == 1) {
           ctx.deregister_fd(fd);
           detail::throw_timeout();
