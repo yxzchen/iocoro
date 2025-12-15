@@ -42,7 +42,8 @@ struct when_all_awaiter {
 }  // namespace detail
 
 /// Waits for all awaitables to complete and returns a tuple of their results.
-/// If any awaitable throws an exception, when_all immediately completes with that exception.
+/// If any awaitable throws an exception, when_all completes with that exception as soon as it is observed
+/// (other awaitables may still run to completion; they are not cancelled).
 /// For void awaitables, std::monostate is used in the result tuple.
 ///
 /// Example:

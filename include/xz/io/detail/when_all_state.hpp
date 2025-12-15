@@ -93,7 +93,10 @@ struct when_all_state {
     } catch (...) {
       // Store the exception
       self->set_exception(std::current_exception());
-      // Complete immediately on error
+      // Fail-fast semantics: resume the waiter as soon as the first exception happens.
+      //
+      // Note: other child wrappers may continue running to completion; `keepalive_`/`active_`
+      // ensure this shared state remains valid until all wrappers finish.
       self->try_complete();
     }
 
