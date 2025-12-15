@@ -103,6 +103,7 @@ void io_context_impl::deregister_fd(int fd) {
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait) -> std::size_t {
+  executor_guard tick_guard(*owner_);
   std::size_t count = 0;
   count += process_timers();
   count += process_posted();
@@ -159,23 +160,19 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 
     if (is_error) {
       if (read_op) {
-        executor_guard g(*owner_);
         read_op->abort(std::make_error_code(std::errc::connection_reset));
         ++count;
       }
       if (write_op) {
-        executor_guard g(*owner_);
         write_op->abort(std::make_error_code(std::errc::connection_reset));
         ++count;
       }
     } else {
       if (read_op) {
-        executor_guard g(*owner_);
         read_op->execute();
         ++count;
       }
       if (write_op) {
-        executor_guard g(*owner_);
         write_op->execute();
         ++count;
       }

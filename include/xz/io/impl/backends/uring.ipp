@@ -106,6 +106,7 @@ void io_context_impl::deregister_fd(int fd) {
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait) -> std::size_t {
+  executor_guard tick_guard(*owner_);
   std::size_t count = 0;
   count += process_timers();
   count += process_posted();
@@ -169,10 +170,8 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       // Check for error conditions in the poll result
       // For poll operations, negative results indicate errors, or POLLERR bit in the result
       if (cqe->res < 0 || (cqe->res & POLLERR)) {
-        executor_guard g(*owner_);
         op->abort(std::make_error_code(std::errc::connection_reset));
       } else {
-        executor_guard g(*owner_);
         op->execute();
       }
       ++count;

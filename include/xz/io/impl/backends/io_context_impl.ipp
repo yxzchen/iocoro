@@ -51,8 +51,13 @@ void io_context_impl::post(std::function<void()> f) {
 
 void io_context_impl::dispatch(std::function<void()> f) {
   if (owner_thread_.load(std::memory_order_acquire) == std::this_thread::get_id()) {
-    executor_guard g(*owner_);
-    f();
+    // If we're already inside this io_context's event loop tick, avoid extra guard churn.
+    if (try_get_current_executor() == owner_) {
+      f();
+    } else {
+      executor_guard g(*owner_);
+      f();
+    }
   } else {
     post(std::move(f));
   }
@@ -94,7 +99,6 @@ auto io_context_impl::process_timers() -> std::size_t {
     timers_.pop();
 
     lock.unlock();
-    executor_guard g(*owner_);
     handle->callback();
     ++count;
     lock.lock();
@@ -121,7 +125,6 @@ auto io_context_impl::process_posted() -> std::size_t {
       }
       break;
     }
-    executor_guard g(*owner_);
     ops.front()();
     ops.pop();
     ++count;
