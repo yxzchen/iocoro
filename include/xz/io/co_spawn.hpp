@@ -7,6 +7,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -71,6 +72,41 @@ auto make_detached_wrapper(std::shared_ptr<detached_state<T>> state) -> awaitabl
   state->self.reset();
 }
 
+template <typename T, typename Handler>
+struct completion_state {
+  std::function<awaitable<T>()> factory;  // Factory to create awaitable, keeps lambda alive
+  Handler handler;
+  std::optional<awaitable<void>> wrapper;
+  std::shared_ptr<completion_state> self;
+
+  completion_state(std::function<awaitable<T>()>&& f, Handler h)
+      : factory(std::move(f)), handler(std::move(h)) {}
+};
+
+template <typename T, typename Handler>
+auto make_completion_wrapper(std::shared_ptr<completion_state<T, Handler>> state) -> awaitable<void> {
+  std::exception_ptr eptr;
+  try {
+    // Execute factory to create and run awaitable
+    if constexpr (std::is_void_v<T>) {
+      co_await state->factory();
+    } else {
+      [[maybe_unused]] auto result = co_await state->factory();
+    }
+  } catch (...) {
+    eptr = std::current_exception();
+  }
+
+  try {
+    std::invoke(state->handler, eptr);
+  } catch (...) {
+    // Completion handler should not throw across the event loop boundary.
+  }
+
+  // Clear self-reference to allow cleanup
+  state->self.reset();
+}
+
 }  // namespace detail
 
 // co_spawn with detached completion token - direct awaitable overload
@@ -100,6 +136,51 @@ void co_spawn(Executor& ex, F&& f, detached_t) {
   using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
   auto state = std::make_shared<detail::detached_state<result_t>>(std::forward<F>(f));
   state->wrapper.emplace(detail::make_detached_wrapper(state));
+  state->self = state; // Create self-reference to keep alive
+
+  ex.post([state]() mutable {
+    detail::start_awaitable(*state->wrapper);
+  });
+}
+
+// co_spawn with completion handler void(std::exception_ptr) - direct awaitable overload
+template <typename Executor, typename T, typename CompletionHandler>
+  requires std::is_same_v<std::decay_t<Executor>, io_context> &&
+           (!std::is_same_v<std::decay_t<CompletionHandler>, detached_t>) &&
+           std::invocable<std::decay_t<CompletionHandler>&, std::exception_ptr>
+void co_spawn(Executor& ex, awaitable<T>&& t, CompletionHandler&& handler) {
+  using handler_t = std::decay_t<CompletionHandler>;
+  // Store awaitable in shared_ptr to make lambda copyable
+  auto awaitable_ptr = std::make_shared<awaitable<T>>(std::move(t));
+  auto state = std::make_shared<detail::completion_state<T, handler_t>>(
+    [awaitable_ptr]() mutable -> awaitable<T> {
+      return std::move(*awaitable_ptr);
+    },
+    std::forward<CompletionHandler>(handler)
+  );
+  state->wrapper.emplace(detail::make_completion_wrapper(state));
+  state->self = state; // Create self-reference to keep alive
+
+  ex.post([state]() mutable {
+    detail::start_awaitable(*state->wrapper);
+  });
+}
+
+// co_spawn with completion handler void(std::exception_ptr) - callable overload
+template <typename Executor, typename F, typename CompletionHandler>
+  requires std::is_same_v<std::decay_t<Executor>, io_context> &&
+           (!detail::is_awaitable_v<std::decay_t<F>>) &&
+           (!std::is_same_v<std::decay_t<CompletionHandler>, detached_t>) &&
+           std::invocable<std::decay_t<CompletionHandler>&, std::exception_ptr>
+void co_spawn(Executor& ex, F&& f, CompletionHandler&& handler) {
+  using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
+  using handler_t = std::decay_t<CompletionHandler>;
+
+  auto state = std::make_shared<detail::completion_state<result_t, handler_t>>(
+    std::forward<F>(f),
+    std::forward<CompletionHandler>(handler)
+  );
+  state->wrapper.emplace(detail::make_completion_wrapper(state));
   state->self = state; // Create self-reference to keep alive
 
   ex.post([state]() mutable {

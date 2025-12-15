@@ -106,6 +106,51 @@ TEST(CoSpawnTest, ExceptionHandling) {
   EXPECT_EQ(counter.load(), 2);
 }
 
+TEST(CoSpawnTest, CompletionHandlerSuccess_DirectAwaitable) {
+  io_context ctx;
+
+  std::atomic<int> called{0};
+  std::exception_ptr captured;
+
+  auto task = [&]() -> awaitable<void> { co_return; };
+
+  co_spawn(ctx, task(), [&](std::exception_ptr eptr) {
+    captured = eptr;
+    called.fetch_add(1);
+    ctx.stop();
+  });
+
+  EXPECT_NO_THROW(ctx.run());
+  EXPECT_EQ(called.load(), 1);
+  EXPECT_EQ(captured, nullptr);
+}
+
+TEST(CoSpawnTest, CompletionHandlerException_CallableFactory) {
+  io_context ctx;
+
+  std::atomic<int> called{0};
+  std::string what;
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    throw std::runtime_error("boom");
+    co_return;
+  }, [&](std::exception_ptr eptr) {
+    called.fetch_add(1);
+    if (eptr) {
+      try {
+        std::rethrow_exception(eptr);
+      } catch (std::exception const& e) {
+        what = e.what();
+      }
+    }
+    ctx.stop();
+  });
+
+  EXPECT_NO_THROW(ctx.run());
+  EXPECT_EQ(called.load(), 1);
+  EXPECT_EQ(what, "boom");
+}
+
 TEST(CoSpawnTest, WithTcpSocket) {
   io_context ctx;
   tcp_socket socket(ctx);
