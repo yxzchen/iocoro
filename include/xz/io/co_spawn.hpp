@@ -22,6 +22,51 @@ inline constexpr detached_t use_detached{};
 
 namespace detail {
 
+// Move-only type erasure for callables. This avoids storing lambda closure types as subobjects
+// inside externally-linked types (fixes -Wsubobject-linkage) and supports move-only captures.
+template <typename>
+class unique_function;
+
+template <typename R, typename... Args>
+class unique_function<R(Args...)> {
+ public:
+  unique_function() = default;
+
+  template <typename F>
+    requires (!std::is_same_v<std::decay_t<F>, unique_function>) &&
+             std::is_invocable_r_v<R, F&, Args...>
+  unique_function(F&& f)
+      : ptr_(std::make_unique<model<std::decay_t<F>>>(std::forward<F>(f))) {}
+
+  unique_function(unique_function&&) noexcept = default;
+  auto operator=(unique_function&&) noexcept -> unique_function& = default;
+
+  unique_function(unique_function const&) = delete;
+  auto operator=(unique_function const&) -> unique_function& = delete;
+
+  explicit operator bool() const noexcept { return static_cast<bool>(ptr_); }
+
+  auto operator()(Args... args) -> R {
+    return ptr_->invoke(std::forward<Args>(args)...);
+  }
+
+ private:
+  struct callable_base {
+    virtual ~callable_base() = default;
+    virtual auto invoke(Args... args) -> R = 0;
+  };
+
+  template <typename F>
+  struct model final : callable_base {
+    F f_;
+    explicit model(F&& f) : f_(std::move(f)) {}
+    explicit model(F const& f) : f_(f) {}
+    auto invoke(Args... args) -> R override { return std::invoke(f_, std::forward<Args>(args)...); }
+  };
+
+  std::unique_ptr<callable_base> ptr_;
+};
+
 // Helper to check if a type is an awaitable
 template <typename T>
 struct is_awaitable : std::false_type {};
@@ -101,25 +146,28 @@ inline void start_spawn_task(spawn_task&& t) {
   }
 }
 
-template <typename Factory>
+template <typename T>
 struct detached_state {
-  Factory factory;
+  unique_function<awaitable<T>()> factory;
 
   template <typename F>
+    requires std::is_invocable_r_v<awaitable<T>, F&>
   explicit detached_state(F&& f) : factory(std::forward<F>(f)) {}
 };
 
-template <typename Factory, typename Handler>
+template <typename T>
 struct completion_state {
-  Factory factory;
-  Handler handler;
+  unique_function<awaitable<T>()> factory;
+  unique_function<void(std::exception_ptr)> handler;
 
   template <typename F, typename H>
+    requires std::is_invocable_r_v<awaitable<T>, F&> &&
+             std::invocable<H&, std::exception_ptr>
   completion_state(F&& f, H&& h) : factory(std::forward<F>(f)), handler(std::forward<H>(h)) {}
 };
 
-template <typename T, typename Factory>
-auto run_detached(std::shared_ptr<detached_state<Factory>> state) -> spawn_task {
+template <typename T>
+auto run_detached(std::shared_ptr<detached_state<T>> state) -> spawn_task {
   try {
     if constexpr (std::is_void_v<T>) {
       co_await state->factory();
@@ -131,8 +179,8 @@ auto run_detached(std::shared_ptr<detached_state<Factory>> state) -> spawn_task 
   }
 }
 
-template <typename T, typename Factory, typename Handler>
-auto run_with_handler(std::shared_ptr<completion_state<Factory, Handler>> state) -> spawn_task {
+template <typename T>
+auto run_with_handler(std::shared_ptr<completion_state<T>> state) -> spawn_task {
   std::exception_ptr eptr;
   try {
     if constexpr (std::is_void_v<T>) {
@@ -160,8 +208,7 @@ template <typename Executor, typename F>
            (!detail::is_awaitable_v<std::decay_t<F>>)
 void co_spawn(Executor& ex, F&& f, detached_t) {
   using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
-  using factory_t = std::decay_t<F>;
-  auto state = std::make_shared<detail::detached_state<factory_t>>(std::forward<F>(f));
+  auto state = std::make_shared<detail::detached_state<result_t>>(std::forward<F>(f));
 
   ex.post([state]() mutable {
     detail::start_spawn_task(detail::run_detached<result_t>(state));
@@ -176,9 +223,7 @@ template <typename Executor, typename F, typename CompletionHandler>
            std::invocable<std::decay_t<CompletionHandler>&, std::exception_ptr>
 void co_spawn(Executor& ex, F&& f, CompletionHandler&& handler) {
   using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
-  using handler_t = std::decay_t<CompletionHandler>;
-  using factory_t = std::decay_t<F>;
-  auto state = std::make_shared<detail::completion_state<factory_t, handler_t>>(
+  auto state = std::make_shared<detail::completion_state<result_t>>(
     std::forward<F>(f),
     std::forward<CompletionHandler>(handler)
   );
