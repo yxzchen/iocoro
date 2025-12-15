@@ -3,7 +3,6 @@
 #include <xz/io/awaitable.hpp>
 
 #include <array>
-#include <atomic>
 #include <coroutine>
 #include <exception>
 #include <memory>
@@ -23,18 +22,18 @@ struct when_all_state {
   // Results storage - directly store results (monostate for void, T for non-void)
   result_type results_;
 
-  // Completion tracking
-  std::atomic<std::size_t> completed_count_{0};
+  // Completion tracking (no atomic needed - single threaded event loop)
+  std::size_t completed_count_{0};
 
   // Unified completion gate - ensures resume() called exactly once
-  std::atomic<bool> completed_{false};
+  bool completed_{false};
 
-  // Exception storage - protected by atomic CAS
+  // Exception storage
   std::exception_ptr exception_;
-  std::atomic<bool> exception_set_{false};
+  bool exception_set_{false};
 
   // Continuation to resume
-  std::atomic<std::coroutine_handle<>> continuation_{};
+  std::coroutine_handle<> continuation_;
 
   explicit when_all_state(awaitable<Ts>&&... awaitables)
       : awaitables_(std::move(awaitables)...) {}
@@ -42,12 +41,11 @@ struct when_all_state {
   // Attempt to complete the operation (called by last completer or first error)
   // Returns true if this call successfully completed (became the completer)
   auto try_complete() -> bool {
-    bool expected = false;
-    if (completed_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-      // We are the completer - resume continuation if set
-      auto cont = continuation_.load(std::memory_order_acquire);
-      if (cont) {
-        cont.resume();
+    if (!completed_) {
+      completed_ = true;
+      // Resume continuation if set
+      if (continuation_) {
+        continuation_.resume();
       }
       return true;
     }
@@ -56,8 +54,8 @@ struct when_all_state {
 
   // Store exception (first one wins)
   void set_exception(std::exception_ptr ex) {
-    bool expected = false;
-    if (exception_set_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+    if (!exception_set_) {
+      exception_set_ = true;
       exception_ = ex;
     }
   }
@@ -77,10 +75,10 @@ struct when_all_state {
       }
 
       // Increment completion counter
-      auto count = self->completed_count_.fetch_add(1, std::memory_order_acq_rel) + 1;
+      ++self->completed_count_;
 
       // If we're the last to complete, try to complete the operation
-      if (count == sizeof...(Ts)) {
+      if (self->completed_count_ == sizeof...(Ts)) {
         self->try_complete();
       }
     } catch (...) {
@@ -92,15 +90,17 @@ struct when_all_state {
   }
 
   template <std::size_t... Is>
-  auto make_wrappers(std::shared_ptr<when_all_state> self, std::index_sequence<Is...>)
-      -> std::array<awaitable<void>, sizeof...(Ts)> {
+  void start_all(std::shared_ptr<when_all_state> self, std::index_sequence<Is...>) {
     // Create all wrappers in an array
-    return {make_wrapper<Is>(self)...};
+    std::array<awaitable<void>, sizeof...(Ts)> wrappers{make_wrapper<Is>(self)...};
+
+    // Start all wrappers
+    (start_awaitable(wrappers[Is]), ...);
   }
 
   auto get_result() -> result_type {
     // Check for exception first
-    if (exception_set_.load(std::memory_order_acquire)) {
+    if (exception_set_) {
       std::rethrow_exception(exception_);
     }
     // Return results directly (no unwrapping needed)

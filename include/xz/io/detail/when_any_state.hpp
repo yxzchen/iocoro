@@ -3,11 +3,9 @@
 #include <xz/io/awaitable.hpp>
 
 #include <array>
-#include <atomic>
 #include <coroutine>
 #include <exception>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -22,9 +20,8 @@ struct when_any_state {
   using result_type = std::pair<std::size_t, result_variant_t>;
 
   std::tuple<awaitable<Ts>...> awaitables_;
-  std::atomic<bool> done_{false};
+  bool done_{false};
   std::optional<result_type> result_;
-  std::mutex result_mutex_;
   std::exception_ptr exception_;
   std::coroutine_handle<> continuation_;
   std::array<std::optional<awaitable<void>>, sizeof...(Ts)> wrappers_;
@@ -47,19 +44,18 @@ struct when_any_state {
         result_variant.template emplace<I>(std::move(result));
       }
 
-      bool expected = false;
-      if (self->done_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-        {
-          std::lock_guard lock(self->result_mutex_);
-          self->result_.emplace(I, std::move(result_variant));
-        }
+      // First to complete wins (single-threaded, no race)
+      if (!self->done_) {
+        self->done_ = true;
+        self->result_.emplace(I, std::move(result_variant));
         if (self->continuation_) {
           self->continuation_.resume();
         }
       }
     } catch (...) {
-      bool expected = false;
-      if (self->done_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+      // First to complete wins (single-threaded, no race)
+      if (!self->done_) {
+        self->done_ = true;
         self->exception_ = std::current_exception();
         if (self->continuation_) {
           self->continuation_.resume();
@@ -78,8 +74,6 @@ struct when_any_state {
     if (exception_) {
       std::rethrow_exception(exception_);
     }
-
-    std::lock_guard lock(result_mutex_);
     return std::move(*result_);
   }
 };
