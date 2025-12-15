@@ -1,6 +1,7 @@
 
 #include <xz/io/impl/backends/io_context_impl.ipp>
 #include <xz/io/detail/operation_base.hpp>
+#include <xz/io/error.hpp>
 
 #include <cerrno>
 
@@ -96,10 +97,27 @@ void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<operation_ba
 }
 
 void io_context_impl::deregister_fd(int fd) {
-  std::lock_guard lock(fd_mutex_);
+  std::unique_ptr<operation_base> read_op;
+  std::unique_ptr<operation_base> write_op;
+  {
+    std::lock_guard lock(fd_mutex_);
+    ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
 
-  ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
-  fd_operations_.erase(fd);
+    auto it = fd_operations_.find(fd);
+    if (it != fd_operations_.end()) {
+      read_op = std::move(it->second.read_op);
+      write_op = std::move(it->second.write_op);
+      fd_operations_.erase(it);
+    }
+  }
+
+  // Ensure any awaiters blocked on fd readiness are released.
+  if (read_op) {
+    read_op->abort(error::operation_aborted);
+  }
+  if (write_op) {
+    write_op->abort(error::operation_aborted);
+  }
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait) -> std::size_t {

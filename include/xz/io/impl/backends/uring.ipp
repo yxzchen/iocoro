@@ -1,6 +1,7 @@
 
 #include <xz/io/impl/backends/io_context_impl.ipp>
 #include <xz/io/detail/operation_base.hpp>
+#include <xz/io/error.hpp>
 
 #include <cerrno>
 #include <system_error>
@@ -80,10 +81,17 @@ void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<operation_ba
 }
 
 void io_context_impl::deregister_fd(int fd) {
-  std::lock_guard lock(fd_mutex_);
+  std::unique_ptr<operation_base> read_op;
+  std::unique_ptr<operation_base> write_op;
+  {
+    std::lock_guard lock(fd_mutex_);
 
-  auto it = fd_operations_.find(fd);
-  if (it != fd_operations_.end()) {
+    auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end()) {
+      return;
+    }
+
+    // Best-effort cancellation of outstanding poll operations.
     if (it->second.read_op) {
       struct io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
       if (sqe) {
@@ -101,7 +109,19 @@ void io_context_impl::deregister_fd(int fd) {
       }
     }
     io_uring_submit(&ring_);
+
+    // Move ops out so we can abort them outside the lock.
+    read_op = std::move(it->second.read_op);
+    write_op = std::move(it->second.write_op);
     fd_operations_.erase(it);
+  }
+
+  // Ensure any awaiters blocked on fd readiness are released.
+  if (read_op) {
+    read_op->abort(error::operation_aborted);
+  }
+  if (write_op) {
+    write_op->abort(error::operation_aborted);
   }
 }
 
