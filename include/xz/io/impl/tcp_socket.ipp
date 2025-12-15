@@ -55,15 +55,28 @@ struct fd_wait_operation : operation_base {
 struct fd_wait_awaiter {
   std::shared_ptr<fd_wait_state> st;
 
-  auto await_ready() const noexcept -> bool { return st->done; }
+  // Constructor takes the shared_ptr by move
+  explicit fd_wait_awaiter(std::shared_ptr<fd_wait_state>&& s) : st(std::move(s)) {}
+
+  // Non-copyable to prevent multiple references
+  fd_wait_awaiter(fd_wait_awaiter const&) = delete;
+  auto operator=(fd_wait_awaiter const&) -> fd_wait_awaiter& = delete;
+  
+  // Movable
+  fd_wait_awaiter(fd_wait_awaiter&&) = default;
+  auto operator=(fd_wait_awaiter&&) -> fd_wait_awaiter& = default;
+
+  auto await_ready() const noexcept -> bool { return st && st->done; }
 
   auto await_suspend(std::coroutine_handle<> h) -> bool {
     st->h = h;
+    // Transfer ownership to the operation by moving the shared_ptr
     if (st->write) {
-      st->ctx->register_fd_write(st->fd, std::make_unique<fd_wait_operation>(st));
+      st->ctx->register_fd_write(st->fd, std::make_unique<fd_wait_operation>(std::move(st)));
     } else {
-      st->ctx->register_fd_read(st->fd, std::make_unique<fd_wait_operation>(st));
+      st->ctx->register_fd_read(st->fd, std::make_unique<fd_wait_operation>(std::move(st)));
     }
+    // st is now null, so the awaiter doesn't hold a reference
     return true;
   }
 
