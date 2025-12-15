@@ -30,26 +30,33 @@ struct when_any_state {
       : awaitables_(std::move(awaitables)...) {}
 
   template <std::size_t I>
-  auto make_wrapper(std::shared_ptr<when_any_state> self) -> awaitable<void> {
+  auto make_wrapper(when_any_state* self) -> awaitable<void> {
     using T = std::tuple_element_t<I, std::tuple<Ts...>>;
 
     try {
-      result_variant_t result_variant;
-
       if constexpr (std::is_void_v<T>) {
         co_await std::move(std::get<I>(self->awaitables_));
-        result_variant.template emplace<I>(std::monostate{});
+        result_variant_t result_variant{std::in_place_index<I>, std::monostate{}};
+
+        // First to complete wins (single-threaded, no race)
+        if (!self->done_) {
+          self->done_ = true;
+          self->result_.emplace(I, std::move(result_variant));
+          if (self->continuation_) {
+            self->continuation_.resume();
+          }
+        }
       } else {
         auto result = co_await std::move(std::get<I>(self->awaitables_));
-        result_variant.template emplace<I>(std::move(result));
-      }
+        result_variant_t result_variant{std::in_place_index<I>, std::move(result)};
 
-      // First to complete wins (single-threaded, no race)
-      if (!self->done_) {
-        self->done_ = true;
-        self->result_.emplace(I, std::move(result_variant));
-        if (self->continuation_) {
-          self->continuation_.resume();
+        // First to complete wins (single-threaded, no race)
+        if (!self->done_) {
+          self->done_ = true;
+          self->result_.emplace(I, std::move(result_variant));
+          if (self->continuation_) {
+            self->continuation_.resume();
+          }
         }
       }
     } catch (...) {
@@ -65,7 +72,7 @@ struct when_any_state {
   }
 
   template <std::size_t... Is>
-  void start_all(std::shared_ptr<when_any_state> self, std::index_sequence<Is...>) {
+  void start_all(when_any_state* self, std::index_sequence<Is...>) {
     ((std::get<Is>(wrappers_).emplace(make_wrapper<Is>(self))), ...);
     ((start_awaitable(*std::get<Is>(wrappers_))), ...);
   }

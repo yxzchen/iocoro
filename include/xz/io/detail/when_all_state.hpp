@@ -6,6 +6,7 @@
 #include <coroutine>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -14,13 +15,17 @@ namespace xz::io::detail {
 
 template <typename... Ts>
 struct when_all_state {
+  template <typename T>
+  using stored_t = std::conditional_t<std::is_void_v<T>, std::monostate, std::optional<T>>;
+
   using result_type = std::tuple<std::conditional_t<std::is_void_v<Ts>, std::monostate, Ts>...>;
+  using storage_type = std::tuple<stored_t<Ts>...>;
 
   // Input awaitables
   std::tuple<awaitable<Ts>...> awaitables_;
 
-  // Results storage - directly store results (monostate for void, T for non-void)
-  result_type results_;
+  // Results storage. Use optionals to avoid requiring default-constructible Ts.
+  storage_type results_{};
 
   // Completion tracking (no atomic needed - single threaded event loop)
   std::size_t completed_count_{0};
@@ -34,6 +39,9 @@ struct when_all_state {
 
   // Continuation to resume
   std::coroutine_handle<> continuation_;
+
+  // Wrapper coroutines need to stay alive until completion.
+  std::array<std::optional<awaitable<void>>, sizeof...(Ts)> wrappers_{};
 
   explicit when_all_state(awaitable<Ts>&&... awaitables)
       : awaitables_(std::move(awaitables)...) {}
@@ -61,17 +69,15 @@ struct when_all_state {
   }
 
   template <std::size_t I>
-  auto make_wrapper(std::shared_ptr<when_all_state> self) -> awaitable<void> {
+  auto make_wrapper(when_all_state* self) -> awaitable<void> {
     using T = std::tuple_element_t<I, std::tuple<Ts...>>;
 
     try {
       if constexpr (std::is_void_v<T>) {
         co_await std::move(std::get<I>(self->awaitables_));
-        // Store monostate directly
         std::get<I>(self->results_) = std::monostate{};
       } else {
-        // Await and store result directly
-        std::get<I>(self->results_) = co_await std::move(std::get<I>(self->awaitables_));
+        std::get<I>(self->results_).emplace(co_await std::move(std::get<I>(self->awaitables_)));
       }
 
       // Increment completion counter
@@ -90,12 +96,24 @@ struct when_all_state {
   }
 
   template <std::size_t... Is>
-  void start_all(std::shared_ptr<when_all_state> self, std::index_sequence<Is...>) {
-    // Create all wrappers in an array
-    std::array<awaitable<void>, sizeof...(Ts)> wrappers{make_wrapper<Is>(self)...};
+  void start_all(when_all_state* self, std::index_sequence<Is...>) {
+    ((std::get<Is>(wrappers_).emplace(make_wrapper<Is>(self))), ...);
+    ((start_awaitable(*std::get<Is>(wrappers_))), ...);
+  }
 
-    // Start all wrappers
-    (start_awaitable(wrappers[Is]), ...);
+  template <std::size_t I>
+  auto take_result() -> std::tuple_element_t<I, result_type> {
+    using T = std::tuple_element_t<I, std::tuple<Ts...>>;
+    if constexpr (std::is_void_v<T>) {
+      return std::monostate{};
+    } else {
+      return std::move(*std::get<I>(results_));
+    }
+  }
+
+  template <std::size_t... Is>
+  auto make_result(std::index_sequence<Is...>) -> result_type {
+    return result_type{take_result<Is>()...};
   }
 
   auto get_result() -> result_type {
@@ -103,8 +121,7 @@ struct when_all_state {
     if (exception_set_) {
       std::rethrow_exception(exception_);
     }
-    // Return results directly (no unwrapping needed)
-    return std::move(results_);
+    return make_result(std::make_index_sequence<sizeof...(Ts)>{});
   }
 };
 
