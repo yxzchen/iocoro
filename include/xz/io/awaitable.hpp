@@ -31,69 +31,6 @@ template <typename Executor, typename T>
 void spawn_awaitable_detached(Executor& ex, awaitable<T>&& user_awaitable);
 }  // namespace detail
 
-/// Base awaitable operation for async operations with error code
-template <typename Result = void>
-class awaitable_op {
- public:
-  awaitable_op() = default;
-  virtual ~awaitable_op() noexcept = default;
-
-  // Single-threaded io_context: no atomics needed.
-  auto await_ready() noexcept -> bool { return ready_; }
-
-  auto await_suspend(std::coroutine_handle<> h) -> bool {
-    try {
-      start_operation();
-    } catch (const std::system_error& se) {
-      complete(se.code());
-    } catch (...) {
-      complete(error::operation_failed);
-    }
-
-    if (ready_) {
-      return false;
-    }
-    awaiting_ = h;
-    return true;
-  }
-
-  auto await_resume() {
-    if (ec_) throw std::system_error(ec_);
-    if constexpr (!std::is_void_v<Result>) {
-      return std::move(*result_);
-    }
-  }
-
- protected:
-  virtual void start_operation() = 0;
-
-  template <typename... Args>
-  void complete(std::error_code ec, Args&&... args) {
-    if (ready_) {
-      return;
-    }
-    ready_ = true;
-
-    ec_ = ec;
-
-    if constexpr (!std::is_void_v<Result> && sizeof...(Args) > 0) {
-      result_.emplace(std::forward<Args>(args)...);
-    }
-
-    auto h = std::exchange(awaiting_, {});
-    if (h) {
-      // Enforce "no inline resumption": schedule continuation on the event loop.
-      detail::defer_resume(h);
-    }
-  }
-
-  std::coroutine_handle<> awaiting_{};
-  std::error_code ec_{};
-  bool ready_{false};
-
-  [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, std::optional<Result>> result_{};
-};
-
 /// Coroutine type for async operations
 template <typename T = void>
 class awaitable;
@@ -222,6 +159,15 @@ auto awaitable_promise<T>::get_return_object() -> awaitable<T> {
 
 inline auto awaitable_promise<void>::get_return_object() -> awaitable<void> {
   return awaitable<void>{std::coroutine_handle<awaitable_promise<void>>::from_promise(*this)};
+}
+
+// Helper to start an awaitable by scheduling its coroutine handle on the event loop.
+// Defined here so users of when_any/when_all don't need to include co_spawn.hpp.
+template <typename T>
+inline void start_awaitable(awaitable<T>& a) {
+  if (a.coro_) {
+    defer_start(a.coro_);
+  }
 }
 }  // namespace detail
 

@@ -1,10 +1,8 @@
 #pragma once
 
-#include <xz/io/detail/async_io_operation.hpp>
-#include <xz/io/detail/async_connect_op.hpp>
-#include <xz/io/detail/async_read_op.hpp>
-#include <xz/io/detail/async_write_op.hpp>
+#include <xz/io/awaitable.hpp>
 #include <xz/io/expected.hpp>
+#include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
 
 #include <chrono>
@@ -43,17 +41,11 @@ class tcp_socket {
 
   /// Async operations
 
-  auto async_connect(ip::tcp_endpoint ep, std::chrono::milliseconds timeout = {}) -> async_connect_op {
-    return async_connect_op{socket_impl_, ep, timeout};
-  }
+  auto async_connect(ip::tcp_endpoint ep, std::chrono::milliseconds timeout = {}) -> awaitable<void>;
 
-  auto async_read_some(std::span<char> buffer, std::chrono::milliseconds timeout = {}) -> async_read_some_op {
-    return async_read_some_op{socket_impl_, buffer, timeout};
-  }
+  auto async_read_some(std::span<char> buffer, std::chrono::milliseconds timeout = {}) -> awaitable<std::size_t>;
 
-  auto async_write_some(std::span<char const> buffer, std::chrono::milliseconds timeout = {}) -> async_write_some_op {
-    return async_write_some_op{socket_impl_, buffer, timeout};
-  }
+  auto async_write_some(std::span<char const> buffer, std::chrono::milliseconds timeout = {}) -> awaitable<std::size_t>;
 
   auto set_option_nodelay(bool enable) -> std::error_code;
   auto set_option_keepalive(bool enable) -> std::error_code;
@@ -63,10 +55,6 @@ class tcp_socket {
   auto remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code>;
 
  private:
-  friend struct async_connect_op;
-  friend struct async_read_some_op;
-  friend struct async_write_some_op;
-
   std::shared_ptr<detail::tcp_socket_impl> socket_impl_;
 };
 

@@ -2,10 +2,9 @@
 #include <xz/io/tcp_socket.hpp>
 #include <xz/io/detail/tcp_socket_impl.hpp>
 #include <xz/io/error.hpp>
-#include <xz/io/impl/async_io_operation.ipp>
-#include <xz/io/impl/async_connect_op.ipp>
-#include <xz/io/impl/async_read_op.ipp>
-#include <xz/io/impl/async_write_op.ipp>
+#include <xz/io/detail/current_executor.hpp>
+#include <xz/io/detail/operation_base.hpp>
+#include <xz/io/when_any.hpp>
 
 #include <cerrno>
 #include <cstring>
@@ -14,6 +13,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -22,6 +22,128 @@ namespace xz::io {
 }  // namespace xz::io
 
 namespace xz::io::detail {
+
+struct fd_wait_state {
+  io_context* ctx = nullptr;
+  int fd = -1;
+  bool write = false;
+
+  std::coroutine_handle<> h{};
+  bool done = false;
+  std::error_code ec{};
+
+  void complete(std::error_code e) {
+    if (done) return;
+    done = true;
+    ec = e;
+    if (h) {
+      defer_resume(h);
+    }
+  }
+};
+
+struct fd_wait_operation : operation_base {
+  std::shared_ptr<fd_wait_state> st;
+
+  explicit fd_wait_operation(std::shared_ptr<fd_wait_state> s) : st(std::move(s)) {}
+
+  void execute() override { st->complete({}); }
+
+  void abort(std::error_code ec) override { st->complete(ec); }
+};
+
+struct fd_wait_awaiter {
+  std::shared_ptr<fd_wait_state> st;
+
+  auto await_ready() const noexcept -> bool { return st->done; }
+
+  auto await_suspend(std::coroutine_handle<> h) -> bool {
+    st->h = h;
+    if (st->write) {
+      st->ctx->register_fd_write(st->fd, std::make_unique<fd_wait_operation>(st));
+    } else {
+      st->ctx->register_fd_read(st->fd, std::make_unique<fd_wait_operation>(st));
+    }
+    return true;
+  }
+
+  void await_resume() noexcept {}
+};
+
+inline auto wait_readable(io_context& ctx, int fd) -> awaitable<void> {
+  auto st = std::make_shared<fd_wait_state>();
+  st->ctx = &ctx;
+  st->fd = fd;
+  st->write = false;
+  co_await fd_wait_awaiter{std::move(st)};
+}
+
+inline auto wait_writable(io_context& ctx, int fd) -> awaitable<void> {
+  auto st = std::make_shared<fd_wait_state>();
+  st->ctx = &ctx;
+  st->fd = fd;
+  st->write = true;
+  co_await fd_wait_awaiter{std::move(st)};
+}
+
+struct timer_wait_state {
+  io_context* ctx = nullptr;
+  detail::timer_handle handle{};
+  std::coroutine_handle<> h{};
+  bool done = false;
+
+  void complete() {
+    if (done) return;
+    done = true;
+    if (h) {
+      defer_resume(h);
+    }
+  }
+
+  void cancel() {
+    if (done) return;
+    done = true;
+    if (handle && ctx) {
+      ctx->cancel_timer(handle);
+    }
+    if (h) {
+      defer_resume(h);
+    }
+  }
+};
+
+struct timer_awaiter {
+  std::shared_ptr<timer_wait_state> st;
+  std::chrono::milliseconds duration;
+
+  auto await_ready() const noexcept -> bool { return duration.count() <= 0; }
+
+  auto await_suspend(std::coroutine_handle<> h) -> bool {
+    st->h = h;
+    st->handle = st->ctx->schedule_timer(duration, [s = st]() { s->complete(); });
+    return true;
+  }
+
+  void await_resume() noexcept {}
+};
+
+struct timeout_op {
+  std::shared_ptr<timer_wait_state> st;
+  std::chrono::milliseconds duration{};
+
+  auto task() -> awaitable<void> {
+    if (duration.count() <= 0) co_return;
+    co_await timer_awaiter{st, duration};
+  }
+
+  void cancel() {
+    if (st) st->cancel();
+  }
+};
+
+[[noreturn]] inline void throw_timeout() {
+  throw std::system_error(error::timeout);
+}
 
 void tcp_socket_impl::close() {
   if (fd_ >= 0) {
@@ -271,6 +393,118 @@ auto tcp_socket::local_endpoint() const -> expected<ip::tcp_endpoint, std::error
 
 auto tcp_socket::remote_endpoint() const -> expected<ip::tcp_endpoint, std::error_code> {
   return socket_impl_->remote_endpoint();
+}
+
+auto tcp_socket::async_connect(ip::tcp_endpoint ep, std::chrono::milliseconds timeout) -> awaitable<void> {
+  auto impl = socket_impl_;
+  auto& ctx = impl->get_executor();
+
+  auto ec = impl->connect(ep);
+  if (ec) {
+    throw std::system_error(ec);
+  }
+
+  int fd = impl->native_handle();
+  if (fd < 0) {
+    throw std::system_error(error::not_connected);
+  }
+
+  if (timeout.count() > 0) {
+    detail::timeout_op to{std::make_shared<detail::timer_wait_state>(), timeout};
+    to.st->ctx = &ctx;
+    auto [idx, result] = co_await when_any(detail::wait_writable(ctx, fd), to.task());
+    if (idx == 1) {
+      ctx.deregister_fd(fd);
+      detail::throw_timeout();
+    }
+    // Cancel the losing timer so it doesn't keep io_context alive until expiry.
+    to.cancel();
+    (void)result;
+  } else {
+    co_await detail::wait_writable(ctx, fd);
+  }
+
+  int so_error = 0;
+  socklen_t len = sizeof(so_error);
+  ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len);
+  if (so_error) {
+    throw std::system_error(std::error_code(so_error, std::generic_category()));
+  }
+}
+
+auto tcp_socket::async_read_some(std::span<char> buffer, std::chrono::milliseconds timeout) -> awaitable<std::size_t> {
+  auto impl = socket_impl_;
+  auto& ctx = impl->get_executor();
+
+  for (;;) {
+    auto result = impl->read_some(buffer);
+    if (result) {
+      co_return *result;
+    }
+
+    auto ec = result.error();
+    if (ec == std::make_error_code(std::errc::operation_would_block)) {
+      int fd = impl->native_handle();
+      if (fd < 0) {
+        throw std::system_error(error::not_connected);
+      }
+
+      if (timeout.count() > 0) {
+        detail::timeout_op to{std::make_shared<detail::timer_wait_state>(), timeout};
+        to.st->ctx = &ctx;
+        auto [idx, v] = co_await when_any(detail::wait_readable(ctx, fd), to.task());
+        if (idx == 1) {
+          ctx.deregister_fd(fd);
+          detail::throw_timeout();
+        }
+        to.cancel();
+        (void)v;
+      } else {
+        co_await detail::wait_readable(ctx, fd);
+      }
+      continue;
+    }
+
+    throw std::system_error(ec);
+  }
+}
+
+auto tcp_socket::async_write_some(std::span<char const> buffer, std::chrono::milliseconds timeout)
+    -> awaitable<std::size_t> {
+  auto impl = socket_impl_;
+  auto& ctx = impl->get_executor();
+
+  for (;;) {
+    auto result = impl->write_some(buffer);
+    if (result) {
+      co_return *result;
+    }
+
+    auto ec = result.error();
+    if (ec == std::make_error_code(std::errc::operation_would_block)) {
+      int fd = impl->native_handle();
+      if (fd < 0) {
+        throw std::system_error(error::not_connected);
+      }
+
+      if (timeout.count() > 0) {
+        detail::timeout_op to{std::make_shared<detail::timer_wait_state>(), timeout};
+        to.st->ctx = &ctx;
+        auto [idx, v] = co_await when_any(detail::wait_writable(ctx, fd), to.task());
+        if (idx == 1) {
+          ctx.deregister_fd(fd);
+          detail::throw_timeout();
+        }
+        to.cancel();
+        (void)v;
+      } else {
+        co_await detail::wait_writable(ctx, fd);
+      }
+      continue;
+    }
+
+    throw std::system_error(ec);
+  }
 }
 
 }  // namespace xz::io
