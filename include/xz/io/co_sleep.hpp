@@ -23,19 +23,19 @@ struct sleep_state {
   io_context* ctx = nullptr;
   detail::timer_handle handle{};
   std::coroutine_handle<> h{};
-  state st = state::pending;
+  state state_ = state::pending;
 
   void fire() {
-    if (st != state::pending) return;
-    st = state::fired;
+    if (state_ != state::pending) return;
+    state_ = state::fired;
     if (h) {
       detail::defer_resume(h);
     }
   }
 
   void cancel() {
-    if (st != state::pending) return;
-    st = state::cancelled;
+    if (state_ != state::pending) return;
+    state_ = state::cancelled;
     if (handle && ctx) {
       ctx->cancel_timer(handle);
     }
@@ -50,11 +50,11 @@ struct sleep_awaiter {
   std::chrono::milliseconds duration{};
 
   auto await_ready() const noexcept -> bool {
-    return duration.count() <= 0 || st->st == sleep_state::state::cancelled;
+    return duration.count() <= 0 || st->state_ == sleep_state::state::cancelled;
   }
 
   auto await_suspend(std::coroutine_handle<> h) -> bool {
-    if (st->st == sleep_state::state::cancelled || duration.count() <= 0) {
+    if (st->state_ == sleep_state::state::cancelled || duration.count() <= 0) {
       return false;
     }
     st->h = h;
