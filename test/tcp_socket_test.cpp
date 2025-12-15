@@ -15,7 +15,7 @@ class TcpSocketTest : public ::testing::Test {
   // Helper to run an awaitable using co_spawn
   template<typename AwaitableFunc>
   void run_awaitable(AwaitableFunc&& func) {
-    co_spawn(ctx, func(), use_detached);
+    co_spawn(ctx, std::forward<AwaitableFunc>(func), use_detached);
     ctx.run();
   }
 };

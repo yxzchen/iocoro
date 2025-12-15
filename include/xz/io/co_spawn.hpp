@@ -7,7 +7,6 @@
 #include <exception>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -45,21 +44,83 @@ struct awaitable_result<awaitable<T>> {
 template <typename T>
 using awaitable_result_t = typename awaitable_result<std::decay_t<T>>::type;
 
-// State that holds the factory function and wrapper, keeping itself alive
-template <typename T>
-struct detached_state {
-  std::function<awaitable<T>()> factory;  // Factory to create awaitable, keeps lambda alive
-  std::optional<awaitable<void>> wrapper;
-  std::shared_ptr<detached_state> self;
+// A self-destroying detached coroutine:
+// - does NOT rely on xz::io::awaitable lifetime to keep the frame alive
+// - destroys its own coroutine frame at final_suspend
+struct spawn_task {
+  struct promise_type {
+    using handle_type = std::coroutine_handle<promise_type>;
 
-  explicit detached_state(std::function<awaitable<T>()>&& f) : factory(std::move(f)) {}
+    auto get_return_object() noexcept -> spawn_task {
+      return spawn_task{handle_type::from_promise(*this)};
+    }
+
+    std::suspend_always initial_suspend() noexcept { return {}; }
+
+    auto final_suspend() noexcept {
+      struct final_awaiter {
+        bool await_ready() noexcept { return false; }
+        void await_suspend(handle_type h) noexcept { h.destroy(); }
+        void await_resume() noexcept {}
+      };
+      return final_awaiter{};
+    }
+
+    void return_void() noexcept {}
+
+    [[noreturn]] void unhandled_exception() noexcept { std::terminate(); }
+  };
+
+  using handle_type = std::coroutine_handle<promise_type>;
+  handle_type h_;
+
+  explicit spawn_task(handle_type h) noexcept : h_(h) {}
+
+  spawn_task(spawn_task&& other) noexcept : h_(std::exchange(other.h_, {})) {}
+  auto operator=(spawn_task&& other) noexcept -> spawn_task& {
+    if (this != &other) {
+      if (h_) h_.destroy();
+      h_ = std::exchange(other.h_, {});
+    }
+    return *this;
+  }
+
+  ~spawn_task() {
+    if (h_) h_.destroy();
+  }
+
+  spawn_task(spawn_task const&) = delete;
+  auto operator=(spawn_task const&) -> spawn_task& = delete;
 };
 
-// Wrapper coroutine that captures shared state to keep everything alive
-template <typename T>
-auto make_detached_wrapper(std::shared_ptr<detached_state<T>> state) -> awaitable<void> {
+inline void start_spawn_task(spawn_task&& t) {
+  auto h = std::exchange(t.h_, {});
+  if (h) {
+    // Enforce "no inline resumption": schedule start on the event loop.
+    defer_start(h);
+  }
+}
+
+template <typename Factory>
+struct detached_state {
+  Factory factory;
+
+  template <typename F>
+  explicit detached_state(F&& f) : factory(std::forward<F>(f)) {}
+};
+
+template <typename Factory, typename Handler>
+struct completion_state {
+  Factory factory;
+  Handler handler;
+
+  template <typename F, typename H>
+  completion_state(F&& f, H&& h) : factory(std::forward<F>(f)), handler(std::forward<H>(h)) {}
+};
+
+template <typename T, typename Factory>
+auto run_detached(std::shared_ptr<detached_state<Factory>> state) -> spawn_task {
   try {
-    // Execute factory to create and run awaitable
     if constexpr (std::is_void_v<T>) {
       co_await state->factory();
     } else {
@@ -68,26 +129,12 @@ auto make_detached_wrapper(std::shared_ptr<detached_state<T>> state) -> awaitabl
   } catch (...) {
     // Detached mode: swallow exceptions
   }
-  // Clear self-reference to allow cleanup
-  state->self.reset();
 }
 
-template <typename T, typename Handler>
-struct completion_state {
-  std::function<awaitable<T>()> factory;  // Factory to create awaitable, keeps lambda alive
-  Handler handler;
-  std::optional<awaitable<void>> wrapper;
-  std::shared_ptr<completion_state> self;
-
-  completion_state(std::function<awaitable<T>()>&& f, Handler h)
-      : factory(std::move(f)), handler(std::move(h)) {}
-};
-
-template <typename T, typename Handler>
-auto make_completion_wrapper(std::shared_ptr<completion_state<T, Handler>> state) -> awaitable<void> {
+template <typename T, typename Factory, typename Handler>
+auto run_with_handler(std::shared_ptr<completion_state<Factory, Handler>> state) -> spawn_task {
   std::exception_ptr eptr;
   try {
-    // Execute factory to create and run awaitable
     if constexpr (std::is_void_v<T>) {
       co_await state->factory();
     } else {
@@ -100,33 +147,12 @@ auto make_completion_wrapper(std::shared_ptr<completion_state<T, Handler>> state
   try {
     std::invoke(state->handler, eptr);
   } catch (...) {
-    // Completion handler should not throw across the event loop boundary.
+    // If the completion handler throws, fail-fast: crossing the event loop boundary is unsafe.
+    std::terminate();
   }
-
-  // Clear self-reference to allow cleanup
-  state->self.reset();
 }
 
 }  // namespace detail
-
-// co_spawn with detached completion token - direct awaitable overload
-template <typename Executor, typename T>
-  requires std::is_same_v<std::decay_t<Executor>, io_context>
-void co_spawn(Executor& ex, awaitable<T>&& t, detached_t) {
-  // Store awaitable in shared_ptr to make lambda copyable
-  auto awaitable_ptr = std::make_shared<awaitable<T>>(std::move(t));
-  auto state = std::make_shared<detail::detached_state<T>>(
-    [awaitable_ptr]() mutable -> awaitable<T> {
-      return std::move(*awaitable_ptr);
-    }
-  );
-  state->wrapper.emplace(detail::make_detached_wrapper(state));
-  state->self = state; // Create self-reference to keep alive
-
-  ex.post([state]() mutable {
-    detail::start_awaitable(*state->wrapper);
-  });
-}
 
 // co_spawn with detached completion token - callable overload
 template <typename Executor, typename F>
@@ -134,35 +160,11 @@ template <typename Executor, typename F>
            (!detail::is_awaitable_v<std::decay_t<F>>)
 void co_spawn(Executor& ex, F&& f, detached_t) {
   using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
-  auto state = std::make_shared<detail::detached_state<result_t>>(std::forward<F>(f));
-  state->wrapper.emplace(detail::make_detached_wrapper(state));
-  state->self = state; // Create self-reference to keep alive
+  using factory_t = std::decay_t<F>;
+  auto state = std::make_shared<detail::detached_state<factory_t>>(std::forward<F>(f));
 
   ex.post([state]() mutable {
-    detail::start_awaitable(*state->wrapper);
-  });
-}
-
-// co_spawn with completion handler void(std::exception_ptr) - direct awaitable overload
-template <typename Executor, typename T, typename CompletionHandler>
-  requires std::is_same_v<std::decay_t<Executor>, io_context> &&
-           (!std::is_same_v<std::decay_t<CompletionHandler>, detached_t>) &&
-           std::invocable<std::decay_t<CompletionHandler>&, std::exception_ptr>
-void co_spawn(Executor& ex, awaitable<T>&& t, CompletionHandler&& handler) {
-  using handler_t = std::decay_t<CompletionHandler>;
-  // Store awaitable in shared_ptr to make lambda copyable
-  auto awaitable_ptr = std::make_shared<awaitable<T>>(std::move(t));
-  auto state = std::make_shared<detail::completion_state<T, handler_t>>(
-    [awaitable_ptr]() mutable -> awaitable<T> {
-      return std::move(*awaitable_ptr);
-    },
-    std::forward<CompletionHandler>(handler)
-  );
-  state->wrapper.emplace(detail::make_completion_wrapper(state));
-  state->self = state; // Create self-reference to keep alive
-
-  ex.post([state]() mutable {
-    detail::start_awaitable(*state->wrapper);
+    detail::start_spawn_task(detail::run_detached<result_t>(state));
   });
 }
 
@@ -175,16 +177,14 @@ template <typename Executor, typename F, typename CompletionHandler>
 void co_spawn(Executor& ex, F&& f, CompletionHandler&& handler) {
   using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
   using handler_t = std::decay_t<CompletionHandler>;
-
-  auto state = std::make_shared<detail::completion_state<result_t, handler_t>>(
+  using factory_t = std::decay_t<F>;
+  auto state = std::make_shared<detail::completion_state<factory_t, handler_t>>(
     std::forward<F>(f),
     std::forward<CompletionHandler>(handler)
   );
-  state->wrapper.emplace(detail::make_completion_wrapper(state));
-  state->self = state; // Create self-reference to keep alive
 
   ex.post([state]() mutable {
-    detail::start_awaitable(*state->wrapper);
+    detail::start_spawn_task(detail::run_with_handler<result_t>(state));
   });
 }
 

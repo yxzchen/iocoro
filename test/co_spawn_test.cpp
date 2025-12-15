@@ -18,7 +18,7 @@ TEST(CoSpawnTest, BasicDetached) {
     co_return;
   };
 
-  co_spawn(ctx, simple_task(), use_detached);
+  co_spawn(ctx, simple_task, use_detached);
 
   ctx.run();
   EXPECT_EQ(counter.load(), 1);
@@ -33,9 +33,9 @@ TEST(CoSpawnTest, MultipleSpawns) {
     co_return;
   };
 
-  co_spawn(ctx, increment_task(), use_detached);
-  co_spawn(ctx, increment_task(), use_detached);
-  co_spawn(ctx, increment_task(), use_detached);
+  co_spawn(ctx, increment_task, use_detached);
+  co_spawn(ctx, increment_task, use_detached);
+  co_spawn(ctx, increment_task, use_detached);
 
   ctx.run();
   EXPECT_EQ(counter.load(), 3);
@@ -68,7 +68,7 @@ TEST(CoSpawnTest, WithTimer) {
     co_return;
   };
 
-  co_spawn(ctx, timer_task(), use_detached);
+  co_spawn(ctx, timer_task, use_detached);
 
   auto start = std::chrono::steady_clock::now();
   ctx.run();
@@ -95,9 +95,9 @@ TEST(CoSpawnTest, ExceptionHandling) {
   };
 
   // Spawn a task that throws
-  co_spawn(ctx, throwing_task(), use_detached);
+  co_spawn(ctx, throwing_task, use_detached);
   // Spawn a normal task to ensure execution continues
-  co_spawn(ctx, normal_task(), use_detached);
+  co_spawn(ctx, normal_task, use_detached);
 
   // Should not throw - exceptions are swallowed in detached mode
   EXPECT_NO_THROW(ctx.run());
@@ -114,7 +114,7 @@ TEST(CoSpawnTest, CompletionHandlerSuccess_DirectAwaitable) {
 
   auto task = [&]() -> awaitable<void> { co_return; };
 
-  co_spawn(ctx, task(), [&](std::exception_ptr eptr) {
+  co_spawn(ctx, task, [&](std::exception_ptr eptr) {
     captured = eptr;
     called.fetch_add(1);
     ctx.stop();
@@ -303,7 +303,11 @@ TEST(CoSpawnTest, LambdaWithComplexCaptureOutOfScope) {
     std::string prefix = "Number: ";
 
     // Spawn the coroutine - parameters are copied into the coroutine frame
-    co_spawn(ctx, process_data(numbers, prefix, sum_result, prefix_valid, executed), use_detached);
+    co_spawn(ctx,
+             [numbers, prefix, &sum_result, &prefix_valid, &executed, process_data]() mutable -> awaitable<void> {
+               co_await process_data(numbers, prefix, sum_result, prefix_valid, executed);
+             },
+             use_detached);
 
     // All local variables destroyed here
   }
@@ -372,8 +376,13 @@ TEST(CoSpawnTest, MoveParametersIntoCoroutine) {
     std::string prefix = "Moved: ";
 
     // Move parameters into coroutine - no copy!
-    co_spawn(ctx, process(std::move(numbers), std::move(prefix),
-                          sum_result, prefix_valid, executed), use_detached);
+    co_spawn(ctx,
+             [numbers = std::move(numbers), prefix = std::move(prefix),
+              &sum_result, &prefix_valid, &executed, process]() mutable -> awaitable<void> {
+               co_await process(std::move(numbers), std::move(prefix),
+                                sum_result, prefix_valid, executed);
+             },
+             use_detached);
 
     // Original numbers and prefix are now moved-from (empty)
     EXPECT_TRUE(numbers.empty()) << "Vector should be moved-from";
@@ -407,7 +416,11 @@ TEST(CoSpawnTest, MoveOnlyTypeAsParameter) {
     auto unique_data = std::make_unique<int>(42);
 
     // Move unique_ptr into coroutine as parameter
-    co_spawn(ctx, process(std::move(unique_data), success, executed), use_detached);
+    co_spawn(ctx,
+             [data = std::move(unique_data), &success, &executed, process]() mutable -> awaitable<void> {
+               co_await process(std::move(data), success, executed);
+             },
+             use_detached);
 
     // unique_data is now nullptr (moved-from)
     EXPECT_EQ(unique_data, nullptr) << "unique_ptr should be moved-from";
@@ -441,7 +454,12 @@ TEST(CoSpawnTest, DirectMoveParametersIntoCoroutine) {
     auto message = std::make_unique<std::string>("test");
 
     // Move parameters directly into coroutine
-    co_spawn(ctx, process(std::move(numbers), std::move(message), sum_result, executed), use_detached);
+    co_spawn(ctx,
+             [numbers = std::move(numbers), msg = std::move(message),
+              &sum_result, &executed, process]() mutable -> awaitable<void> {
+               co_await process(std::move(numbers), std::move(msg), sum_result, executed);
+             },
+             use_detached);
 
     // Verify moved-from state
     EXPECT_TRUE(numbers.empty()) << "Vector should be moved";
