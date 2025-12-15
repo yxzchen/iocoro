@@ -96,7 +96,7 @@ TEST(WhenAllTest, VoidTasks) {
   };
 
   co_spawn(ctx, [&, increment_task]() -> awaitable<void> {
-    auto [a, b, c] = co_await when_all(
+    [[maybe_unused]] auto [a, b, c] = co_await when_all(
       increment_task(),
       increment_task(),
       increment_task()
@@ -142,7 +142,7 @@ TEST(WhenAllTest, ExceptionInOneTask) {
 
   co_spawn(ctx, [&, throwing_task]() -> awaitable<void> {
     try {
-      auto [a, b] = co_await when_all(make_value_task(10), throwing_task());
+      [[maybe_unused]] auto [a, b] = co_await when_all(make_value_task(10), throwing_task());
       // Should not reach here
       exception_caught.store(false);
     } catch (const std::runtime_error& e) {
