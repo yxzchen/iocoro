@@ -15,8 +15,24 @@ class TcpSocketTest : public ::testing::Test {
   // Helper to run an awaitable using co_spawn
   template<typename AwaitableFunc>
   void run_awaitable(AwaitableFunc&& func) {
-    co_spawn(ctx, std::forward<AwaitableFunc>(func), use_detached);
+    std::exception_ptr eptr;
+    co_spawn(ctx, std::forward<AwaitableFunc>(func), [&](std::exception_ptr e) {
+      if (e) {
+        eptr = e;
+        // ctx.stop();
+      }
+    });
     ctx.run();
+
+    if (eptr) {
+      try {
+        std::rethrow_exception(eptr);
+      } catch (std::exception const& e) {
+        FAIL() << "Unhandled exception in spawned coroutine: " << e.what();
+      } catch (...) {
+        FAIL() << "Unhandled unknown exception in spawned coroutine";
+      }
+    }
   }
 };
 
