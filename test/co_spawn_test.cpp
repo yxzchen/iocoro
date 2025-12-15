@@ -9,15 +9,16 @@
 using namespace std::chrono_literals;
 using namespace xz::io;
 
-static void fail_on_exception(std::exception_ptr eptr) {
+static void fail_and_stop_on_exception(io_context& ctx, std::exception_ptr eptr) {
   if (!eptr) return;
   try {
     std::rethrow_exception(eptr);
   } catch (std::exception const& e) {
-    FAIL() << "Unhandled exception in spawned coroutine: " << e.what();
+    ADD_FAILURE() << "Unhandled exception in spawned coroutine: " << e.what();
   } catch (...) {
-    FAIL() << "Unhandled unknown exception in spawned coroutine";
+    ADD_FAILURE() << "Unhandled unknown exception in spawned coroutine";
   }
+  ctx.stop();
 }
 
 TEST(CoSpawnTest, BasicDetached) {
@@ -29,16 +30,9 @@ TEST(CoSpawnTest, BasicDetached) {
     co_return;
   };
 
-  std::exception_ptr eptr;
-  co_spawn(ctx, simple_task, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  });
+  co_spawn(ctx, simple_task, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_EQ(counter.load(), 1);
 }
 
@@ -51,20 +45,13 @@ TEST(CoSpawnTest, MultipleSpawns) {
     co_return;
   };
 
-  std::exception_ptr eptr;
-  auto on_complete = [&](std::exception_ptr e) {
-    if (e && !eptr) {
-      eptr = e;
-      ctx.stop();
-    }
-  };
+  auto on_complete = [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); };
 
   co_spawn(ctx, increment_task, on_complete);
   co_spawn(ctx, increment_task, on_complete);
   co_spawn(ctx, increment_task, on_complete);
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_EQ(counter.load(), 3);
 }
 
@@ -73,19 +60,12 @@ TEST(CoSpawnTest, WithCallable) {
   std::atomic<bool> executed{false};
 
   // Pass a callable directly (lambda that returns a task)
-  std::exception_ptr eptr;
   co_spawn(ctx, [&]() -> awaitable<void> {
     executed.store(true);
     co_return;
-  }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  });
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
@@ -102,17 +82,10 @@ TEST(CoSpawnTest, WithTimer) {
     co_return;
   };
 
-  std::exception_ptr eptr;
-  co_spawn(ctx, timer_task, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  });
+  co_spawn(ctx, timer_task, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
 
   auto start = std::chrono::steady_clock::now();
   ctx.run();
-  fail_on_exception(eptr);
   auto elapsed = std::chrono::steady_clock::now() - start;
 
   EXPECT_TRUE(timer_fired.load());
@@ -158,7 +131,6 @@ TEST(CoSpawnTest, CompletionHandlerSuccess_DirectAwaitable) {
   co_spawn(ctx, task, [&](std::exception_ptr eptr) {
     captured = eptr;
     called.fetch_add(1);
-    ctx.stop();
   });
 
   EXPECT_NO_THROW(ctx.run());
@@ -184,7 +156,6 @@ TEST(CoSpawnTest, CompletionHandlerException_CallableFactory) {
         what = e.what();
       }
     }
-    ctx.stop();
   });
 
   EXPECT_NO_THROW(ctx.run());
@@ -199,7 +170,6 @@ TEST(CoSpawnTest, WithTcpSocket) {
 
   auto endpoint = ip::tcp_endpoint{ip::address_v4{{127, 0, 0, 1}}, 6379};
 
-  std::exception_ptr eptr;
   co_spawn(ctx, [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
@@ -208,15 +178,9 @@ TEST(CoSpawnTest, WithTcpSocket) {
     } catch (std::system_error const&) {
       // Connection failed
     }
-  }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  });
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(connected.load());
 }
 
@@ -227,7 +191,6 @@ TEST(CoSpawnTest, ChainedOperations) {
 
   auto endpoint = ip::tcp_endpoint{ip::address_v4{{127, 0, 0, 1}}, 6379};
 
-  std::exception_ptr eptr;
   co_spawn(ctx, [&]() -> awaitable<void> {
     try {
       co_await socket.async_connect(endpoint, 1000ms);
@@ -253,15 +216,9 @@ TEST(CoSpawnTest, ChainedOperations) {
     } catch (std::system_error const&) {
       // Operation failed
     }
-  }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  });
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(success.load());
 }
 
@@ -273,19 +230,12 @@ TEST(CoSpawnTest, TaskWithReturnValue) {
     co_return 42;
   };
 
-  std::exception_ptr eptr;
   co_spawn(ctx, [&, value_task]() -> awaitable<void> {
     auto value = co_await value_task();
     result.store(value);
-  }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  });
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_EQ(result.load(), 42);
 }
 
@@ -298,20 +248,13 @@ TEST(CoSpawnTest, MultipleNestedTasks) {
     co_return;
   };
 
-  std::exception_ptr eptr;
   co_spawn(ctx, [&, add_value]() -> awaitable<void> {
     co_await add_value(10);
     co_await add_value(20);
     co_await add_value(30);
-  }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  });
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_EQ(sum.load(), 60);
 }
 
@@ -320,13 +263,7 @@ TEST(CoSpawnTest, LambdaOutOfScopeBeforeExecution) {
   std::atomic<int> result{0};
   std::atomic<bool> executed{false};
 
-  std::exception_ptr eptr;
-  auto on_complete = [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
-  };
+  auto on_complete = [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); };
 
   // Create lambda and its captures in a nested scope
   {
@@ -347,7 +284,6 @@ TEST(CoSpawnTest, LambdaOutOfScopeBeforeExecution) {
 
   // Now run the event loop - the spawned coroutine should still work
   ctx.run();
-  fail_on_exception(eptr);
 
   EXPECT_EQ(result.load(), 42);
   EXPECT_TRUE(executed.load());
@@ -358,7 +294,7 @@ TEST(CoSpawnTest, LambdaWithComplexCaptureOutOfScope) {
   std::atomic<int> sum_result{0};
   std::atomic<bool> prefix_valid{false};
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
+  auto on_complete = [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); };
 
   // Create a helper coroutine function that takes parameters instead of captures
   // This is the correct pattern - pass data as parameters, not as lambda captures
@@ -386,18 +322,12 @@ TEST(CoSpawnTest, LambdaWithComplexCaptureOutOfScope) {
              [numbers, prefix, &sum_result, &prefix_valid, &executed, process_data]() mutable -> awaitable<void> {
                co_await process_data(numbers, prefix, sum_result, prefix_valid, executed);
              },
-             [&](std::exception_ptr e) {
-               if (e) {
-                 eptr = e;
-                 ctx.stop();
-               }
-             });
+             on_complete);
 
     // All local variables destroyed here
   }
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
   EXPECT_EQ(sum_result.load(), 15) << "Sum calculation failed";
   EXPECT_TRUE(prefix_valid.load()) << "Prefix validation failed";
@@ -406,7 +336,7 @@ TEST(CoSpawnTest, LambdaWithComplexCaptureOutOfScope) {
 TEST(CoSpawnTest, CallableFactoryOutOfScope) {
   io_context ctx;
   std::atomic<int> result{0};
-  std::exception_ptr eptr;
+  auto on_complete = [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); };
 
   // Helper that returns a lambda (factory pattern)
   auto make_task = [](int value) {
@@ -425,18 +355,12 @@ TEST(CoSpawnTest, CallableFactoryOutOfScope) {
       co_await task();
       result.store(999);
       co_return;
-    }, [&](std::exception_ptr e) {
-      if (e) {
-        eptr = e;
-        ctx.stop();
-      }
-    });
+    }, on_complete);
 
     // temp_value and task go out of scope
   }
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_EQ(result.load(), 999);
 }
 
@@ -445,7 +369,7 @@ TEST(CoSpawnTest, MoveParametersIntoCoroutine) {
   std::atomic<int> sum_result{0};
   std::atomic<bool> prefix_valid{false};
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
+  auto on_complete = [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); };
 
   // Coroutine function that takes parameters by value (enabling move)
   auto process = [](std::vector<int> nums, std::string pref,
@@ -475,12 +399,7 @@ TEST(CoSpawnTest, MoveParametersIntoCoroutine) {
                co_await process(std::move(numbers), std::move(prefix),
                                 sum_result, prefix_valid, executed);
              },
-             [&](std::exception_ptr e) {
-               if (e) {
-                 eptr = e;
-                 ctx.stop();
-               }
-             });
+             on_complete);
 
     // Original numbers and prefix are now moved-from (empty)
     EXPECT_TRUE(numbers.empty()) << "Vector should be moved-from";
@@ -490,7 +409,6 @@ TEST(CoSpawnTest, MoveParametersIntoCoroutine) {
   }
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
   EXPECT_EQ(sum_result.load(), 15) << "Sum calculation failed";
   EXPECT_TRUE(prefix_valid.load()) << "Prefix validation failed";
@@ -500,7 +418,7 @@ TEST(CoSpawnTest, MoveOnlyTypeAsParameter) {
   io_context ctx;
   std::atomic<bool> success{false};
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
+  auto on_complete = [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); };
 
   // Coroutine that accepts move-only type as parameter
   auto process = [](std::unique_ptr<int> data,
@@ -520,19 +438,13 @@ TEST(CoSpawnTest, MoveOnlyTypeAsParameter) {
              [data = std::move(unique_data), &success, &executed, process]() mutable -> awaitable<void> {
                co_await process(std::move(data), success, executed);
              },
-             [&](std::exception_ptr e) {
-               if (e) {
-                 eptr = e;
-                 ctx.stop();
-               }
-             });
+             on_complete);
 
     // unique_data is now nullptr (moved-from)
     EXPECT_EQ(unique_data, nullptr) << "unique_ptr should be moved-from";
   }
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
   EXPECT_TRUE(success.load()) << "Data validation failed";
 }
@@ -541,7 +453,7 @@ TEST(CoSpawnTest, DirectMoveParametersIntoCoroutine) {
   io_context ctx;
   std::atomic<int> sum_result{0};
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
+  auto on_complete = [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); };
 
   // Coroutine that takes parameters by value (will be moved)
   auto process = [](std::vector<int> nums, std::unique_ptr<std::string> msg,
@@ -566,12 +478,7 @@ TEST(CoSpawnTest, DirectMoveParametersIntoCoroutine) {
               &sum_result, &executed, process]() mutable -> awaitable<void> {
                co_await process(std::move(numbers), std::move(msg), sum_result, executed);
              },
-             [&](std::exception_ptr e) {
-               if (e) {
-                 eptr = e;
-                 ctx.stop();
-               }
-             });
+             on_complete);
 
     // Verify moved-from state
     EXPECT_TRUE(numbers.empty()) << "Vector should be moved";
@@ -579,7 +486,6 @@ TEST(CoSpawnTest, DirectMoveParametersIntoCoroutine) {
   }
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
   EXPECT_EQ(sum_result.load(), 60) << "Sum should be 60";
 }

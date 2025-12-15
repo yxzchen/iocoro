@@ -11,15 +11,16 @@
 using namespace std::chrono_literals;
 using namespace xz::io;
 
-static void fail_on_exception(std::exception_ptr eptr) {
+static void fail_and_stop_on_exception(io_context& ctx, std::exception_ptr eptr) {
   if (!eptr) return;
   try {
     std::rethrow_exception(eptr);
   } catch (std::exception const& e) {
-    FAIL() << "Unhandled exception in spawned coroutine: " << e.what();
+    ADD_FAILURE() << "Unhandled exception in spawned coroutine: " << e.what();
   } catch (...) {
-    FAIL() << "Unhandled unknown exception in spawned coroutine";
+    ADD_FAILURE() << "Unhandled unknown exception in spawned coroutine";
   }
+  ctx.stop();
 }
 
 // Helper function to create a simple awaitable that returns a value
@@ -50,7 +51,6 @@ auto make_delayed_task(io_context& ctx, int value, std::chrono::milliseconds del
 TEST(WhenAllTest, BasicTwoTasks) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   co_spawn(ctx, [&]() -> awaitable<void> {
     auto [a, b] = co_await when_all(make_value_task(10), make_value_task(20));
@@ -58,21 +58,16 @@ TEST(WhenAllTest, BasicTwoTasks) {
     EXPECT_EQ(b, 20);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAllTest, ThreeTasks) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   co_spawn(ctx, [&]() -> awaitable<void> {
     auto [a, b, c] = co_await when_all(
@@ -85,35 +80,26 @@ TEST(WhenAllTest, ThreeTasks) {
     EXPECT_EQ(c, 3);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAllTest, SingleTask) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   co_spawn(ctx, [&]() -> awaitable<void> {
     auto [result] = co_await when_all(make_value_task(42));
     EXPECT_EQ(result, 42);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
@@ -121,7 +107,6 @@ TEST(WhenAllTest, VoidTasks) {
   io_context ctx;
   std::atomic<int> counter{0};
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   auto increment_task = [&]() -> awaitable<void> {
     counter.fetch_add(1);
@@ -138,14 +123,10 @@ TEST(WhenAllTest, VoidTasks) {
     EXPECT_EQ(counter.load(), 3);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
   EXPECT_EQ(counter.load(), 3);
 }
@@ -153,7 +134,6 @@ TEST(WhenAllTest, VoidTasks) {
 TEST(WhenAllTest, MixedVoidAndNonVoid) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   co_spawn(ctx, [&]() -> awaitable<void> {
     auto [a, b, c] = co_await when_all(
@@ -166,21 +146,16 @@ TEST(WhenAllTest, MixedVoidAndNonVoid) {
     EXPECT_EQ(c, 20);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAllTest, ExceptionInOneTask) {
   io_context ctx;
   std::atomic<bool> exception_caught{false};
-  std::exception_ptr eptr;
 
   auto throwing_task = []() -> awaitable<int> {
     throw std::runtime_error("test exception");
@@ -197,21 +172,16 @@ TEST(WhenAllTest, ExceptionInOneTask) {
       exception_caught.store(true);
     }
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(exception_caught.load());
 }
 
 TEST(WhenAllTest, DifferentTypes) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   auto string_task = []() -> awaitable<std::string> {
     co_return "hello";
@@ -232,21 +202,16 @@ TEST(WhenAllTest, DifferentTypes) {
     EXPECT_DOUBLE_EQ(d, 3.14);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAnyTest, BasicTwoTasks) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   co_spawn(ctx, [&]() -> awaitable<void> {
     auto [index, result] = co_await when_any(make_value_task(10), make_value_task(20));
@@ -259,21 +224,16 @@ TEST(WhenAnyTest, BasicTwoTasks) {
     }
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAnyTest, SingleTask) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   co_spawn(ctx, [&]() -> awaitable<void> {
     auto [index, result] = co_await when_any(make_value_task(42));
@@ -281,21 +241,16 @@ TEST(WhenAnyTest, SingleTask) {
     EXPECT_EQ(std::get<0>(result), 42);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAnyTest, VoidTasks) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   co_spawn(ctx, [&]() -> awaitable<void> {
     auto [index, result] = co_await when_any(make_void_task(), make_void_task());
@@ -303,21 +258,16 @@ TEST(WhenAnyTest, VoidTasks) {
     // Result is a variant with monostate values
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAnyTest, MixedTypes) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   auto string_task = []() -> awaitable<std::string> {
     co_return "hello";
@@ -337,21 +287,16 @@ TEST(WhenAnyTest, MixedTypes) {
     }
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(WhenAnyTest, ExceptionInFirstTask) {
   io_context ctx;
   std::atomic<bool> exception_caught{false};
-  std::exception_ptr eptr;
 
   auto throwing_task = []() -> awaitable<int> {
     throw std::runtime_error("test exception");
@@ -370,14 +315,10 @@ TEST(WhenAnyTest, ExceptionInFirstTask) {
       exception_caught.store(true);
     }
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   // Either the exception was caught or the other task won
   // We can't predict which happens first
 }
@@ -386,7 +327,6 @@ TEST(WhenAnyTest, FirstToCompleteWins) {
   io_context ctx;
   std::atomic<bool> executed{false};
   std::atomic<int> slow_task_counter{0};
-  std::exception_ptr eptr;
 
   auto fast_task = []() -> awaitable<int> {
     co_return 1;
@@ -408,21 +348,16 @@ TEST(WhenAnyTest, FirstToCompleteWins) {
     EXPECT_EQ(std::get<0>(result), 1);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(IntegrationTest, WhenAllWithNestedTasks) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   auto nested_task = []() -> awaitable<int> {
     auto [a, b] = co_await when_all(make_value_task(5), make_value_task(10));
@@ -435,21 +370,16 @@ TEST(IntegrationTest, WhenAllWithNestedTasks) {
     EXPECT_EQ(y, 20);
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
 
 TEST(IntegrationTest, WhenAnyWithWhenAll) {
   io_context ctx;
   std::atomic<bool> executed{false};
-  std::exception_ptr eptr;
 
   auto all_task = []() -> awaitable<int> {
     auto [a, b, c] = co_await when_all(
@@ -470,13 +400,9 @@ TEST(IntegrationTest, WhenAnyWithWhenAll) {
     }
     executed.store(true);
   }, [&](std::exception_ptr e) {
-    if (e) {
-      eptr = e;
-      ctx.stop();
-    }
+    fail_and_stop_on_exception(ctx, e);
   });
 
   ctx.run();
-  fail_on_exception(eptr);
   EXPECT_TRUE(executed.load());
 }
