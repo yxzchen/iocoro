@@ -8,5 +8,6 @@
 #include <xz/io/io_context.hpp>
 #include <xz/io/ip.hpp>
 #include <xz/io/tcp_socket.hpp>
+#include <xz/io/this_coro.hpp>
 #include <xz/io/when_all.hpp>
 #include <xz/io/when_any.hpp>

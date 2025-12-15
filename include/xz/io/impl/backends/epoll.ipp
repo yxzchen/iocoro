@@ -10,7 +10,7 @@
 
 namespace xz::io::detail {
 
-io_context_impl::io_context_impl() {
+io_context_impl::io_context_impl(io_context* owner) : owner_(owner) {
   epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
   if (epoll_fd_ < 0) {
     throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
@@ -159,19 +159,23 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 
     if (is_error) {
       if (read_op) {
+        executor_guard g(*owner_);
         read_op->abort(std::make_error_code(std::errc::connection_reset));
         ++count;
       }
       if (write_op) {
+        executor_guard g(*owner_);
         write_op->abort(std::make_error_code(std::errc::connection_reset));
         ++count;
       }
     } else {
       if (read_op) {
+        executor_guard g(*owner_);
         read_op->execute();
         ++count;
       }
       if (write_op) {
+        executor_guard g(*owner_);
         write_op->execute();
         ++count;
       }

@@ -12,7 +12,7 @@
 
 namespace xz::io::detail {
 
-io_context_impl::io_context_impl() {
+io_context_impl::io_context_impl(io_context* owner) : owner_(owner) {
   int ret = io_uring_queue_init(256, &ring_, 0);
   if (ret < 0) {
     throw std::system_error(-ret, std::generic_category(), "io_uring_queue_init failed");
@@ -169,8 +169,10 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       // Check for error conditions in the poll result
       // For poll operations, negative results indicate errors, or POLLERR bit in the result
       if (cqe->res < 0 || (cqe->res & POLLERR)) {
+        executor_guard g(*owner_);
         op->abort(std::make_error_code(std::errc::connection_reset));
       } else {
+        executor_guard g(*owner_);
         op->execute();
       }
       ++count;

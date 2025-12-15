@@ -2,8 +2,9 @@
 
 #include <xz/io/error.hpp>
 #include <xz/io/io_context.hpp>
+#include <xz/io/detail/current_executor.hpp>
+#include <xz/io/this_coro.hpp>
 
-#include <atomic>
 #include <coroutine>
 #include <functional>
 #include <memory>
@@ -37,7 +38,8 @@ class awaitable_op {
   awaitable_op() = default;
   virtual ~awaitable_op() noexcept = default;
 
-  auto await_ready() noexcept -> bool { return ready_.load(std::memory_order_acquire); }
+  // Single-threaded io_context: no atomics needed.
+  auto await_ready() noexcept -> bool { return ready_; }
 
   auto await_suspend(std::coroutine_handle<> h) -> bool {
     try {
@@ -48,11 +50,10 @@ class awaitable_op {
       complete(error::operation_failed);
     }
 
-    if (ready_.load(std::memory_order_acquire)) {
+    if (ready_) {
       return false;
     }
-
-    awaiting_.store(h, std::memory_order_release);
+    awaiting_ = h;
     return true;
   }
 
@@ -68,10 +69,10 @@ class awaitable_op {
 
   template <typename... Args>
   void complete(std::error_code ec, Args&&... args) {
-    bool expected = false;
-    if (!ready_.compare_exchange_strong(expected, true)) {
+    if (ready_) {
       return;
     }
+    ready_ = true;
 
     ec_ = ec;
 
@@ -79,15 +80,16 @@ class awaitable_op {
       result_.emplace(std::forward<Args>(args)...);
     }
 
-    auto h = awaiting_.exchange({}, std::memory_order_acquire);
+    auto h = std::exchange(awaiting_, {});
     if (h) {
-      h.resume();
+      // Enforce "no inline resumption": schedule continuation on the event loop.
+      detail::defer_resume(h);
     }
   }
 
-  std::atomic<std::coroutine_handle<>> awaiting_{};
+  std::coroutine_handle<> awaiting_{};
   std::error_code ec_{};
-  std::atomic<bool> ready_{false};
+  bool ready_{false};
 
   [[no_unique_address]] std::conditional_t<std::is_void_v<Result>, std::monostate, std::optional<Result>> result_{};
 };
@@ -110,7 +112,8 @@ struct awaitable_promise_base {
       bool await_ready() noexcept { return false; }
       auto await_suspend(std::coroutine_handle<Derived> h) noexcept -> std::coroutine_handle<> {
         if (h.promise().continuation_) {
-          return h.promise().continuation_;
+          // Enforce "no inline resumption": schedule continuation on the event loop.
+          detail::defer_resume(h.promise().continuation_);
         }
         return std::noop_coroutine();
       }
@@ -120,6 +123,17 @@ struct awaitable_promise_base {
   }
 
   void unhandled_exception() { exception_ = std::current_exception(); }
+
+  // Allow `co_await this_coro::executor` to access the current io_context.
+  auto await_transform(this_coro::executor_t) noexcept -> detail::this_executor_awaiter {
+    return {};
+  }
+
+  // Pass-through for all other awaitables/awaiters.
+  template <typename U>
+  auto await_transform(U&& u) noexcept -> decltype(auto) {
+    return std::forward<U>(u);
+  }
 };
 
 /// Promise type for non-void awaitables

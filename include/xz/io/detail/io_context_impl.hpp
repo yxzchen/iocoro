@@ -38,7 +38,7 @@ using timer_handle = std::shared_ptr<timer_entry>;
 /// io_context implementation - uses io_uring if available, otherwise epoll
 class io_context_impl {
  public:
-  io_context_impl();
+  explicit io_context_impl(io_context* owner);
   ~io_context_impl();
 
   auto run() -> std::size_t;
@@ -104,6 +104,8 @@ class io_context_impl {
   std::mutex posted_mutex_;
 
   std::atomic<std::size_t> work_guard_counter_{0};
+
+  io_context* owner_ = nullptr;
 };
 
 }  // namespace xz::io::detail

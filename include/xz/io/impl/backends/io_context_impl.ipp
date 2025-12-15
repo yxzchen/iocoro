@@ -1,6 +1,7 @@
 // Common implementation shared by all io_context backends
 
 #include <xz/io/detail/io_context_impl.hpp>
+#include <xz/io/detail/current_executor.hpp>
 
 namespace xz::io::detail {
 
@@ -50,6 +51,7 @@ void io_context_impl::post(std::function<void()> f) {
 
 void io_context_impl::dispatch(std::function<void()> f) {
   if (owner_thread_.load(std::memory_order_acquire) == std::this_thread::get_id()) {
+    executor_guard g(*owner_);
     f();
   } else {
     post(std::move(f));
@@ -73,7 +75,7 @@ void io_context_impl::cancel_timer(timer_handle handle) {
 }
 
 auto io_context_impl::process_timers() -> std::size_t {
-  std::lock_guard lock(timer_mutex_);
+  std::unique_lock lock(timer_mutex_);
   auto const now = std::chrono::steady_clock::now();
   std::size_t count = 0;
 
@@ -91,10 +93,11 @@ auto io_context_impl::process_timers() -> std::size_t {
 
     timers_.pop();
 
-    timer_mutex_.unlock();
+    lock.unlock();
+    executor_guard g(*owner_);
     handle->callback();
     ++count;
-    timer_mutex_.lock();
+    lock.lock();
   }
 
   return count;
@@ -118,6 +121,7 @@ auto io_context_impl::process_posted() -> std::size_t {
       }
       break;
     }
+    executor_guard g(*owner_);
     ops.front()();
     ops.pop();
     ++count;

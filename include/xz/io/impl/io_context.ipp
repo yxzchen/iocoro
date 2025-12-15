@@ -10,7 +10,7 @@
 
 namespace xz::io {
 
-io_context::io_context() : impl_(std::make_unique<detail::io_context_impl>()) {}
+io_context::io_context() : impl_(std::make_unique<detail::io_context_impl>(this)) {}
 
 io_context::~io_context() = default;
 

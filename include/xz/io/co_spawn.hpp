@@ -2,6 +2,7 @@
 
 #include <xz/io/awaitable.hpp>
 #include <xz/io/io_context.hpp>
+#include <xz/io/detail/current_executor.hpp>
 
 #include <concepts>
 #include <exception>
@@ -75,7 +76,8 @@ auto make_detached_wrapper(std::shared_ptr<detached_state<T>> state) -> awaitabl
 template <typename T>
 void start_awaitable(awaitable<T>& a) {
   if (a.coro_) {
-    a.coro_.resume();
+    // Enforce "no inline execution": schedule coroutine start on the event loop if available.
+    detail::defer_start(a.coro_);
   }
 }
 

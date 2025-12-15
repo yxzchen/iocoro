@@ -25,6 +25,9 @@ struct when_any_state {
   std::exception_ptr exception_;
   std::coroutine_handle<> continuation_;
   std::array<std::optional<awaitable<void>>, sizeof...(Ts)> wrappers_;
+  std::size_t active_{0};
+  io_context* ex_{nullptr};
+  std::shared_ptr<when_any_state> keepalive_{};
 
   explicit when_any_state(awaitable<Ts>&&... awaitables)
       : awaitables_(std::move(awaitables)...) {}
@@ -43,7 +46,7 @@ struct when_any_state {
           self->done_ = true;
           self->result_.emplace(I, std::move(result_variant));
           if (self->continuation_) {
-            self->continuation_.resume();
+            defer_resume(self->continuation_);
           }
         }
       } else {
@@ -55,7 +58,7 @@ struct when_any_state {
           self->done_ = true;
           self->result_.emplace(I, std::move(result_variant));
           if (self->continuation_) {
-            self->continuation_.resume();
+            defer_resume(self->continuation_);
           }
         }
       }
@@ -65,16 +68,29 @@ struct when_any_state {
         self->done_ = true;
         self->exception_ = std::current_exception();
         if (self->continuation_) {
-          self->continuation_.resume();
+          defer_resume(self->continuation_);
         }
+      }
+    }
+
+    // Keep the state alive until *all* wrappers finish, even if when_any already resumed its waiter.
+    if (self->active_ > 0 && --self->active_ == 0) {
+      if (self->ex_) {
+        self->ex_->post([keep = std::move(self->keepalive_)]() mutable { keep.reset(); });
+      } else {
+        self->keepalive_.reset();
       }
     }
   }
 
   template <std::size_t... Is>
-  void start_all(when_any_state* self, std::index_sequence<Is...>) {
-    ((std::get<Is>(wrappers_).emplace(make_wrapper<Is>(self))), ...);
-    ((start_awaitable(*std::get<Is>(wrappers_))), ...);
+  void start_all(std::shared_ptr<when_any_state> self, std::index_sequence<Is...>) {
+    self->active_ = sizeof...(Ts);
+    self->ex_ = try_get_current_executor();
+    self->keepalive_ = self;
+
+    ((std::get<Is>(self->wrappers_).emplace(self->template make_wrapper<Is>(self.get()))), ...);
+    ((start_awaitable(*std::get<Is>(self->wrappers_))), ...);
   }
 
   auto get_result() -> result_type {

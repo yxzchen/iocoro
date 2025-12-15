@@ -42,6 +42,9 @@ struct when_all_state {
 
   // Wrapper coroutines need to stay alive until completion.
   std::array<std::optional<awaitable<void>>, sizeof...(Ts)> wrappers_{};
+  std::size_t active_{0};
+  io_context* ex_{nullptr};
+  std::shared_ptr<when_all_state> keepalive_{};
 
   explicit when_all_state(awaitable<Ts>&&... awaitables)
       : awaitables_(std::move(awaitables)...) {}
@@ -53,7 +56,7 @@ struct when_all_state {
       completed_ = true;
       // Resume continuation if set
       if (continuation_) {
-        continuation_.resume();
+        defer_resume(continuation_);
       }
       return true;
     }
@@ -93,12 +96,25 @@ struct when_all_state {
       // Complete immediately on error
       self->try_complete();
     }
+
+    // Keep the state alive until *all* wrappers finish (they may continue running after the waiter resumes).
+    if (self->active_ > 0 && --self->active_ == 0) {
+      if (self->ex_) {
+        self->ex_->post([keep = std::move(self->keepalive_)]() mutable { keep.reset(); });
+      } else {
+        self->keepalive_.reset();
+      }
+    }
   }
 
   template <std::size_t... Is>
-  void start_all(when_all_state* self, std::index_sequence<Is...>) {
-    ((std::get<Is>(wrappers_).emplace(make_wrapper<Is>(self))), ...);
-    ((start_awaitable(*std::get<Is>(wrappers_))), ...);
+  void start_all(std::shared_ptr<when_all_state> self, std::index_sequence<Is...>) {
+    self->active_ = sizeof...(Ts);
+    self->ex_ = try_get_current_executor();
+    self->keepalive_ = self;
+
+    ((std::get<Is>(self->wrappers_).emplace(self->template make_wrapper<Is>(self.get()))), ...);
+    ((start_awaitable(*std::get<Is>(self->wrappers_))), ...);
   }
 
   template <std::size_t I>

@@ -28,17 +28,9 @@ struct when_all_awaiter {
   }
 
   auto await_suspend(std::coroutine_handle<> h) -> bool {
-    // Start children first. If they all complete synchronously, do not suspend.
-    state_->start_all(state_.get(), std::make_index_sequence<sizeof...(Ts)>{});
-    if (state_->completed_) {
-      return false;
-    }
     state_->continuation_ = h;
-    // Re-check to avoid missing completion if something finished right after we stored the continuation.
-    if (state_->completed_) {
-      state_->continuation_ = {};
-      return false;
-    }
+    // Children are started via io_context::post() (see start_awaitable), so no inline completion.
+    state_->start_all(state_, std::make_index_sequence<sizeof...(Ts)>{});
     return true;
   }
 
