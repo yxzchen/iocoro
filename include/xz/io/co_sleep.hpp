@@ -14,23 +14,28 @@ namespace xz::io {
 namespace detail {
 
 struct sleep_state {
+  enum class state {
+    pending,
+    fired,
+    cancelled,
+  };
+
   io_context* ctx = nullptr;
   detail::timer_handle handle{};
   std::coroutine_handle<> h{};
-  bool done = false;
-  bool cancelled = false;
+  state st = state::pending;
 
   void fire() {
-    if (done || cancelled) return;
-    done = true;
+    if (st != state::pending) return;
+    st = state::fired;
     if (h) {
       detail::defer_resume(h);
     }
   }
 
   void cancel() {
-    if (done) return;
-    cancelled = true;
+    if (st != state::pending) return;
+    st = state::cancelled;
     if (handle && ctx) {
       ctx->cancel_timer(handle);
     }
@@ -45,11 +50,11 @@ struct sleep_awaiter {
   std::chrono::milliseconds duration{};
 
   auto await_ready() const noexcept -> bool {
-    return duration.count() <= 0 || st->cancelled;
+    return duration.count() <= 0 || st->st == sleep_state::state::cancelled;
   }
 
   auto await_suspend(std::coroutine_handle<> h) -> bool {
-    if (st->cancelled || duration.count() <= 0) {
+    if (st->st == sleep_state::state::cancelled || duration.count() <= 0) {
       return false;
     }
     st->h = h;
