@@ -36,7 +36,7 @@ if(LIBURING_FOUND)
     target_compile_definitions(ioxz INTERFACE IOXZ_HAS_URING)
 endif()
 
-option(IOXZ_BUILD_TESTS "Build tests" ON)
+option(IOXZ_BUILD_TESTS "Build tests" OFF)
 
 if(IOXZ_BUILD_TESTS)
     enable_testing()
