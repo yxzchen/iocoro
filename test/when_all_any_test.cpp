@@ -525,3 +525,140 @@ TEST(WhenAllTest, LargeVectorOfTasks) {
   ctx.run();
   EXPECT_TRUE(executed.load());
 }
+
+TEST(WhenAnyTest, VectorOfValueTasks) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    std::vector<awaitable<int>> tasks;
+    tasks.push_back(make_value_task(10));
+    tasks.push_back(make_value_task(20));
+    tasks.push_back(make_value_task(30));
+
+    auto [index, result] = co_await when_any(std::move(tasks));
+
+    // One of them completed (we don't know which for simultaneous tasks)
+    EXPECT_LT(index, 3);
+    if (index == 0) {
+      EXPECT_EQ(result, 10);
+    } else if (index == 1) {
+      EXPECT_EQ(result, 20);
+    } else {
+      EXPECT_EQ(result, 30);
+    }
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(WhenAnyTest, VectorOfVoidTasks) {
+  io_context ctx;
+  std::atomic<int> counter{0};
+  std::atomic<bool> executed{false};
+
+  auto increment_task = [&]() -> awaitable<void> {
+    counter.fetch_add(1);
+    co_return;
+  };
+
+  co_spawn(ctx, [&, increment_task]() -> awaitable<void> {
+    std::vector<awaitable<void>> tasks;
+    tasks.push_back(increment_task());
+    tasks.push_back(increment_task());
+    tasks.push_back(increment_task());
+
+    auto [index, result] = co_await when_any(std::move(tasks));
+
+    EXPECT_LT(index, 3);
+    // Result is monostate for void tasks
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+  // At least one task should have completed
+  EXPECT_GE(counter.load(), 1);
+}
+
+TEST(WhenAnyTest, VectorFirstToCompleteWins) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  auto fast_task = []() -> awaitable<int> {
+    co_return 1;
+  };
+
+  auto slow_task = []() -> awaitable<int> {
+    // This task is slower
+    for (int i = 0; i < 10; ++i) {
+      co_await make_void_task();
+    }
+    co_return 2;
+  };
+
+  co_spawn(ctx, [&, fast_task, slow_task]() -> awaitable<void> {
+    std::vector<awaitable<int>> tasks;
+    tasks.push_back(fast_task());
+    tasks.push_back(slow_task());
+
+    auto [index, result] = co_await when_any(std::move(tasks));
+
+    // Fast task should win
+    EXPECT_EQ(index, 0);
+    EXPECT_EQ(result, 1);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(WhenAnyTest, VectorWithException) {
+  io_context ctx;
+  std::atomic<bool> exception_caught{false};
+
+  auto throwing_task = []() -> awaitable<int> {
+    throw std::runtime_error("test exception from vector");
+    co_return 42;
+  };
+
+  co_spawn(ctx, [&, throwing_task]() -> awaitable<void> {
+    try {
+      std::vector<awaitable<int>> tasks;
+      tasks.push_back(throwing_task());
+      tasks.push_back(make_value_task(10));
+
+      [[maybe_unused]] auto [index, result] = co_await when_any(std::move(tasks));
+      // May or may not reach here depending on which task completes first
+    } catch (const std::runtime_error& e) {
+      EXPECT_STREQ(e.what(), "test exception from vector");
+      exception_caught.store(true);
+    }
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  // Exception might be caught if the throwing task completed first
+  // Otherwise the other task won - both are valid outcomes
+}
+
+TEST(WhenAnyTest, VectorSingleTask) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    std::vector<awaitable<int>> tasks;
+    tasks.push_back(make_value_task(42));
+
+    auto [index, result] = co_await when_any(std::move(tasks));
+
+    EXPECT_EQ(index, 0);
+    EXPECT_EQ(result, 42);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
