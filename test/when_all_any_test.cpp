@@ -406,3 +406,122 @@ TEST(IntegrationTest, WhenAnyWithWhenAll) {
   ctx.run();
   EXPECT_TRUE(executed.load());
 }
+
+TEST(WhenAllTest, VectorOfValueTasks) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    std::vector<awaitable<int>> tasks;
+    tasks.push_back(make_value_task(10));
+    tasks.push_back(make_value_task(20));
+    tasks.push_back(make_value_task(30));
+
+    auto results = co_await when_all(std::move(tasks));
+
+    EXPECT_EQ(results.size(), 3);
+    EXPECT_EQ(results[0], 10);
+    EXPECT_EQ(results[1], 20);
+    EXPECT_EQ(results[2], 30);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(WhenAllTest, VectorOfVoidTasks) {
+  io_context ctx;
+  std::atomic<int> counter{0};
+  std::atomic<bool> executed{false};
+
+  auto increment_task = [&]() -> awaitable<void> {
+    counter.fetch_add(1);
+    co_return;
+  };
+
+  co_spawn(ctx, [&, increment_task]() -> awaitable<void> {
+    std::vector<awaitable<void>> tasks;
+    tasks.push_back(increment_task());
+    tasks.push_back(increment_task());
+    tasks.push_back(increment_task());
+
+    auto results = co_await when_all(std::move(tasks));
+
+    EXPECT_EQ(results.size(), 3);
+    EXPECT_EQ(counter.load(), 3);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(WhenAllTest, EmptyVector) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    std::vector<awaitable<int>> tasks;
+
+    auto results = co_await when_all(std::move(tasks));
+
+    EXPECT_EQ(results.size(), 0);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(WhenAllTest, VectorWithException) {
+  io_context ctx;
+  std::atomic<bool> exception_caught{false};
+
+  auto throwing_task = []() -> awaitable<int> {
+    throw std::runtime_error("test exception from vector");
+    co_return 42;
+  };
+
+  co_spawn(ctx, [&, throwing_task]() -> awaitable<void> {
+    try {
+      std::vector<awaitable<int>> tasks;
+      tasks.push_back(make_value_task(10));
+      tasks.push_back(throwing_task());
+      tasks.push_back(make_value_task(30));
+
+      [[maybe_unused]] auto results = co_await when_all(std::move(tasks));
+      // Should not reach here
+      exception_caught.store(false);
+    } catch (const std::runtime_error& e) {
+      EXPECT_STREQ(e.what(), "test exception from vector");
+      exception_caught.store(true);
+    }
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(exception_caught.load());
+}
+
+TEST(WhenAllTest, LargeVectorOfTasks) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    std::vector<awaitable<int>> tasks;
+    for (int i = 0; i < 100; ++i) {
+      tasks.push_back(make_value_task(i));
+    }
+
+    auto results = co_await when_all(std::move(tasks));
+
+    EXPECT_EQ(results.size(), 100);
+    for (int i = 0; i < 100; ++i) {
+      EXPECT_EQ(results[i], i);
+    }
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(ctx, e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
