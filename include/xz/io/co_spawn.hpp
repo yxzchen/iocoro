@@ -205,12 +205,14 @@ auto run_with_handler(std::shared_ptr<completion_state<T>> state) -> spawn_task 
   }
 }
 
+// State for co_spawn with use_awaitable completion token.
+// All accesses happen on the event loop thread - no cross-thread synchronization needed.
 template <typename T>
 struct awaitable_state {
   unique_function<awaitable<T>()> factory;
   std::optional<T> result;
   std::exception_ptr exception;
-  std::atomic<bool> completed{false};
+  bool completed = false;  // Set by spawned task, checked by awaiter (both on event loop)
   std::coroutine_handle<> continuation;
 
   template <typename F>
@@ -222,7 +224,7 @@ template <>
 struct awaitable_state<void> {
   unique_function<awaitable<void>()> factory;
   std::exception_ptr exception;
-  std::atomic<bool> completed{false};
+  bool completed = false;  // Set by spawned task, checked by awaiter (both on event loop)
   std::coroutine_handle<> continuation;
 
   template <typename F>
@@ -243,7 +245,7 @@ auto run_awaitable(std::shared_ptr<awaitable_state<T>> state) -> spawn_task {
   }
 
   // Mark as completed first
-  state->completed.store(true, std::memory_order_release);
+  state->completed = true;
 
   // Then check if continuation was set and resume it
   if (state->continuation) {
@@ -305,13 +307,13 @@ auto co_spawn(Executor& ex, F&& f, use_awaitable_t) -> awaitable<detail::awaitab
       std::shared_ptr<detail::awaitable_state<void>> state_;
 
       auto await_ready() const noexcept -> bool { 
-        return state_->completed.load(std::memory_order_acquire);
+        return state_->completed;
       }
 
       auto await_suspend(std::coroutine_handle<> h) -> bool {
         state_->continuation = h;
         // Check if already completed after setting continuation
-        if (state_->completed.load(std::memory_order_acquire)) {
+        if (state_->completed) {
           // Already completed, resume immediately
           return false;
         }
@@ -331,13 +333,13 @@ auto co_spawn(Executor& ex, F&& f, use_awaitable_t) -> awaitable<detail::awaitab
       std::shared_ptr<detail::awaitable_state<result_t>> state_;
 
       auto await_ready() const noexcept -> bool { 
-        return state_->completed.load(std::memory_order_acquire);
+        return state_->completed;
       }
 
       auto await_suspend(std::coroutine_handle<> h) -> bool {
         state_->continuation = h;
         // Check if already completed after setting continuation
-        if (state_->completed.load(std::memory_order_acquire)) {
+        if (state_->completed) {
           // Already completed, resume immediately
           return false;
         }
