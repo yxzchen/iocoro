@@ -253,6 +253,65 @@ auto run_awaitable(std::shared_ptr<awaitable_state<T>> state) -> spawn_task {
   }
 }
 
+// Helper coroutine to wait for completion (avoids capturing lambda in co_spawn's frame)
+template <typename T>
+auto wait_for_spawned_task(std::shared_ptr<awaitable_state<T>> state) -> awaitable<T>;
+
+template <>
+inline auto wait_for_spawned_task<void>(std::shared_ptr<awaitable_state<void>> state) -> awaitable<void> {
+  struct void_awaiter {
+    std::shared_ptr<awaitable_state<void>> state_;
+
+    auto await_ready() const noexcept -> bool { 
+      return state_->completed;
+    }
+
+    auto await_suspend(std::coroutine_handle<> h) -> bool {
+      state_->continuation = h;
+      if (state_->completed) {
+        return false;
+      }
+      return true;
+    }
+
+    void await_resume() {
+      if (state_->exception) {
+        std::rethrow_exception(state_->exception);
+      }
+    }
+  };
+
+  co_await void_awaiter{state};
+}
+
+template <typename T>
+inline auto wait_for_spawned_task(std::shared_ptr<awaitable_state<T>> state) -> awaitable<T> {
+  struct value_awaiter {
+    std::shared_ptr<awaitable_state<T>> state_;
+
+    auto await_ready() const noexcept -> bool { 
+      return state_->completed;
+    }
+
+    auto await_suspend(std::coroutine_handle<> h) -> bool {
+      state_->continuation = h;
+      if (state_->completed) {
+        return false;
+      }
+      return true;
+    }
+
+    auto await_resume() -> T {
+      if (state_->exception) {
+        std::rethrow_exception(state_->exception);
+      }
+      return std::move(*state_->result);
+    }
+  };
+
+  co_return co_await value_awaiter{state};
+}
+
 }  // namespace detail
 
 // co_spawn with detached completion token - callable overload
@@ -301,61 +360,9 @@ auto co_spawn(Executor& ex, F&& f, use_awaitable_t) -> awaitable<detail::awaitab
     detail::start_spawn_task(detail::run_awaitable<result_t>(state));
   });
 
-  // Return an awaitable that waits for completion
-  if constexpr (std::is_void_v<result_t>) {
-    struct void_awaiter {
-      std::shared_ptr<detail::awaitable_state<void>> state_;
-
-      auto await_ready() const noexcept -> bool { 
-        return state_->completed;
-      }
-
-      auto await_suspend(std::coroutine_handle<> h) -> bool {
-        state_->continuation = h;
-        // Check if already completed after setting continuation
-        if (state_->completed) {
-          // Already completed, resume immediately
-          return false;
-        }
-        return true;
-      }
-
-      void await_resume() {
-        if (state_->exception) {
-          std::rethrow_exception(state_->exception);
-        }
-      }
-    };
-
-    co_await void_awaiter{state};
-  } else {
-    struct value_awaiter {
-      std::shared_ptr<detail::awaitable_state<result_t>> state_;
-
-      auto await_ready() const noexcept -> bool { 
-        return state_->completed;
-      }
-
-      auto await_suspend(std::coroutine_handle<> h) -> bool {
-        state_->continuation = h;
-        // Check if already completed after setting continuation
-        if (state_->completed) {
-          // Already completed, resume immediately
-          return false;
-        }
-        return true;
-      }
-
-      auto await_resume() -> result_t {
-        if (state_->exception) {
-          std::rethrow_exception(state_->exception);
-        }
-        return std::move(*state_->result);
-      }
-    };
-
-    co_return co_await value_awaiter{state};
-  }
+  // Return a helper coroutine that waits for completion
+  // (avoids capturing lambda F in this function's coroutine frame)
+  return detail::wait_for_spawned_task<result_t>(state);
 }
 
 }  // namespace xz::io
