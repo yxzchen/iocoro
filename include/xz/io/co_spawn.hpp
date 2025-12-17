@@ -129,15 +129,15 @@ struct spawn_task {
   spawn_task(spawn_task&& other) noexcept : h_(std::exchange(other.h_, {})) {}
   auto operator=(spawn_task&& other) noexcept -> spawn_task& {
     if (this != &other) {
-      if (h_) h_.destroy();
+      // Don't destroy here - the coroutine manages its own lifetime via final_suspend
       h_ = std::exchange(other.h_, {});
     }
     return *this;
   }
 
-  ~spawn_task() {
-    if (h_) h_.destroy();
-  }
+  // Don't destroy in destructor - the coroutine self-destructs in final_suspend
+  // This prevents double-destroy bugs
+  ~spawn_task() = default;
 
   spawn_task(spawn_task const&) = delete;
   auto operator=(spawn_task const&) -> spawn_task& = delete;
@@ -210,6 +210,7 @@ struct awaitable_state {
   unique_function<awaitable<T>()> factory;
   std::optional<T> result;
   std::exception_ptr exception;
+  std::atomic<bool> completed{false};
   std::coroutine_handle<> continuation;
 
   template <typename F>
@@ -221,6 +222,7 @@ template <>
 struct awaitable_state<void> {
   unique_function<awaitable<void>()> factory;
   std::exception_ptr exception;
+  std::atomic<bool> completed{false};
   std::coroutine_handle<> continuation;
 
   template <typename F>
@@ -240,6 +242,10 @@ auto run_awaitable(std::shared_ptr<awaitable_state<T>> state) -> spawn_task {
     state->exception = std::current_exception();
   }
 
+  // Mark as completed first
+  state->completed.store(true, std::memory_order_release);
+
+  // Then check if continuation was set and resume it
   if (state->continuation) {
     defer_resume(state->continuation);
   }
@@ -298,10 +304,18 @@ auto co_spawn(Executor& ex, F&& f, use_awaitable_t) -> awaitable<detail::awaitab
     struct void_awaiter {
       std::shared_ptr<detail::awaitable_state<void>> state_;
 
-      auto await_ready() const noexcept -> bool { return false; }
+      auto await_ready() const noexcept -> bool { 
+        return state_->completed.load(std::memory_order_acquire);
+      }
 
-      void await_suspend(std::coroutine_handle<> h) {
+      auto await_suspend(std::coroutine_handle<> h) -> bool {
         state_->continuation = h;
+        // Check if already completed after setting continuation
+        if (state_->completed.load(std::memory_order_acquire)) {
+          // Already completed, resume immediately
+          return false;
+        }
+        return true;
       }
 
       void await_resume() {
@@ -316,10 +330,18 @@ auto co_spawn(Executor& ex, F&& f, use_awaitable_t) -> awaitable<detail::awaitab
     struct value_awaiter {
       std::shared_ptr<detail::awaitable_state<result_t>> state_;
 
-      auto await_ready() const noexcept -> bool { return false; }
+      auto await_ready() const noexcept -> bool { 
+        return state_->completed.load(std::memory_order_acquire);
+      }
 
-      void await_suspend(std::coroutine_handle<> h) {
+      auto await_suspend(std::coroutine_handle<> h) -> bool {
         state_->continuation = h;
+        // Check if already completed after setting continuation
+        if (state_->completed.load(std::memory_order_acquire)) {
+          // Already completed, resume immediately
+          return false;
+        }
+        return true;
       }
 
       auto await_resume() -> result_t {
