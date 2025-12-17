@@ -488,3 +488,78 @@ TEST(CoSpawnTest, DirectMoveParametersIntoCoroutine) {
   EXPECT_TRUE(executed.load()) << "Coroutine was not executed";
   EXPECT_EQ(sum_result.load(), 60) << "Sum should be 60";
 }
+
+TEST(CoSpawnTest, UseAwaitableWithValue) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    auto result = co_await co_spawn(ctx, []() -> awaitable<int> {
+      co_return 42;
+    }, use_awaitable);
+
+    EXPECT_EQ(result, 42);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(CoSpawnTest, UseAwaitableWithVoid) {
+  io_context ctx;
+  std::atomic<int> counter{0};
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    co_await co_spawn(ctx, [&]() -> awaitable<void> {
+      counter.fetch_add(1);
+      co_return;
+    }, use_awaitable);
+
+    EXPECT_EQ(counter.load(), 1);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}
+
+TEST(CoSpawnTest, UseAwaitableWithException) {
+  io_context ctx;
+  std::atomic<bool> exception_caught{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    try {
+      co_await co_spawn(ctx, []() -> awaitable<int> {
+        throw std::runtime_error("test exception from use_awaitable");
+        co_return 42;
+      }, use_awaitable);
+    } catch (const std::runtime_error& e) {
+      EXPECT_STREQ(e.what(), "test exception from use_awaitable");
+      exception_caught.store(true);
+    }
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(e); });
+
+  ctx.run();
+  EXPECT_TRUE(exception_caught.load());
+}
+
+TEST(CoSpawnTest, UseAwaitableMultipleSpawns) {
+  io_context ctx;
+  std::atomic<bool> executed{false};
+
+  co_spawn(ctx, [&]() -> awaitable<void> {
+    auto r1 = co_await co_spawn(ctx, []() -> awaitable<int> { co_return 10; }, use_awaitable);
+    auto r2 = co_await co_spawn(ctx, []() -> awaitable<int> { co_return 20; }, use_awaitable);
+    auto r3 = co_await co_spawn(ctx, []() -> awaitable<int> { co_return 30; }, use_awaitable);
+
+    EXPECT_EQ(r1, 10);
+    EXPECT_EQ(r2, 20);
+    EXPECT_EQ(r3, 30);
+    executed.store(true);
+  }, [&](std::exception_ptr e) { fail_and_stop_on_exception(e); });
+
+  ctx.run();
+  EXPECT_TRUE(executed.load());
+}

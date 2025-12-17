@@ -17,8 +17,13 @@ struct detached_t {
   explicit detached_t() = default;
 };
 
+struct use_awaitable_t {
+  explicit use_awaitable_t() = default;
+};
+
 // Completion token instances
 inline constexpr detached_t use_detached{};
+inline constexpr use_awaitable_t use_awaitable{};
 
 namespace detail {
 
@@ -200,6 +205,46 @@ auto run_with_handler(std::shared_ptr<completion_state<T>> state) -> spawn_task 
   }
 }
 
+template <typename T>
+struct awaitable_state {
+  unique_function<awaitable<T>()> factory;
+  std::optional<T> result;
+  std::exception_ptr exception;
+  std::coroutine_handle<> continuation;
+
+  template <typename F>
+    requires std::is_invocable_r_v<awaitable<T>, F&>
+  explicit awaitable_state(F&& f) : factory(std::forward<F>(f)) {}
+};
+
+template <>
+struct awaitable_state<void> {
+  unique_function<awaitable<void>()> factory;
+  std::exception_ptr exception;
+  std::coroutine_handle<> continuation;
+
+  template <typename F>
+    requires std::is_invocable_r_v<awaitable<void>, F&>
+  explicit awaitable_state(F&& f) : factory(std::forward<F>(f)) {}
+};
+
+template <typename T>
+auto run_awaitable(std::shared_ptr<awaitable_state<T>> state) -> spawn_task {
+  try {
+    if constexpr (std::is_void_v<T>) {
+      co_await state->factory();
+    } else {
+      state->result.emplace(co_await state->factory());
+    }
+  } catch (...) {
+    state->exception = std::current_exception();
+  }
+
+  if (state->continuation) {
+    defer_resume(state->continuation);
+  }
+}
+
 }  // namespace detail
 
 // co_spawn with detached completion token - callable overload
@@ -220,6 +265,7 @@ template <typename Executor, typename F, typename CompletionHandler>
   requires std::is_same_v<std::decay_t<Executor>, io_context> &&
            (!detail::is_awaitable_v<std::decay_t<F>>) &&
            (!std::is_same_v<std::decay_t<CompletionHandler>, detached_t>) &&
+           (!std::is_same_v<std::decay_t<CompletionHandler>, use_awaitable_t>) &&
            std::invocable<std::decay_t<CompletionHandler>&, std::exception_ptr>
 void co_spawn(Executor& ex, F&& f, CompletionHandler&& handler) {
   using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
@@ -231,6 +277,61 @@ void co_spawn(Executor& ex, F&& f, CompletionHandler&& handler) {
   ex.post([state]() mutable {
     detail::start_spawn_task(detail::run_with_handler<result_t>(state));
   });
+}
+
+// co_spawn with use_awaitable - callable overload
+// Returns an awaitable that completes when the spawned task completes
+template <typename Executor, typename F>
+  requires std::is_same_v<std::decay_t<Executor>, io_context> &&
+           (!detail::is_awaitable_v<std::decay_t<F>>)
+auto co_spawn(Executor& ex, F&& f, use_awaitable_t) -> awaitable<detail::awaitable_result_t<std::invoke_result_t<F>>> {
+  using result_t = detail::awaitable_result_t<std::invoke_result_t<F>>;
+  auto state = std::make_shared<detail::awaitable_state<result_t>>(std::forward<F>(f));
+
+  // Start the spawned task
+  ex.post([state]() mutable {
+    detail::start_spawn_task(detail::run_awaitable<result_t>(state));
+  });
+
+  // Return an awaitable that waits for completion
+  if constexpr (std::is_void_v<result_t>) {
+    struct void_awaiter {
+      std::shared_ptr<detail::awaitable_state<void>> state_;
+
+      auto await_ready() const noexcept -> bool { return false; }
+
+      void await_suspend(std::coroutine_handle<> h) {
+        state_->continuation = h;
+      }
+
+      void await_resume() {
+        if (state_->exception) {
+          std::rethrow_exception(state_->exception);
+        }
+      }
+    };
+
+    co_await void_awaiter{state};
+  } else {
+    struct value_awaiter {
+      std::shared_ptr<detail::awaitable_state<result_t>> state_;
+
+      auto await_ready() const noexcept -> bool { return false; }
+
+      void await_suspend(std::coroutine_handle<> h) {
+        state_->continuation = h;
+      }
+
+      auto await_resume() -> result_t {
+        if (state_->exception) {
+          std::rethrow_exception(state_->exception);
+        }
+        return std::move(*state_->result);
+      }
+    };
+
+    co_return co_await value_awaiter{state};
+  }
 }
 
 }  // namespace xz::io
