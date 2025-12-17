@@ -1,5 +1,7 @@
 
 #include <xz/io/impl/backends/io_context_impl.ipp>
+#include <xz/io/detail/operation_base.hpp>
+#include <xz/io/error.hpp>
 
 #include <cerrno>
 #include <system_error>
@@ -11,7 +13,7 @@
 
 namespace xz::io::detail {
 
-io_context_impl::io_context_impl() {
+io_context_impl::io_context_impl(io_context* owner) : owner_(owner) {
   int ret = io_uring_queue_init(256, &ring_, 0);
   if (ret < 0) {
     throw std::system_error(-ret, std::generic_category(), "io_uring_queue_init failed");
@@ -23,7 +25,7 @@ io_context_impl::~io_context_impl() {
   io_uring_queue_exit(&ring_);
 }
 
-void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
   auto& ops = fd_operations_[fd];
   ops.read_op = std::move(op);
@@ -39,7 +41,7 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::opera
   io_uring_submit(&ring_);
 }
 
-void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
   auto& ops = fd_operations_[fd];
   ops.write_op = std::move(op);
@@ -55,8 +57,8 @@ void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::oper
   io_uring_submit(&ring_);
 }
 
-void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::operation_base> read_op,
-                                            std::unique_ptr<io_context::operation_base> write_op) {
+void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<operation_base> read_op,
+                                            std::unique_ptr<operation_base> write_op) {
   std::lock_guard lock(fd_mutex_);
   auto& ops = fd_operations_[fd];
   ops.read_op = std::move(read_op);
@@ -79,10 +81,17 @@ void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::
 }
 
 void io_context_impl::deregister_fd(int fd) {
-  std::lock_guard lock(fd_mutex_);
+  std::unique_ptr<operation_base> read_op;
+  std::unique_ptr<operation_base> write_op;
+  {
+    std::lock_guard lock(fd_mutex_);
 
-  auto it = fd_operations_.find(fd);
-  if (it != fd_operations_.end()) {
+    auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end()) {
+      return;
+    }
+
+    // Best-effort cancellation of outstanding poll operations.
     if (it->second.read_op) {
       struct io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
       if (sqe) {
@@ -100,11 +109,24 @@ void io_context_impl::deregister_fd(int fd) {
       }
     }
     io_uring_submit(&ring_);
+
+    // Move ops out so we can abort them outside the lock.
+    read_op = std::move(it->second.read_op);
+    write_op = std::move(it->second.write_op);
     fd_operations_.erase(it);
+  }
+
+  // Ensure any awaiters blocked on fd readiness are released.
+  if (read_op) {
+    read_op->abort(error::operation_aborted);
+  }
+  if (write_op) {
+    write_op->abort(error::operation_aborted);
   }
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait) -> std::size_t {
+  executor_guard tick_guard(*owner_);
   std::size_t count = 0;
   count += process_timers();
   count += process_posted();
@@ -146,7 +168,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     int fd = static_cast<int>(user_data & 0xFFFFFFFF);
     int op_type = static_cast<int>(user_data >> 32);
 
-    std::unique_ptr<io_context::operation_base> op;
+    std::unique_ptr<operation_base> op;
 
     {
       std::lock_guard lock(fd_mutex_);
@@ -165,7 +187,13 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     if (op) {
-      op->execute();
+      // Check for error conditions in the poll result
+      // For poll operations, negative results indicate errors, or POLLERR bit in the result
+      if (cqe->res < 0 || (cqe->res & POLLERR)) {
+        op->abort(std::make_error_code(std::errc::connection_reset));
+      } else {
+        op->execute();
+      }
       ++count;
     }
   }

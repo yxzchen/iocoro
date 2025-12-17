@@ -22,7 +22,7 @@ ioxz provides a minimal, modern interface for asynchronous network I/O using C++
 using namespace std::chrono_literals;
 using namespace xz::io;
 
-auto example(io_context& ctx) -> task<void> {
+auto example(io_context& ctx) -> awaitable<void> {
   tcp_socket socket(ctx);
 
   // Connect
@@ -42,7 +42,20 @@ auto example(io_context& ctx) -> task<void> {
 
 int main() {
   io_context ctx;
-  co_spawn(ctx, example(ctx), use_detached);
+  
+  // Spawn with completion handler for error reporting
+  co_spawn(ctx, []() -> awaitable<void> {
+    co_await example(ctx);
+  }, [](std::exception_ptr e) {
+    if (e) {
+      try {
+        std::rethrow_exception(e);
+      } catch (const std::exception& ex) {
+        std::cerr << "Error: " << ex.what() << std::endl;
+      }
+    }
+  });
+  
   ctx.run();
 }
 ```
@@ -50,9 +63,12 @@ int main() {
 ## Features
 
 ### Core Components
-- **`io_context`** - Event loop with io_uring/epoll backend
-- **`task<T>`** - Lazy coroutine type with symmetric transfer
-- **`co_spawn`** - Launch coroutines on an executor (detached mode)
+- **`io_context`** - Single-threaded event loop with io_uring/epoll backend
+- **`awaitable<T>`** - Coroutine type for async operations with exception propagation
+- **`co_spawn`** - Launch coroutines on an executor with multiple completion token support:
+  - `use_detached` - Fire-and-forget (swallows exceptions)
+  - `use_awaitable` - Returns an `awaitable<T>` you can `co_await` on
+  - Custom completion handlers - `void(std::exception_ptr)` for error handling
 - **`awaitable_op<T>`** - Base awaitable type for async operations
 
 ### Networking
@@ -66,10 +82,92 @@ int main() {
 - **`ip::address_v6`** - IPv6 addresses (basic support)
 - **`ip::tcp_endpoint`** - TCP endpoint (address + port)
 
-### Utilities
+### Concurrency Utilities
+- **`when_all(...)`** - Wait for multiple awaitables to complete
+  - Variadic template: `when_all(task1(), task2(), task3())`
+  - Container support: `when_all(std::vector<awaitable<T>>)`
+  - Returns tuple of results (variadic) or vector (container)
+- **`when_any(...)`** - Wait for first awaitable to complete
+  - Returns index and result of first completed task
+  - Container support via `std::vector<awaitable<T>>`
+
+### Other Utilities
 - **`expected<T, E>`** - Result type for error handling
 - **`work_guard<T>`** - RAII guard to keep event loop running
 - **Timers** - Schedule callbacks with millisecond precision
+
+## Design Principles
+
+- **Single-threaded event loop model** - All operations on a given `io_context` execute on the same thread
+- **Zero-allocation coroutines** - Efficient coroutine frame management with self-destroying tasks
+- **Exception safety** - Proper exception propagation through coroutine boundaries
+- **Header-only** - Easy integration, no separate compilation
+- **Warning-free** - Compiles without `-Wsubobject-linkage` or ODR violations
+
+## Advanced Examples
+
+### Structured Concurrency with `use_awaitable`
+
+```cpp
+auto parent_task(io_context& ctx) -> awaitable<void> {
+  // Spawn a child task and await its result
+  auto result = co_await co_spawn(ctx, []() -> awaitable<int> {
+    co_return 42;
+  }, use_awaitable);
+  
+  std::cout << "Got result: " << result << std::endl;
+}
+```
+
+### Concurrent Operations with `when_all`
+
+```cpp
+auto fetch_data(io_context& ctx) -> awaitable<void> {
+  // Run multiple operations concurrently
+  auto [result1, result2, result3] = co_await when_all(
+    fetch_from_server1(ctx),
+    fetch_from_server2(ctx),
+    fetch_from_server3(ctx)
+  );
+  
+  // All three operations complete before continuing
+}
+
+// Dynamic number of tasks
+auto process_batch(io_context& ctx, std::vector<std::string> urls) -> awaitable<void> {
+  std::vector<awaitable<Response>> tasks;
+  for (const auto& url : urls) {
+    tasks.push_back(fetch_url(ctx, url));
+  }
+  
+  auto results = co_await when_all(std::move(tasks));
+  // Process all results...
+}
+```
+
+### Error Handling with Completion Handlers
+
+```cpp
+int main() {
+  io_context ctx;
+  
+  co_spawn(ctx, []() -> awaitable<void> {
+    // Your async code that might throw
+    co_await risky_operation();
+  }, [&](std::exception_ptr eptr) {
+    if (eptr) {
+      try {
+        std::rethrow_exception(eptr);
+      } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+      }
+      ctx.stop(); // Stop event loop on error
+    }
+  });
+  
+  ctx.run();
+}
+```
 
 ## Missing Features
 
@@ -81,9 +179,9 @@ This is a minimal library focused on redisxz requirements. Notable omissions:
 - **No scatter-gather I/O**
 - **No file I/O operations**
 - **No async DNS resolution**
-- **No completion tokens** beyond `use_detached`
-- **No cancellation** - Can only close sockets
+- **No cancellation tokens** - Can only close sockets
 - **No strand/serialization executor**
+- **No multi-threaded executor** - Single event loop per `io_context`
 - **Limited IPv6 support** - Basic structures only
 
 ## Build Requirements

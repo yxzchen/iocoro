@@ -1,5 +1,7 @@
 
 #include <xz/io/impl/backends/io_context_impl.ipp>
+#include <xz/io/detail/operation_base.hpp>
+#include <xz/io/error.hpp>
 
 #include <cerrno>
 
@@ -9,7 +11,7 @@
 
 namespace xz::io::detail {
 
-io_context_impl::io_context_impl() {
+io_context_impl::io_context_impl(io_context* owner) : owner_(owner) {
   epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
   if (epoll_fd_ < 0) {
     throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
@@ -38,7 +40,7 @@ io_context_impl::~io_context_impl() {
   if (epoll_fd_ >= 0) ::close(epoll_fd_);
 }
 
-void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
   auto& ops = fd_operations_[fd];
@@ -55,7 +57,7 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<io_context::opera
   }
 }
 
-void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::operation_base> op) {
+void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
   std::lock_guard lock(fd_mutex_);
 
   auto& ops = fd_operations_[fd];
@@ -72,8 +74,8 @@ void io_context_impl::register_fd_write(int fd, std::unique_ptr<io_context::oper
   }
 }
 
-void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::operation_base> read_op,
-                                            std::unique_ptr<io_context::operation_base> write_op) {
+void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<operation_base> read_op,
+                                            std::unique_ptr<operation_base> write_op) {
   std::lock_guard lock(fd_mutex_);
 
   epoll_event ev{
@@ -95,13 +97,31 @@ void io_context_impl::register_fd_readwrite(int fd, std::unique_ptr<io_context::
 }
 
 void io_context_impl::deregister_fd(int fd) {
-  std::lock_guard lock(fd_mutex_);
+  std::unique_ptr<operation_base> read_op;
+  std::unique_ptr<operation_base> write_op;
+  {
+    std::lock_guard lock(fd_mutex_);
+    ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
 
-  ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
-  fd_operations_.erase(fd);
+    auto it = fd_operations_.find(fd);
+    if (it != fd_operations_.end()) {
+      read_op = std::move(it->second.read_op);
+      write_op = std::move(it->second.write_op);
+      fd_operations_.erase(it);
+    }
+  }
+
+  // Ensure any awaiters blocked on fd readiness are released.
+  if (read_op) {
+    read_op->abort(error::operation_aborted);
+  }
+  if (write_op) {
+    write_op->abort(error::operation_aborted);
+  }
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait) -> std::size_t {
+  executor_guard tick_guard(*owner_);
   std::size_t count = 0;
   count += process_timers();
   count += process_posted();
@@ -136,15 +156,18 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       continue;
     }
 
-    std::unique_ptr<io_context::operation_base> read_op;
-    std::unique_ptr<io_context::operation_base> write_op;
+    std::unique_ptr<operation_base> read_op;
+    std::unique_ptr<operation_base> write_op;
+
+    // Check for error conditions first
+    bool is_error = ev & (EPOLLERR | EPOLLHUP | EPOLLRDHUP);
 
     {
       std::lock_guard lock(fd_mutex_);
       auto it = fd_operations_.find(fd);
       if (it != fd_operations_.end()) {
-        if (ev & EPOLLIN) read_op = std::move(it->second.read_op);
-        if (ev & EPOLLOUT) write_op = std::move(it->second.write_op);
+        if (is_error || (ev & EPOLLIN)) read_op = std::move(it->second.read_op);
+        if (is_error || (ev & EPOLLOUT)) write_op = std::move(it->second.write_op);
 
         if (!it->second.read_op && !it->second.write_op) {
           ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
@@ -153,13 +176,24 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       }
     }
 
-    if (read_op) {
-      read_op->execute();
-      ++count;
-    }
-    if (write_op) {
-      write_op->execute();
-      ++count;
+    if (is_error) {
+      if (read_op) {
+        read_op->abort(std::make_error_code(std::errc::connection_reset));
+        ++count;
+      }
+      if (write_op) {
+        write_op->abort(std::make_error_code(std::errc::connection_reset));
+        ++count;
+      }
+    } else {
+      if (read_op) {
+        read_op->execute();
+        ++count;
+      }
+      if (write_op) {
+        write_op->execute();
+        ++count;
+      }
     }
   }
 

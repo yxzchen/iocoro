@@ -1,7 +1,11 @@
 
 #include <xz/io/tcp_socket.hpp>
 #include <xz/io/detail/tcp_socket_impl.hpp>
+#include <xz/io/co_sleep.hpp>
 #include <xz/io/error.hpp>
+#include <xz/io/detail/current_executor.hpp>
+#include <xz/io/detail/operation_base.hpp>
+#include <xz/io/when_any.hpp>
 
 #include <cerrno>
 #include <cstring>
@@ -15,44 +19,89 @@
 
 namespace xz::io {
 
-template <typename Result>
-void async_io_operation<Result>::setup_timeout() {
-  if (timeout_.count() > 0) {
-    auto socket_impl = get_socket_impl();
-    if (!socket_impl) return;
-
-    timer_handle_ = socket_impl->get_executor().schedule_timer(timeout_, [this, weak_socket_impl = socket_impl_]() {
-      auto socket_impl = weak_socket_impl.lock();
-      if (!socket_impl) {
-        this->complete(error::operation_aborted);
-        return;
-      }
-
-      socket_impl->get_executor().deregister_fd(socket_impl->native_handle());
-      timer_handle_.reset();
-      if constexpr (std::is_void_v<Result>) {
-        this->complete(error::timeout);
-      } else {
-        this->complete(error::timeout, Result{});
-      }
-    });
-  }
-}
-
-template <typename Result>
-void async_io_operation<Result>::cleanup_timer() {
-  if (timer_handle_) {
-    auto socket_impl = get_socket_impl();
-    if (socket_impl) {
-      socket_impl->get_executor().cancel_timer(timer_handle_);
-    }
-    timer_handle_.reset();
-  }
-}
-
 }  // namespace xz::io
 
 namespace xz::io::detail {
+
+struct fd_wait_state {
+  io_context* ctx = nullptr;
+  int fd = -1;
+  bool write = false;
+
+  std::coroutine_handle<> h{};
+  bool done = false;
+  std::error_code ec{};
+
+  void complete(std::error_code e) {
+    if (done) return;
+    done = true;
+    ec = e;
+    if (h) {
+      defer_resume(h);
+    }
+  }
+};
+
+struct fd_wait_operation : operation_base {
+  std::shared_ptr<fd_wait_state> st;
+
+  explicit fd_wait_operation(std::shared_ptr<fd_wait_state> s) : st(std::move(s)) {}
+
+  void execute() override { st->complete({}); }
+
+  void abort(std::error_code ec) override { st->complete(ec); }
+};
+
+struct fd_wait_awaiter {
+  std::shared_ptr<fd_wait_state> st;
+
+  // Constructor takes the shared_ptr by move
+  explicit fd_wait_awaiter(std::shared_ptr<fd_wait_state>&& s) : st(std::move(s)) {}
+
+  // Non-copyable to prevent multiple references
+  fd_wait_awaiter(fd_wait_awaiter const&) = delete;
+  auto operator=(fd_wait_awaiter const&) -> fd_wait_awaiter& = delete;
+  
+  // Movable
+  fd_wait_awaiter(fd_wait_awaiter&&) = default;
+  auto operator=(fd_wait_awaiter&&) -> fd_wait_awaiter& = default;
+
+  auto await_ready() const noexcept -> bool { return st && st->done; }
+
+  auto await_suspend(std::coroutine_handle<> h) -> bool {
+    st->h = h;
+    // Transfer ownership to the operation by moving the shared_ptr
+    if (st->write) {
+      st->ctx->register_fd_write(st->fd, std::make_unique<fd_wait_operation>(std::move(st)));
+    } else {
+      st->ctx->register_fd_read(st->fd, std::make_unique<fd_wait_operation>(std::move(st)));
+    }
+    // st is now null, so the awaiter doesn't hold a reference
+    return true;
+  }
+
+  void await_resume() noexcept {}
+};
+
+inline auto wait_readable(io_context& ctx, int fd) -> awaitable<void> {
+  auto st = std::make_shared<fd_wait_state>();
+  st->ctx = &ctx;
+  st->fd = fd;
+  st->write = false;
+  co_await fd_wait_awaiter{std::move(st)};
+}
+
+inline auto wait_writable(io_context& ctx, int fd) -> awaitable<void> {
+  auto st = std::make_shared<fd_wait_state>();
+  st->ctx = &ctx;
+  st->fd = fd;
+  st->write = true;
+  co_await fd_wait_awaiter{std::move(st)};
+}
+
+[[noreturn]] inline void throw_timeout() {
+  throw std::system_error(error::timeout);
+}
 
 void tcp_socket_impl::close() {
   if (fd_ >= 0) {
@@ -304,186 +353,113 @@ auto tcp_socket::remote_endpoint() const -> expected<ip::tcp_endpoint, std::erro
   return socket_impl_->remote_endpoint();
 }
 
-tcp_socket::async_connect_op::async_connect_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                                                ip::tcp_endpoint ep,
-                                                std::chrono::milliseconds timeout)
-    : async_io_operation<void>(std::move(socket_impl), timeout), endpoint_(ep) {}
+auto tcp_socket::async_connect(ip::tcp_endpoint ep, std::chrono::milliseconds timeout) -> awaitable<void> {
+  auto impl = socket_impl_;
+  auto& ctx = impl->get_executor();
 
-void tcp_socket::async_connect_op::start_operation() {
-  auto socket_impl = get_socket_impl();
-  if (!socket_impl) {
-    complete(error::operation_aborted);
-    return;
-  }
-
-  auto ec = socket_impl->connect(endpoint_);
+  auto ec = impl->connect(ep);
   if (ec) {
-    if (ec != std::errc::operation_in_progress) {
-      complete(ec);
-      return;
-    }
+    throw std::system_error(ec);
   }
 
-  setup_timeout();
+  int fd = impl->native_handle();
+  if (fd < 0) {
+    throw std::system_error(error::not_connected);
+  }
 
-  struct connect_operation : io_context::operation_base {
-    std::weak_ptr<detail::tcp_socket_impl> socket_impl;
-    tcp_socket::async_connect_op* op;
-
-    connect_operation(std::weak_ptr<detail::tcp_socket_impl> s, tcp_socket::async_connect_op* o)
-        : socket_impl(std::move(s)), op(o) {}
-
-    void execute() override {
-      auto socket_impl_ptr = socket_impl.lock();
-      if (!socket_impl_ptr) {
-        op->complete(error::operation_aborted);
-        return;
-      }
-
-      int error = 0;
-      socklen_t len = sizeof(error);
-      ::getsockopt(socket_impl_ptr->native_handle(), SOL_SOCKET, SO_ERROR, &error, &len);
-
-      socket_impl_ptr->get_executor().deregister_fd(socket_impl_ptr->native_handle());
-      op->cleanup_timer();
-
-      if (error) {
-        op->complete(std::error_code(error, std::generic_category()));
-      } else {
-        op->complete({});
-      }
+  if (timeout.count() > 0) {
+    sleep_operation to{ctx, timeout};
+    auto [idx, result] = co_await when_any(detail::wait_writable(ctx, fd), to.wait());
+    if (idx == 1) {
+      ctx.deregister_fd(fd);
+      detail::throw_timeout();
     }
-  };
+    // Cancel the losing timer so it doesn't keep io_context alive until expiry.
+    to.cancel();
+    (void)result;
+  } else {
+    co_await detail::wait_writable(ctx, fd);
+  }
 
-  socket_impl->get_executor().register_fd_write(socket_impl->native_handle(),
-                                                std::make_unique<connect_operation>(socket_impl_, this));
+  int so_error = 0;
+  socklen_t len = sizeof(so_error);
+  ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len);
+  if (so_error) {
+    throw std::system_error(std::error_code(so_error, std::generic_category()));
+  }
 }
 
-tcp_socket::async_read_some_op::async_read_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                                                   std::span<char> buf,
-                                                   std::chrono::milliseconds timeout)
-    : async_io_operation<std::size_t>(std::move(socket_impl), timeout), buffer_(buf) {}
+auto tcp_socket::async_read_some(std::span<char> buffer, std::chrono::milliseconds timeout) -> awaitable<std::size_t> {
+  auto impl = socket_impl_;
+  auto& ctx = impl->get_executor();
 
-void tcp_socket::async_read_some_op::start_operation() {
-  auto socket_impl = get_socket_impl();
-  if (!socket_impl) {
-    complete(error::operation_aborted);
-    return;
-  }
-
-  auto result = socket_impl->read_some(buffer_);
-  if (result) {
-    complete({}, *result);
-    return;
-  }
-
-  auto ec = result.error();
-  if (ec != std::errc::operation_would_block) {
-    complete(ec);
-    return;
-  }
-
-  setup_timeout();
-
-  struct read_operation : io_context::operation_base {
-    std::weak_ptr<detail::tcp_socket_impl> socket_impl;
-    std::span<char> buffer;
-    tcp_socket::async_read_some_op* op;
-
-    read_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char> buf, tcp_socket::async_read_some_op* o)
-        : socket_impl(std::move(s)), buffer(buf), op(o) {}
-
-    void execute() override {
-      auto socket_impl_ptr = socket_impl.lock();
-      if (!socket_impl_ptr) {
-        op->complete(error::operation_aborted);
-        return;
-      }
-
-      auto result = socket_impl_ptr->read_some(buffer);
-
-      if (!result && result.error() == std::errc::operation_would_block) {
-        socket_impl_ptr->get_executor().register_fd_read(socket_impl_ptr->native_handle(),
-                                                         std::make_unique<read_operation>(socket_impl, buffer, op));
-        return;
-      }
-
-      op->cleanup_timer();
-
-      if (result) {
-        op->complete({}, *result);
-      } else {
-        op->complete(result.error());
-      }
+  for (;;) {
+    auto result = impl->read_some(buffer);
+    if (result) {
+      co_return *result;
     }
-  };
 
-  socket_impl->get_executor().register_fd_read(socket_impl->native_handle(),
-                                               std::make_unique<read_operation>(socket_impl_, buffer_, this));
+    auto ec = result.error();
+    if (ec == std::make_error_code(std::errc::operation_would_block)) {
+      int fd = impl->native_handle();
+      if (fd < 0) {
+        throw std::system_error(error::not_connected);
+      }
+
+      if (timeout.count() > 0) {
+        sleep_operation to{ctx, timeout};
+        auto [idx, v] = co_await when_any(detail::wait_readable(ctx, fd), to.wait());
+        if (idx == 1) {
+          ctx.deregister_fd(fd);
+          detail::throw_timeout();
+        }
+        to.cancel();
+        (void)v;
+      } else {
+        co_await detail::wait_readable(ctx, fd);
+      }
+      continue;
+    }
+
+    throw std::system_error(ec);
+  }
 }
 
-tcp_socket::async_write_some_op::async_write_some_op(std::weak_ptr<detail::tcp_socket_impl> socket_impl,
-                                                      std::span<char const> buf,
-                                                      std::chrono::milliseconds timeout)
-    : async_io_operation<std::size_t>(std::move(socket_impl), timeout), buffer_(buf) {}
+auto tcp_socket::async_write_some(std::span<char const> buffer, std::chrono::milliseconds timeout)
+    -> awaitable<std::size_t> {
+  auto impl = socket_impl_;
+  auto& ctx = impl->get_executor();
 
-void tcp_socket::async_write_some_op::start_operation() {
-  auto socket_impl = get_socket_impl();
-  if (!socket_impl) {
-    complete(error::operation_aborted);
-    return;
-  }
-
-  auto result = socket_impl->write_some(buffer_);
-  if (result) {
-    complete({}, *result);
-    return;
-  }
-
-  auto ec = result.error();
-  if (ec != std::errc::operation_would_block) {
-    complete(ec);
-    return;
-  }
-
-  setup_timeout();
-
-  struct write_operation : io_context::operation_base {
-    std::weak_ptr<detail::tcp_socket_impl> socket_impl;
-    std::span<char const> buffer;
-    tcp_socket::async_write_some_op* op;
-
-    write_operation(std::weak_ptr<detail::tcp_socket_impl> s, std::span<char const> buf,
-                    tcp_socket::async_write_some_op* o)
-        : socket_impl(std::move(s)), buffer(buf), op(o) {}
-
-    void execute() override {
-      auto socket_impl_ptr = socket_impl.lock();
-      if (!socket_impl_ptr) {
-        op->complete(error::operation_aborted);
-        return;
-      }
-
-      auto result = socket_impl_ptr->write_some(buffer);
-
-      if (!result && result.error() == std::errc::operation_would_block) {
-        socket_impl_ptr->get_executor().register_fd_write(socket_impl_ptr->native_handle(),
-                                                          std::make_unique<write_operation>(socket_impl, buffer, op));
-        return;
-      }
-
-      op->cleanup_timer();
-
-      if (result) {
-        op->complete({}, *result);
-      } else {
-        op->complete(result.error());
-      }
+  for (;;) {
+    auto result = impl->write_some(buffer);
+    if (result) {
+      co_return *result;
     }
-  };
 
-  socket_impl->get_executor().register_fd_write(socket_impl->native_handle(),
-                                                std::make_unique<write_operation>(socket_impl_, buffer_, this));
+    auto ec = result.error();
+    if (ec == std::make_error_code(std::errc::operation_would_block)) {
+      int fd = impl->native_handle();
+      if (fd < 0) {
+        throw std::system_error(error::not_connected);
+      }
+
+      if (timeout.count() > 0) {
+        sleep_operation to{ctx, timeout};
+        auto [idx, v] = co_await when_any(detail::wait_writable(ctx, fd), to.wait());
+        if (idx == 1) {
+          ctx.deregister_fd(fd);
+          detail::throw_timeout();
+        }
+        to.cancel();
+        (void)v;
+      } else {
+        co_await detail::wait_writable(ctx, fd);
+      }
+      continue;
+    }
+
+    throw std::system_error(ec);
+  }
 }
 
 }  // namespace xz::io
