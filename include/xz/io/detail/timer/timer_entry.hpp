@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -58,15 +57,6 @@ struct timer_entry {
     auto expected = timer_state::pending;
     return state.compare_exchange_strong(expected, timer_state::cancelled,
                                          std::memory_order_acq_rel, std::memory_order_acquire);
-  }
-};
-
-struct timer_entry_compare {
-  auto operator()(const std::shared_ptr<timer_entry>& lhs,
-                  const std::shared_ptr<timer_entry>& rhs) const noexcept -> bool {
-    assert(lhs && rhs && "timer_entry pointers must not be null");
-
-    return lhs->expiry > rhs->expiry;
   }
 };
 

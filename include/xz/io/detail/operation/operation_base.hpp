@@ -14,7 +14,8 @@ namespace xz::io::detail {
 /// - `executor` is a construction-time "carrier" that grants access to the underlying
 ///   `io_context_impl`.
 /// - During execution, operations talk directly to `io_context_impl` via `impl_`.
-struct operation_base {
+class operation_base {
+ public:
   operation_base(operation_base const&) = delete;
   auto operator=(operation_base const&) -> operation_base& = delete;
   operation_base(operation_base&&) = delete;

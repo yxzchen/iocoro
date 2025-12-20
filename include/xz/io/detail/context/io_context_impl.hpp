@@ -24,6 +24,13 @@ namespace xz::io::detail {
 
 struct operation_base;
 
+struct timer_entry_compare {
+  auto operator()(const std::shared_ptr<timer_entry>& lhs,
+                  const std::shared_ptr<timer_entry>& rhs) const noexcept -> bool {
+    return lhs->expiry > rhs->expiry;
+  }
+};
+
 class io_context_impl {
  public:
   io_context_impl();
