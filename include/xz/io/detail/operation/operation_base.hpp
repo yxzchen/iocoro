@@ -4,6 +4,7 @@
 #include <xz/io/executor.hpp>
 
 #include <memory>
+#include <system_error>
 
 namespace xz::io::detail {
 
@@ -22,7 +23,7 @@ struct operation_base {
   virtual ~operation_base() = default;
 
   /// Start the operation by registering it with the underlying reactor.
-  virtual void start() = 0;
+  virtual void start(std::unique_ptr<operation_base> self) = 0;
 
   virtual void execute() = 0;
   virtual void abort(std::error_code ec) = 0;
@@ -34,14 +35,16 @@ struct operation_base {
 };
 
 /// Example: register interest in readability for a file descriptor.
-///
-/// IMPORTANT: `start()` transfers ownership of `this` into `io_context_impl` via a `unique_ptr`.
-/// The object must therefore be created with `new` and must not be accessed after calling start().
 class read_operation final : public operation_base {
  public:
   read_operation(int fd, xz::io::executor const& ex) noexcept : operation_base(ex), fd_{fd} {}
 
-  void start() override { impl_->register_fd_read(fd_, std::unique_ptr<operation_base>(this)); }
+  void start(std::unique_ptr<operation_base> self) override {
+    impl_->register_fd_read(fd_, std::move(self));
+  }
+
+  void execute() override {}
+  void abort(std::error_code) override {}
 
  private:
   int fd_;
