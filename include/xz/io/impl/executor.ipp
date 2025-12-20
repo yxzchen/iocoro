@@ -8,13 +8,7 @@
 
 namespace xz::io {
 
-inline executor::executor(io_context& ctx) noexcept
-  : context_{&ctx}, impl_{ctx.impl_.get()} {}
-
-inline auto executor::context() const noexcept -> io_context& {
-  // context_ is guaranteed to be non-null with deleted default constructor
-  return *context_;
-}
+inline executor::executor(detail::io_context_impl& impl) noexcept : impl_{&impl} {}
 
 inline void executor::execute(std::function<void()> f) const {
   if (!impl_) {

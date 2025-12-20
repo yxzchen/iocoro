@@ -18,15 +18,12 @@ class io_context_impl;
 class executor {
  public:
   executor() noexcept = delete;
-  explicit executor(io_context& ctx) noexcept;
+  explicit executor(detail::io_context_impl& impl) noexcept;
 
   executor(executor const&) noexcept = default;
   auto operator=(executor const&) noexcept -> executor& = default;
   executor(executor&&) noexcept = default;
   auto operator=(executor&&) noexcept -> executor& = default;
-
-  /// Get the associated io_context
-  auto context() const noexcept -> io_context&;
 
   /// Execute the given function (queued for later execution, never inline)
   void execute(std::function<void()> f) const;
@@ -40,9 +37,6 @@ class executor {
   /// Check if currently running in the executor's thread
   auto running_in_this_thread() const noexcept -> bool;
 
-  /// Check if the executor is valid (associated with a context)
-  explicit operator bool() const noexcept { return impl_ != nullptr; }
-
   friend auto operator==(executor const& a, executor const& b) noexcept -> bool {
     return a.impl_ == b.impl_;
   }
@@ -52,7 +46,6 @@ class executor {
   }
 
  private:
-  io_context* context_ = nullptr;
   detail::io_context_impl* impl_ = nullptr;
 };
 
