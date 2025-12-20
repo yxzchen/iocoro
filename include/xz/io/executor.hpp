@@ -6,6 +6,10 @@ namespace xz::io {
 
 class io_context;
 
+namespace detail {
+class io_context_impl;
+}  // namespace detail
+
 /// Executor interface for executing work on an io_context
 ///
 /// This class provides a lightweight, type-erased interface for submitting
@@ -13,7 +17,7 @@ class io_context;
 /// executor model from ASIO/networking TS.
 class executor {
  public:
-  executor() noexcept = default;
+  executor() noexcept = delete;
   explicit executor(io_context& ctx) noexcept;
 
   executor(executor const&) noexcept = default;
@@ -24,7 +28,7 @@ class executor {
   /// Get the associated io_context
   auto context() const noexcept -> io_context&;
 
-  /// Execute the given function (may be inline if already in context thread)
+  /// Execute the given function (queued for later execution, never inline)
   void execute(std::function<void()> f) const;
 
   /// Post the function for later execution (never inline)
@@ -37,18 +41,19 @@ class executor {
   auto running_in_this_thread() const noexcept -> bool;
 
   /// Check if the executor is valid (associated with a context)
-  explicit operator bool() const noexcept { return context_ != nullptr; }
+  explicit operator bool() const noexcept { return impl_ != nullptr; }
 
   friend auto operator==(executor const& a, executor const& b) noexcept -> bool {
-    return a.context_ == b.context_;
+    return a.impl_ == b.impl_;
   }
 
   friend auto operator!=(executor const& a, executor const& b) noexcept -> bool {
-    return a.context_ != b.context_;
+    return a.impl_ != b.impl_;
   }
 
  private:
   io_context* context_ = nullptr;
+  detail::io_context_impl* impl_ = nullptr;
 };
 
 }  // namespace xz::io

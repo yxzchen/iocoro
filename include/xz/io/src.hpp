@@ -3,6 +3,7 @@
 #include <xz/io.hpp>
 
 #include <xz/io/impl/error.ipp>
+#include <xz/io/impl/executor.ipp>
 #include <xz/io/impl/io_context.ipp>
 #include <xz/io/impl/io_context_impl.ipp>
 #include <xz/io/impl/ip.ipp>
