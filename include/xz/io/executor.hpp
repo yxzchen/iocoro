@@ -36,8 +36,6 @@ class executor {
   /// Dispatch the function (inline if in context thread, otherwise queued)
   void dispatch(std::function<void()> f) const;
 
-  auto empty() const noexcept -> bool { return impl_ == nullptr; }
-
   explicit operator bool() const noexcept { return impl_ != nullptr; }
 
   friend auto operator==(executor const& a, executor const& b) noexcept -> bool {
