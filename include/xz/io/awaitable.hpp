@@ -55,14 +55,21 @@ class awaitable<void> {
   using handle_type = std::coroutine_handle<promise_type>;
 
   explicit awaitable(handle_type h) noexcept : coro_(h) {}
-
-  awaitable(awaitable&& other) noexcept : coro_(std::exchange(other.coro_, {})) {}
   ~awaitable() {
     if (coro_) coro_.destroy();
   }
 
   awaitable(awaitable const&) = delete;
   auto operator=(awaitable const&) -> awaitable& = delete;
+
+  awaitable(awaitable&& other) noexcept : coro_(std::exchange(other.coro_, {})) {}
+  auto operator=(awaitable&& other) noexcept -> awaitable& {
+    if (this != &other) {
+      if (coro_) coro_.destroy();
+      coro_ = std::exchange(other.coro_, {});
+    }
+    return *this;
+  }
 
   bool await_ready() const noexcept { return false; }
   auto await_suspend(std::coroutine_handle<> cont) noexcept -> std::coroutine_handle<> {
