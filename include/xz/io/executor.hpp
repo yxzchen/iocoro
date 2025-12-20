@@ -34,9 +34,6 @@ class executor {
   /// Dispatch the function (inline if in context thread, otherwise queued)
   void dispatch(std::function<void()> f) const;
 
-  /// Check if currently running in the executor's thread
-  auto running_in_this_thread() const noexcept -> bool;
-
   friend auto operator==(executor const& a, executor const& b) noexcept -> bool {
     return a.impl_ == b.impl_;
   }
@@ -46,7 +43,7 @@ class executor {
   }
 
  private:
-  detail::io_context_impl* impl_ = nullptr;
+  detail::io_context_impl* impl_;
 };
 
 }  // namespace xz::io
