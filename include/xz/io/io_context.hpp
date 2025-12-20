@@ -10,6 +10,8 @@
 
 namespace xz::io {
 
+class executor;
+
 namespace detail {
 class io_context_impl;
 }  // namespace detail
@@ -40,6 +42,12 @@ class io_context {
 
   auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
     -> timer_handle;
+
+  /// Get an executor associated with this io_context
+  auto get_executor() noexcept -> executor;
+
+  /// Check if the calling thread is running in this io_context
+  auto running_in_this_thread() const noexcept -> bool;
 
   void add_work_guard() noexcept;
   void remove_work_guard() noexcept;

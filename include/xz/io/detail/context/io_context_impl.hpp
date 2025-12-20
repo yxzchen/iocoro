@@ -11,6 +11,7 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -52,6 +53,8 @@ class io_context_impl {
 
   void add_work_guard() noexcept;
   void remove_work_guard() noexcept;
+
+  auto running_in_this_thread() const noexcept -> bool;
 
 #ifdef IOXZ_HAS_URING
   auto native_handle() const noexcept -> int { return ring_.ring_fd; }
@@ -97,6 +100,9 @@ class io_context_impl {
   std::mutex posted_mutex_;
 
   std::atomic<std::size_t> work_guard_counter_{0};
+
+  // Thread tracking for executor support
+  std::atomic<std::thread::id> thread_id_;
 };
 
 }  // namespace xz::io::detail
