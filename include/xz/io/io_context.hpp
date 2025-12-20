@@ -46,14 +46,7 @@ class io_context {
   /// Get an executor associated with this io_context
   auto get_executor() noexcept -> executor;
 
-  /// Check if the calling thread is running in this io_context
-  auto running_in_this_thread() const noexcept -> bool;
-
  private:
-  void register_fd_read(int fd, std::unique_ptr<detail::operation_base> op);
-  void register_fd_write(int fd, std::unique_ptr<detail::operation_base> op);
-  void deregister_fd(int fd);
-
   std::unique_ptr<detail::io_context_impl> impl_;
 };
 
