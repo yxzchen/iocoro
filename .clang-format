@@ -1,0 +1,10 @@
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 100
+
+SortIncludes: true
+IncludeBlocks: Preserve
+
+ContinuationIndentWidth: 2
+
+InsertNewlineAtEOF: true
