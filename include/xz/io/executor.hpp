@@ -17,7 +17,9 @@ class work_guard;
 /// executor model from ASIO/networking TS.
 class executor {
  public:
-  executor() noexcept = delete;
+  /// Default-constructed executor is an "empty" executor and must be assigned
+  /// a valid context before use.
+  executor() noexcept;
   explicit executor(detail::io_context_impl& impl) noexcept;
 
   executor(executor const&) noexcept = default;
@@ -34,6 +36,10 @@ class executor {
   /// Dispatch the function (inline if in context thread, otherwise queued)
   void dispatch(std::function<void()> f) const;
 
+  auto empty() const noexcept -> bool { return impl_ == nullptr; }
+
+  explicit operator bool() const noexcept { return impl_ != nullptr; }
+
   friend auto operator==(executor const& a, executor const& b) noexcept -> bool {
     return a.impl_ == b.impl_;
   }
@@ -49,6 +55,9 @@ class executor {
   void add_work_guard() const noexcept;
   void remove_work_guard() const noexcept;
 
+  auto ensure_impl() const -> detail::io_context_impl&;
+
+  // Non-owning pointer. The associated io_context_impl must outlive the executor.
   detail::io_context_impl* impl_;
 };
 
