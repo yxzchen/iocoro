@@ -3,8 +3,6 @@
 
 namespace xz::io {
 
-inline auto io_context::get_executor() noexcept -> executor {
-  return executor{*impl_};
-}
+inline auto io_context::get_executor() noexcept -> executor { return executor{*impl_}; }
 
 }  // namespace xz::io

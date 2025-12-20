@@ -28,8 +28,7 @@ class work_guard {
   auto operator=(work_guard const& other) -> work_guard& = delete;
 
   /// Move constructor
-  work_guard(work_guard&& other) noexcept
-      : executor_(other.executor_), owns_(other.owns_) {
+  work_guard(work_guard&& other) noexcept : executor_(other.executor_), owns_(other.owns_) {
     other.owns_ = false;
   }
 
@@ -78,4 +77,3 @@ inline auto make_work_guard(io_context& ctx) -> work_guard<executor> {
 }
 
 }  // namespace xz::io
-
