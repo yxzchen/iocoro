@@ -43,29 +43,31 @@ class io_context_impl {
   void post(std::function<void()> f);
   void dispatch(std::function<void()> f);
 
+  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
+    -> std::shared_ptr<timer_entry>;
+
+  void register_fd_read(int fd, std::unique_ptr<operation_base> op);
+  void register_fd_write(int fd, std::unique_ptr<operation_base> op);
+  void deregister_fd(int fd);
+
+  void add_work_guard() noexcept;
+  void remove_work_guard() noexcept;
+
 #ifdef IOXZ_HAS_URING
   auto native_handle() const noexcept -> int { return ring_.ring_fd; }
 #else
   auto native_handle() const noexcept -> int { return epoll_fd_; }
 #endif
 
-  void register_fd_read(int fd, std::unique_ptr<operation_base> op);
-  void register_fd_write(int fd, std::unique_ptr<operation_base> op);
-  void deregister_fd(int fd);
-
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
-    -> std::shared_ptr<timer_entry>;
-
-  void add_work_guard() noexcept;
-  void remove_work_guard() noexcept;
-
  private:
   auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt)
     -> std::size_t;
   auto process_timers() -> std::size_t;
   auto process_posted() -> std::size_t;
+
   auto get_timeout() -> std::chrono::milliseconds;
   void wakeup();
+
   auto has_work() -> bool;
 
 #ifdef IOXZ_HAS_URING
