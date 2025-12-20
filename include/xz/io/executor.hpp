@@ -8,6 +8,7 @@ class io_context;
 
 namespace detail {
 class io_context_impl;
+struct operation_base;
 }  // namespace detail
 class work_guard;
 
@@ -45,6 +46,7 @@ class executor {
 
  private:
   friend class work_guard;
+  friend struct detail::operation_base;
 
   void add_work_guard() const noexcept;
   void remove_work_guard() const noexcept;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <xz/io/detail/operation/operation_base.hpp>
 #include <xz/io/detail/timer/timer_entry.hpp>
 
 #include <atomic>
@@ -22,6 +21,8 @@
 #endif
 
 namespace xz::io::detail {
+
+struct operation_base;
 
 class io_context_impl {
  public:
