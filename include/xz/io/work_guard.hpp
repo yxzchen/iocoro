@@ -18,9 +18,7 @@ class work_guard {
 
   /// Construct a work guard for the given executor
   explicit work_guard(executor_type const& ex) : executor_(ex), owns_(true) {
-    if (executor_) {
-      executor_.context().add_work_guard();
-    }
+    executor_.add_work_guard();
   }
 
   /// Construct a work guard by acquiring ownership from another executor
@@ -54,8 +52,8 @@ class work_guard {
 
   /// Reset the work guard, releasing the work count
   void reset() {
-    if (owns_ && executor_) {
-      executor_.context().remove_work_guard();
+    if (owns_) {
+      executor_.remove_work_guard();
       owns_ = false;
     }
   }
