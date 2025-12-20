@@ -24,7 +24,10 @@ class operation_base {
   virtual ~operation_base() = default;
 
   /// Start the operation by registering it with the underlying reactor.
-  virtual void start(std::unique_ptr<operation_base> self) = 0;
+  ///
+  /// Ownership-transfer is centralized here: the reactor takes over `self`
+  /// and will eventually complete / abort it.
+  void start(std::unique_ptr<operation_base> self) { do_start(std::move(self)); }
 
   virtual void execute() = 0;
   virtual void abort(std::error_code ec) = 0;
@@ -33,14 +36,22 @@ class operation_base {
   explicit operation_base(xz::io::executor const& ex) noexcept : impl_{ex.impl_} {}
 
   io_context_impl* impl_;
+
+ private:
+  /// Derived classes only implement the registration action.
+  virtual void do_start(std::unique_ptr<operation_base> self) = 0;
 };
 
-/// Example: register interest in readability for a file descriptor.
+// auto op = std::make_unique<read_operation>(fd, ex);
+// ex.dispatch([op = std::move(op)]() mutable {
+//   op->start(std::move(op));
+// });
+
 class read_operation final : public operation_base {
  public:
   read_operation(int fd, xz::io::executor const& ex) noexcept : operation_base(ex), fd_{fd} {}
 
-  void start(std::unique_ptr<operation_base> self) override {
+  void do_start(std::unique_ptr<operation_base> self) override {
     impl_->register_fd_read(fd_, std::move(self));
   }
 
