@@ -49,9 +49,6 @@ class io_context {
   /// Check if the calling thread is running in this io_context
   auto running_in_this_thread() const noexcept -> bool;
 
-  void add_work_guard() noexcept;
-  void remove_work_guard() noexcept;
-
  private:
   void register_fd_read(int fd, std::unique_ptr<detail::operation_base> op);
   void register_fd_write(int fd, std::unique_ptr<detail::operation_base> op);

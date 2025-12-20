@@ -9,6 +9,7 @@ class io_context;
 namespace detail {
 class io_context_impl;
 }  // namespace detail
+class work_guard;
 
 /// Executor interface for executing work on an io_context
 ///
@@ -34,9 +35,6 @@ class executor {
   /// Dispatch the function (inline if in context thread, otherwise queued)
   void dispatch(std::function<void()> f) const;
 
-  void add_work_guard() const noexcept;
-  void remove_work_guard() const noexcept;
-
   friend auto operator==(executor const& a, executor const& b) noexcept -> bool {
     return a.impl_ == b.impl_;
   }
@@ -46,6 +44,11 @@ class executor {
   }
 
  private:
+  friend class work_guard;
+
+  void add_work_guard() const noexcept;
+  void remove_work_guard() const noexcept;
+
   detail::io_context_impl* impl_;
 };
 
