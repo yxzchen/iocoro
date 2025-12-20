@@ -4,8 +4,6 @@
 
 namespace xz::io {
 
-class io_context;
-
 namespace detail {
 class io_context_impl;
 struct operation_base;

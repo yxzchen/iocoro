@@ -1,9 +1,12 @@
 #pragma once
 
-#include <xz/io/detail/timer/timer_entry.hpp>
 #include <xz/io/io_context.hpp>
 
 namespace xz::io {
+
+namespace detail {
+  class timer_entry;
+}  // namespace detail
 
 /// A lightweight, copyable handle to a scheduled timer.
 /// Multiple handles can reference the same timer and any of them can cancel it.
