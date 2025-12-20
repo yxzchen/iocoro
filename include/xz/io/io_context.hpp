@@ -1,8 +1,5 @@
 #pragma once
 
-#include <xz/io/detail/operation/operation_base.hpp>
-#include <xz/io/timer_handle.hpp>
-
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -39,9 +36,6 @@ class io_context {
   void dispatch(std::function<void()> f);
 
   auto native_handle() const noexcept -> int;
-
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
-    -> timer_handle;
 
   /// Get an executor associated with this io_context
   auto get_executor() noexcept -> executor;
