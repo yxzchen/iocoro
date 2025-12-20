@@ -51,7 +51,7 @@ class work_guard {
   auto owns_work() const noexcept -> bool { return owns_; }
 
   /// Reset the work guard, releasing the work count
-  void reset() {
+  void reset() noexcept {
     if (owns_) {
       executor_.remove_work_guard();
       owns_ = false;

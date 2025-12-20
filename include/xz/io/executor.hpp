@@ -26,10 +26,10 @@ class executor {
   auto operator=(executor&&) noexcept -> executor& = default;
 
   /// Execute the given function (queued for later execution, never inline)
-  void execute(std::function<void()> f) const noexcept;
+  void execute(std::function<void()> f) const;
 
   /// Post the function for later execution (never inline)
-  void post(std::function<void()> f) const noexcept;
+  void post(std::function<void()> f) const;
 
   /// Dispatch the function (inline if in context thread, otherwise queued)
   void dispatch(std::function<void()> f) const;

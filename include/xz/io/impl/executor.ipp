@@ -5,10 +5,10 @@
 
 namespace xz::io {
 
-inline executor::executor(detail::io_context_impl& impl) noexcept : impl_{&impl} {}
+executor::executor(detail::io_context_impl& impl) noexcept : impl_{&impl} {}
 
-inline void executor::execute(std::function<void()> f) const noexcept { impl_->post(std::move(f)); }
-void executor::post(std::function<void()> f) const noexcept { impl_->post(std::move(f)); }
+void executor::execute(std::function<void()> f) const { impl_->post(std::move(f)); }
+void executor::post(std::function<void()> f) const { impl_->post(std::move(f)); }
 void executor::dispatch(std::function<void()> f) const { impl_->dispatch(std::move(f)); }
 
 void executor::add_work_guard() const noexcept { impl_->add_work_guard(); }
