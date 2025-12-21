@@ -16,8 +16,8 @@
 namespace xz::io::detail {
 
 struct io_context_impl::backend_impl {
-  struct io_uring ring_;
-  int eventfd_ = -1;
+  struct io_uring ring;
+  int eventfd = -1;
 
   struct uring_poll_state {
     bool armed = false;             // a poll_add is currently pending in the kernel
@@ -29,10 +29,10 @@ struct io_context_impl::backend_impl {
     std::uint32_t next_gen = 1;  // monotonically increasing generation counter
   };
 
-  std::unordered_map<int, uring_poll_state> uring_polls_;
+  std::unordered_map<int, uring_poll_state> uring_polls;
 };
 
-auto io_context_impl::native_handle() const noexcept -> int { return backend_->ring_.ring_fd; }
+auto io_context_impl::native_handle() const noexcept -> int { return backend_->ring.ring_fd; }
 
 namespace {
 
@@ -93,32 +93,32 @@ io_context_impl::io_context_impl() {
   backend_ = std::make_unique<backend_impl>();
 
   // A small queue depth is sufficient for the current poll-based integration.
-  int const ret = ::io_uring_queue_init(256, &backend_->ring_, 0);
+  int const ret = ::io_uring_queue_init(256, &backend_->ring, 0);
   if (ret < 0) {
     throw std::system_error(-ret, std::generic_category(), "io_uring_queue_init failed");
   }
 
-  backend_->eventfd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  if (backend_->eventfd_ < 0) {
-    ::io_uring_queue_exit(&backend_->ring_);
+  backend_->eventfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (backend_->eventfd < 0) {
+    ::io_uring_queue_exit(&backend_->ring);
     throw std::system_error(errno, std::generic_category(), "eventfd failed");
   }
 
   // Arm a poll on the wakeup eventfd so wakeup() can interrupt waits.
-  auto* sqe = ::io_uring_get_sqe(&backend_->ring_);
+  auto* sqe = ::io_uring_get_sqe(&backend_->ring);
   if (sqe == nullptr) {
-    close_if_valid(backend_->eventfd_);
-    ::io_uring_queue_exit(&backend_->ring_);
+    close_if_valid(backend_->eventfd);
+    ::io_uring_queue_exit(&backend_->ring);
     throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
                             "io_uring_get_sqe failed");
   }
-  ::io_uring_prep_poll_add(sqe, backend_->eventfd_, POLLIN | POLLERR | POLLHUP);
+  ::io_uring_prep_poll_add(sqe, backend_->eventfd, POLLIN | POLLERR | POLLHUP);
   ::io_uring_sqe_set_data64(sqe, pack_fd(0, tag_wakeup));
 
-  int const submit = ::io_uring_submit(&backend_->ring_);
+  int const submit = ::io_uring_submit(&backend_->ring);
   if (submit < 0) {
-    close_if_valid(backend_->eventfd_);
-    ::io_uring_queue_exit(&backend_->ring_);
+    close_if_valid(backend_->eventfd);
+    ::io_uring_queue_exit(&backend_->ring);
     throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
   }
 }
@@ -126,8 +126,8 @@ io_context_impl::io_context_impl() {
 io_context_impl::~io_context_impl() {
   stop();
   if (backend_) {
-    close_if_valid(backend_->eventfd_);
-    ::io_uring_queue_exit(&backend_->ring_);
+    close_if_valid(backend_->eventfd);
+    ::io_uring_queue_exit(&backend_->ring);
   }
 }
 
@@ -149,7 +149,7 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
   int arm_mask = 0;
   {
     std::scoped_lock lk{fd_mutex_};
-    auto& st = backend_->uring_polls_[fd];
+    auto& st = backend_->uring_polls[fd];
     st.desired_mask = mask;
 
     if (st.armed) {
@@ -172,13 +172,13 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
   }
 
   if (cancel_user_data.has_value()) {
-    auto* sqe = ::io_uring_get_sqe(&backend_->ring_);
+    auto* sqe = ::io_uring_get_sqe(&backend_->ring);
     if (sqe == nullptr) {
-      int const submit = ::io_uring_submit(&backend_->ring_);
+      int const submit = ::io_uring_submit(&backend_->ring);
       if (submit < 0) {
         throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
       }
-      sqe = ::io_uring_get_sqe(&backend_->ring_);
+      sqe = ::io_uring_get_sqe(&backend_->ring);
       if (sqe == nullptr) {
         throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
                                 "io_uring_get_sqe failed");
@@ -187,7 +187,7 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
 
     ::io_uring_prep_poll_remove(sqe, *cancel_user_data);
     ::io_uring_sqe_set_data64(sqe, pack_fd(fd, tag_remove));
-    int const submit = ::io_uring_submit(&backend_->ring_);
+    int const submit = ::io_uring_submit(&backend_->ring);
     if (submit < 0) {
       throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
     }
@@ -198,14 +198,14 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
     return;
   }
 
-  auto* sqe = ::io_uring_get_sqe(&backend_->ring_);
+  auto* sqe = ::io_uring_get_sqe(&backend_->ring);
   if (sqe == nullptr) {
-    int const submit = ::io_uring_submit(&backend_->ring_);
+    int const submit = ::io_uring_submit(&backend_->ring);
     if (submit < 0) {
       {
         std::scoped_lock lk{fd_mutex_};
-        auto it = backend_->uring_polls_.find(fd);
-        if (it != backend_->uring_polls_.end() && it->second.active_user_data == *arm_user_data) {
+        auto it = backend_->uring_polls.find(fd);
+        if (it != backend_->uring_polls.end() && it->second.active_user_data == *arm_user_data) {
           it->second.armed = false;
           it->second.cancel_requested = false;
           it->second.active_user_data = 0;
@@ -215,12 +215,12 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
       }
       throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
     }
-    sqe = ::io_uring_get_sqe(&backend_->ring_);
+    sqe = ::io_uring_get_sqe(&backend_->ring);
     if (sqe == nullptr) {
       {
         std::scoped_lock lk{fd_mutex_};
-        auto it = backend_->uring_polls_.find(fd);
-        if (it != backend_->uring_polls_.end() && it->second.active_user_data == *arm_user_data) {
+        auto it = backend_->uring_polls.find(fd);
+        if (it != backend_->uring_polls.end() && it->second.active_user_data == *arm_user_data) {
           it->second.armed = false;
           it->second.cancel_requested = false;
           it->second.active_user_data = 0;
@@ -236,12 +236,12 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
   ::io_uring_prep_poll_add(sqe, fd, arm_mask);
   ::io_uring_sqe_set_data64(sqe, *arm_user_data);
 
-  int const submit = ::io_uring_submit(&backend_->ring_);
+  int const submit = ::io_uring_submit(&backend_->ring);
   if (submit < 0) {
     {
       std::scoped_lock lk{fd_mutex_};
-      auto it = backend_->uring_polls_.find(fd);
-      if (it != backend_->uring_polls_.end() && it->second.active_user_data == *arm_user_data) {
+      auto it = backend_->uring_polls.find(fd);
+      if (it != backend_->uring_polls.end() && it->second.active_user_data == *arm_user_data) {
         it->second.armed = false;
         it->second.cancel_requested = false;
         it->second.active_user_data = 0;
@@ -261,8 +261,8 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
   std::optional<std::uint64_t> cancel_user_data;
   {
     std::scoped_lock lk{fd_mutex_};
-    auto it = backend_->uring_polls_.find(fd);
-    if (it == backend_->uring_polls_.end()) {
+    auto it = backend_->uring_polls.find(fd);
+    if (it == backend_->uring_polls.end()) {
       return;
     }
 
@@ -270,7 +270,7 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
     st.desired_mask = 0;
 
     if (!st.armed) {
-      backend_->uring_polls_.erase(it);
+      backend_->uring_polls.erase(it);
       return;
     }
 
@@ -284,10 +284,10 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
     return;
   }
 
-  auto* sqe = ::io_uring_get_sqe(&backend_->ring_);
+  auto* sqe = ::io_uring_get_sqe(&backend_->ring);
   if (sqe == nullptr) {
-    (void)::io_uring_submit(&backend_->ring_);
-    sqe = ::io_uring_get_sqe(&backend_->ring_);
+    (void)::io_uring_submit(&backend_->ring);
+    sqe = ::io_uring_get_sqe(&backend_->ring);
     if (sqe == nullptr) {
       return;
     }
@@ -295,7 +295,7 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
 
   ::io_uring_prep_poll_remove(sqe, *cancel_user_data);
   ::io_uring_sqe_set_data64(sqe, pack_fd(fd, tag_remove));
-  (void)::io_uring_submit(&backend_->ring_);
+  (void)::io_uring_submit(&backend_->ring);
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
@@ -303,7 +303,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
   executor_guard g{executor{*this}};
 
   // Ensure any previously prepared SQEs are submitted before we wait.
-  int const submitted = ::io_uring_submit(&backend_->ring_);
+  int const submitted = ::io_uring_submit(&backend_->ring);
   if (submitted < 0) {
     throw std::system_error(-submitted, std::generic_category(), "io_uring_submit failed");
   }
@@ -313,9 +313,9 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 
   if (max_wait.has_value()) {
     auto ts = to_timespec(*max_wait);
-    wait_ret = ::io_uring_wait_cqe_timeout(&backend_->ring_, &first, &ts);
+    wait_ret = ::io_uring_wait_cqe_timeout(&backend_->ring, &first, &ts);
   } else {
-    wait_ret = ::io_uring_wait_cqe(&backend_->ring_, &first);
+    wait_ret = ::io_uring_wait_cqe(&backend_->ring, &first);
   }
 
   if (wait_ret < 0) {
@@ -332,13 +332,13 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     std::uint64_t const tag = unpack_tag(data);
 
     if (tag == tag_wakeup) {
-      drain_eventfd(backend_->eventfd_);
+      drain_eventfd(backend_->eventfd);
       // Re-arm wakeup poll.
-      auto* sqe = ::io_uring_get_sqe(&backend_->ring_);
+      auto* sqe = ::io_uring_get_sqe(&backend_->ring);
       if (sqe != nullptr) {
-        ::io_uring_prep_poll_add(sqe, backend_->eventfd_, POLLIN | POLLERR | POLLHUP);
+        ::io_uring_prep_poll_add(sqe, backend_->eventfd, POLLIN | POLLERR | POLLHUP);
         ::io_uring_sqe_set_data64(sqe, pack_fd(0, tag_wakeup));
-        (void)::io_uring_submit(&backend_->ring_);
+        (void)::io_uring_submit(&backend_->ring);
       }
       return;
     }
@@ -376,8 +376,8 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       std::scoped_lock lk{fd_mutex_};
       // Mark the active poll as completed if this CQE corresponds to the currently
       // armed generation for this fd.
-      auto pit = backend_->uring_polls_.find(fd);
-      if (pit != backend_->uring_polls_.end()) {
+      auto pit = backend_->uring_polls.find(fd);
+      if (pit != backend_->uring_polls.end()) {
         auto& st = pit->second;
         if (st.armed && st.active_gen == gen) {
           st.armed = false;
@@ -451,7 +451,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       }
     };
 
-    seen_guard g{&backend_->ring_, cqe};
+    seen_guard g{&backend_->ring, cqe};
     handle_one(cqe);
   };
 
@@ -460,7 +460,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 
   // Then drain any other CQEs already available.
   io_uring_cqe* batch[127]{};
-  unsigned const n = ::io_uring_peek_batch_cqe(&backend_->ring_, batch, 127);
+  unsigned const n = ::io_uring_peek_batch_cqe(&backend_->ring, batch, 127);
   for (unsigned i = 0; i < n; ++i) {
     if (batch[i] != nullptr) {
       handle_one_and_seen(batch[i]);
@@ -471,13 +471,13 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 }
 
 void io_context_impl::wakeup() {
-  if (!backend_ || backend_->eventfd_ < 0) {
+  if (backend_->eventfd < 0) {
     return;
   }
 
   std::uint64_t value = 1;
   for (;;) {
-    auto const n = ::write(backend_->eventfd_, &value, sizeof(value));
+    auto const n = ::write(backend_->eventfd, &value, sizeof(value));
     if (n >= 0) {
       return;
     }
