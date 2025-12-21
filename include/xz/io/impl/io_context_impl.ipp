@@ -125,11 +125,12 @@ void io_context_impl::dispatch(std::function<void()> f) {
   }
 }
 
-auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> cb)
+auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
+                                     std::function<void()> callback)
   -> std::shared_ptr<timer_entry> {
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = std::chrono::steady_clock::now() + timeout;
-  entry->callback = std::move(cb);
+  entry->callback = std::move(callback);
   entry->state.store(timer_state::pending, std::memory_order_release);
 
   {
