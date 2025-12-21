@@ -314,12 +314,10 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
         ::io_uring_sqe_set_data64(sqe, pack_fd(0, tag_wakeup));
         (void)::io_uring_submit(&ring_);
       }
-      ::io_uring_cqe_seen(&ring_, cqe);
       return;
     }
 
     if (tag == tag_remove) {
-      ::io_uring_cqe_seen(&ring_, cqe);
       return;
     }
 
@@ -388,7 +386,6 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     if (is_cancelled) {
-      ::io_uring_cqe_seen(&ring_, cqe);
       return;
     }
 
@@ -413,19 +410,32 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
         ++count;
       }
     }
+  };
 
-    ::io_uring_cqe_seen(&ring_, cqe);
+  auto handle_one_and_seen = [&](io_uring_cqe* cqe) {
+    struct seen_guard {
+      io_uring* ring = nullptr;
+      io_uring_cqe* cqe = nullptr;
+      ~seen_guard() noexcept {
+        if (ring != nullptr && cqe != nullptr) {
+          ::io_uring_cqe_seen(ring, cqe);
+        }
+      }
+    };
+
+    seen_guard g{&ring_, cqe};
+    handle_one(cqe);
   };
 
   // Process the CQE we waited for.
-  handle_one(first);
+  handle_one_and_seen(first);
 
   // Then drain any other CQEs already available.
   io_uring_cqe* batch[127]{};
   unsigned const n = ::io_uring_peek_batch_cqe(&ring_, batch, 127);
   for (unsigned i = 0; i < n; ++i) {
     if (batch[i] != nullptr) {
-      handle_one(batch[i]);
+      handle_one_and_seen(batch[i]);
     }
   }
 
