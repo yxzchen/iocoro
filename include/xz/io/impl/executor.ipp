@@ -1,3 +1,4 @@
+#include <xz/io/assert.hpp>
 #include <xz/io/detail/context/io_context_impl.hpp>
 #include <xz/io/executor.hpp>
 
@@ -22,9 +23,7 @@ void executor::remove_work_guard() const noexcept {
 }
 
 auto executor::ensure_impl() const -> detail::io_context_impl& {
-  if (impl_ == nullptr) {
-    throw std::runtime_error("xz::io::executor: empty executor");
-  }
+  IOXZ_ENSURE(impl_, "[ioxz] executor: empty executor");
   return *impl_;
 }
 

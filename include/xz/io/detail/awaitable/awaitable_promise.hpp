@@ -1,5 +1,6 @@
 #pragma once
 
+#include <xz/io/assert.hpp>
 #include <xz/io/detail/executor/executor_guard.hpp>
 #include <xz/io/executor.hpp>
 #include <xz/io/this_coro.hpp>
@@ -52,7 +53,10 @@ struct awaitable_promise_base {
 
   void set_executor(executor ex) noexcept { ex_ = ex; }
 
-  void detach() noexcept { detached_ = true; }
+  void detach() noexcept {
+    IOXZ_ENSURE(ex_, "[ioxz] awaitable_promise: detach() requires executor");
+    detached_ = true;
+  }
 
   void set_continuation(std::coroutine_handle<> h) noexcept {
     continuation_ = h;
@@ -62,6 +66,9 @@ struct awaitable_promise_base {
 
   void resume_continuation() noexcept {
     if (!continuation_) return;
+
+    IOXZ_ENSURE(ex_, "[ioxz] awaitable_promise: resume_continuation() requires executor");
+
     // Continuation resumption is always scheduled via executor, never inline.
     ex_.post([h = continuation_, ex = ex_]() mutable {
       detail::executor_guard g{ex};
@@ -96,7 +103,7 @@ struct awaitable_promise final : awaitable_promise_base {
 
   template <typename U>
     requires std::convertible_to<U, T>
-  void return_value(U&& v) noexcept {
+  void return_value(U&& v) {
     value_.emplace(std::forward<U>(v));
   }
 
