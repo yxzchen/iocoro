@@ -13,12 +13,6 @@
 #include <unordered_map>
 #include <vector>
 
-#ifdef IOCORO_USE_URING
-#include <liburing.h>
-#else
-#include <sys/epoll.h>
-#endif
-
 namespace xz::io::detail {
 
 struct operation_base;
@@ -85,13 +79,11 @@ class io_context_impl {
   void set_thread_id() noexcept;
   auto running_in_this_thread() const noexcept -> bool;
 
-#ifdef IOCORO_USE_URING
-  auto native_handle() const noexcept -> int { return ring_.ring_fd; }
-#else
-  auto native_handle() const noexcept -> int { return epoll_fd_; }
-#endif
+  auto native_handle() const noexcept -> int;
 
  private:
+  struct backend_impl;  // PImpl for the OS backend (epoll or io_uring).
+
   // Opaque per-thread identity token.
   // Only valid for equality comparison within the process lifetime.
   static auto this_thread_token() noexcept -> std::uintptr_t;
@@ -114,25 +106,7 @@ class io_context_impl {
 
   void cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept;
 
-#ifdef IOCORO_USE_URING
-  struct io_uring ring_;
-  int eventfd_ = -1;
-
-  struct uring_poll_state {
-    bool armed = false;             // a poll_add is currently pending in the kernel
-    bool cancel_requested = false;  // a poll_remove has been submitted for the active poll
-    std::uint32_t active_gen = 0;   // generation for active_user_data
-    std::uint64_t active_user_data = 0;
-    int active_mask = 0;         // POLL* mask used for the active poll_add
-    int desired_mask = 0;        // latest desired POLL* mask
-    std::uint32_t next_gen = 1;  // monotonically increasing generation counter
-  };
-
-  std::unordered_map<int, uring_poll_state> uring_polls_;
-#else
-  int epoll_fd_ = -1;
-  int eventfd_ = -1;
-#endif
+  std::unique_ptr<backend_impl> backend_;
 
   std::atomic<bool> stopped_{false};
 

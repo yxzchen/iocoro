@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <chrono>
 #include <queue>
-#include <system_error>
 #include <utility>
 
 namespace xz::io::detail {

@@ -13,6 +13,11 @@
 
 namespace xz::io::detail {
 
+struct io_context_impl::backend_impl {
+  int epoll_fd = -1;
+  int eventfd = -1;
+};
+
 namespace {
 
 void close_if_valid(int& fd) noexcept {
