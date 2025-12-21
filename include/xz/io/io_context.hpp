@@ -8,6 +8,7 @@
 namespace xz::io {
 
 class executor;
+class timer_handle;
 
 namespace detail {
 class io_context_impl;
@@ -34,6 +35,9 @@ class io_context {
 
   void post(std::function<void()> f);
   void dispatch(std::function<void()> f);
+
+  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
+    -> timer_handle;
 
   auto native_handle() const noexcept -> int;
 
