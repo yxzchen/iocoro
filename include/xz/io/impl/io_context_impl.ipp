@@ -12,9 +12,15 @@
 
 namespace xz::io::detail {
 
+// Backend note:
+// - For epoll builds, ctor/dtor + fd registration + process_events/wakeup are implemented in
+//   `impl/backends/epoll.ipp`.
+// - For uring (or no-backend-yet) builds, we keep a minimal fallback here.
+#ifdef IOCORO_HAS_URING
 io_context_impl::io_context_impl() = default;
 
 io_context_impl::~io_context_impl() { stop(); }
+#endif
 
 auto io_context_impl::run() -> std::size_t {
   set_thread_id();
@@ -143,6 +149,7 @@ auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   return entry;
 }
 
+#ifdef IOCORO_HAS_URING
 void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
   std::unique_ptr<operation_base> old;
   {
@@ -191,6 +198,7 @@ void io_context_impl::deregister_fd(int fd) {
 
   wakeup();
 }
+#endif
 
 void io_context_impl::add_work_guard() noexcept {
   work_guard_counter_.fetch_add(1, std::memory_order_acq_rel);
@@ -211,6 +219,7 @@ auto io_context_impl::running_in_this_thread() const noexcept -> bool {
   return thread_id_.load(std::memory_order_acquire) == std::this_thread::get_id();
 }
 
+#ifdef IOCORO_HAS_URING
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
   -> std::size_t {
   // Platform-independent fallback:
@@ -227,6 +236,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
   }
   return 0;
 }
+#endif
 
 auto io_context_impl::process_timers() -> std::size_t {
   std::unique_lock lk{timer_mutex_};
@@ -327,10 +337,12 @@ auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
   return std::chrono::duration_cast<std::chrono::milliseconds>(expiry - now);
 }
 
+#ifdef IOCORO_HAS_URING
 void io_context_impl::wakeup() {
   // Platform-independent fallback: no-op.
   // Backends should signal their reactor wait primitive here (eventfd, io_uring_enter, ...).
 }
+#endif
 
 auto io_context_impl::has_work() -> bool {
   if (work_guard_counter_.load(std::memory_order_acquire) > 0) {

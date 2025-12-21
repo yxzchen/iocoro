@@ -16,10 +16,14 @@ void executor::dispatch(std::function<void()> f) const { ensure_impl().dispatch(
 
 void executor::add_work_guard() const noexcept {
   // Work guards are best-effort; if an executor is empty, it simply can't guard anything.
-  if (impl_ != nullptr) impl_->add_work_guard();
+  if (impl_ != nullptr) {
+    impl_->add_work_guard();
+  }
 }
 void executor::remove_work_guard() const noexcept {
-  if (impl_ != nullptr) impl_->remove_work_guard();
+  if (impl_ != nullptr) {
+    impl_->remove_work_guard();
+  }
 }
 
 auto executor::ensure_impl() const -> detail::io_context_impl& {

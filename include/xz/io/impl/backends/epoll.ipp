@@ -1,0 +1,284 @@
+#include <xz/io/detail/context/io_context_impl.hpp>
+#include <xz/io/detail/executor/executor_guard.hpp>
+#include <xz/io/detail/operation/operation_base.hpp>
+#include <xz/io/error.hpp>
+
+#include <cerrno>
+#include <cstdint>
+#include <system_error>
+
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
+
+namespace xz::io::detail {
+
+namespace {
+
+void close_if_valid(int& fd) noexcept {
+  if (fd >= 0) {
+    ::close(fd);
+    fd = -1;
+  }
+}
+
+void epoll_ctl_del_noexcept(int epoll_fd, int fd) noexcept {
+  if (epoll_fd < 0 || fd < 0) {
+    return;
+  }
+  ::epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+}
+
+void epoll_ctl_update_or_add(int epoll_fd, int fd, std::uint32_t events) {
+  epoll_event ev{};
+  ev.events = events;
+  ev.data.fd = fd;
+
+  if (::epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) == 0) {
+    return;
+  }
+
+  if (errno == ENOENT) {
+    if (::epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) == 0) {
+      return;
+    }
+  }
+
+  throw std::system_error(errno, std::generic_category(), "epoll_ctl (add/mod) failed");
+}
+
+void drain_eventfd(int eventfd) noexcept {
+  std::uint64_t value = 0;
+  for (;;) {
+    auto const n = ::read(eventfd, &value, sizeof(value));
+    if (n > 0) {
+      continue;
+    }
+    if (n < 0 && errno == EINTR) {
+      continue;
+    }
+    break;
+  }
+}
+
+}  // namespace
+
+io_context_impl::io_context_impl() {
+  epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
+  if (epoll_fd_ < 0) {
+    throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
+  }
+
+  eventfd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (eventfd_ < 0) {
+    close_if_valid(epoll_fd_);
+    throw std::system_error(errno, std::generic_category(), "eventfd failed");
+  }
+
+  epoll_event ev{};
+  ev.events = EPOLLIN | EPOLLET;
+  ev.data.fd = eventfd_;
+  if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, eventfd_, &ev) < 0) {
+    close_if_valid(eventfd_);
+    close_if_valid(epoll_fd_);
+    throw std::system_error(errno, std::generic_category(), "epoll_ctl(add eventfd) failed");
+  }
+}
+
+io_context_impl::~io_context_impl() {
+  stop();
+  close_if_valid(eventfd_);
+  close_if_valid(epoll_fd_);
+}
+
+void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
+  std::unique_ptr<operation_base> old;
+  bool want_read = false;
+  bool want_write = false;
+
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto& ops = fd_operations_[fd];
+    old = std::exchange(ops.read_op, std::move(op));
+    want_read = (ops.read_op != nullptr);
+    want_write = (ops.write_op != nullptr);
+  }
+
+  if (old) {
+    old->abort(make_error_code(error::operation_aborted));
+  }
+
+  epoll_ctl_update_or_add(epoll_fd_, fd,
+                          (want_read ? static_cast<std::uint32_t>(EPOLLIN) : 0u) |
+                            (want_write ? static_cast<std::uint32_t>(EPOLLOUT) : 0u) |
+                            static_cast<std::uint32_t>(EPOLLET));
+
+  wakeup();
+}
+
+void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
+  std::unique_ptr<operation_base> old;
+  bool want_read = false;
+  bool want_write = false;
+
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto& ops = fd_operations_[fd];
+    old = std::exchange(ops.write_op, std::move(op));
+    want_read = (ops.read_op != nullptr);
+    want_write = (ops.write_op != nullptr);
+  }
+
+  if (old) {
+    old->abort(make_error_code(error::operation_aborted));
+  }
+
+  epoll_ctl_update_or_add(epoll_fd_, fd,
+                          (want_read ? static_cast<std::uint32_t>(EPOLLIN) : 0u) |
+                            (want_write ? static_cast<std::uint32_t>(EPOLLOUT) : 0u) |
+                            static_cast<std::uint32_t>(EPOLLET));
+
+  wakeup();
+}
+
+void io_context_impl::deregister_fd(int fd) {
+  fd_ops removed;
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end()) {
+      epoll_ctl_del_noexcept(epoll_fd_, fd);
+      return;
+    }
+    removed = std::move(it->second);
+    fd_operations_.erase(it);
+  }
+
+  epoll_ctl_del_noexcept(epoll_fd_, fd);
+
+  auto const ec = make_error_code(error::operation_aborted);
+  if (removed.read_op) {
+    removed.read_op->abort(ec);
+  }
+  if (removed.write_op) {
+    removed.write_op->abort(ec);
+  }
+
+  wakeup();
+}
+
+auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
+  -> std::size_t {
+  // Platform-specific reactor step:
+  // - Wait for fd readiness or wakeups.
+  // - Complete registered fd operations.
+  //
+  // NOTE: This function no longer runs timers/posted; the run loop already drives those.
+  executor_guard g{executor{*this}};
+
+  int timeout_ms = -1;
+  if (max_wait.has_value()) {
+    timeout_ms = static_cast<int>(max_wait->count());
+  }
+
+  constexpr int max_events = 64;
+  epoll_event events[max_events]{};
+
+  int nfds = ::epoll_wait(epoll_fd_, events, max_events, timeout_ms);
+  if (nfds < 0) {
+    if (errno == EINTR) {
+      return 0;
+    }
+    throw std::system_error(errno, std::generic_category(), "epoll_wait failed");
+  }
+
+  std::size_t count = 0;
+
+  for (int i = 0; i < nfds; ++i) {
+    int const fd = events[i].data.fd;
+    std::uint32_t const ev = events[i].events;
+
+    if (fd == eventfd_) {
+      drain_eventfd(eventfd_);
+      continue;
+    }
+
+    bool const is_error =
+      (ev & (static_cast<std::uint32_t>(EPOLLERR) | static_cast<std::uint32_t>(EPOLLHUP) |
+             static_cast<std::uint32_t>(EPOLLRDHUP))) != 0;
+
+    std::unique_ptr<operation_base> read_op;
+    std::unique_ptr<operation_base> write_op;
+    bool still_want_read = false;
+    bool still_want_write = false;
+
+    {
+      std::scoped_lock lk{fd_mutex_};
+      auto it = fd_operations_.find(fd);
+      if (it != fd_operations_.end()) {
+        if (is_error || ((ev & static_cast<std::uint32_t>(EPOLLIN)) != 0)) {
+          read_op = std::move(it->second.read_op);
+        }
+        if (is_error || ((ev & static_cast<std::uint32_t>(EPOLLOUT)) != 0)) {
+          write_op = std::move(it->second.write_op);
+        }
+
+        still_want_read = (it->second.read_op != nullptr);
+        still_want_write = (it->second.write_op != nullptr);
+
+        if (!still_want_read && !still_want_write) {
+          fd_operations_.erase(it);
+        }
+      }
+    }
+
+    if (!still_want_read && !still_want_write) {
+      epoll_ctl_del_noexcept(epoll_fd_, fd);
+    } else {
+      epoll_ctl_update_or_add(epoll_fd_, fd,
+                              (still_want_read ? static_cast<std::uint32_t>(EPOLLIN) : 0u) |
+                                (still_want_write ? static_cast<std::uint32_t>(EPOLLOUT) : 0u) |
+                                static_cast<std::uint32_t>(EPOLLET));
+    }
+
+    if (is_error) {
+      auto const ec = std::make_error_code(std::errc::connection_reset);
+      if (read_op) {
+        read_op->abort(ec);
+        ++count;
+      }
+      if (write_op) {
+        write_op->abort(ec);
+        ++count;
+      }
+    } else {
+      if (read_op) {
+        read_op->execute();
+        ++count;
+      }
+      if (write_op) {
+        write_op->execute();
+        ++count;
+      }
+    }
+  }
+
+  return count;
+}
+
+void io_context_impl::wakeup() {
+  std::uint64_t value = 1;
+  for (;;) {
+    auto const n = ::write(eventfd_, &value, sizeof(value));
+    if (n >= 0) {
+      return;
+    }
+    if (errno == EINTR) {
+      continue;
+    }
+    // Best-effort wakeup: if the counter is "full" (EAGAIN) we can ignore it.
+    return;
+  }
+}
+
+}  // namespace xz::io::detail
