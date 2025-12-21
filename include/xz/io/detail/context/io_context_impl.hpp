@@ -82,7 +82,7 @@ class io_context_impl {
   auto native_handle() const noexcept -> int;
 
  private:
-  struct backend_impl;  // PImpl for the OS backend (epoll or io_uring).
+  struct backend_impl;  // PImpl for the OS backend.
 
   // Opaque per-thread identity token.
   // Only valid for equality comparison within the process lifetime.

@@ -14,9 +14,11 @@
 namespace xz::io::detail {
 
 struct io_context_impl::backend_impl {
-  int epoll_fd = -1;
-  int eventfd = -1;
+  int epoll_fd_ = -1;
+  int eventfd_ = -1;
 };
+
+auto io_context_impl::native_handle() const noexcept -> int { return backend_->epoll_fd_; }
 
 namespace {
 
@@ -44,31 +46,35 @@ void drain_eventfd(int eventfd) noexcept {
 }  // namespace
 
 io_context_impl::io_context_impl() {
-  epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
-  if (epoll_fd_ < 0) {
+  backend_ = std::make_unique<backend_impl>();
+
+  backend_->epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
+  if (backend_->epoll_fd_ < 0) {
     throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
   }
 
-  eventfd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  if (eventfd_ < 0) {
-    close_if_valid(epoll_fd_);
+  backend_->eventfd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (backend_->eventfd_ < 0) {
+    close_if_valid(backend_->epoll_fd_);
     throw std::system_error(errno, std::generic_category(), "eventfd failed");
   }
 
   epoll_event ev{};
   ev.events = EPOLLIN | EPOLLET;
-  ev.data.fd = eventfd_;
-  if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, eventfd_, &ev) < 0) {
-    close_if_valid(eventfd_);
-    close_if_valid(epoll_fd_);
+  ev.data.fd = backend_->eventfd_;
+  if (::epoll_ctl(backend_->epoll_fd_, EPOLL_CTL_ADD, backend_->eventfd_, &ev) < 0) {
+    close_if_valid(backend_->eventfd_);
+    close_if_valid(backend_->epoll_fd_);
     throw std::system_error(errno, std::generic_category(), "epoll_ctl(add eventfd) failed");
   }
 }
 
 io_context_impl::~io_context_impl() {
   stop();
-  close_if_valid(eventfd_);
-  close_if_valid(epoll_fd_);
+  if (backend_) {
+    close_if_valid(backend_->eventfd_);
+    close_if_valid(backend_->epoll_fd_);
+  }
 }
 
 void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool want_write) {
@@ -84,12 +90,12 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
   ev.events = events;
   ev.data.fd = fd;
 
-  if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0) {
+  if (::epoll_ctl(backend_->epoll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0) {
     return;
   }
 
   if (errno == ENOENT) {
-    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) == 0) {
+    if (::epoll_ctl(backend_->epoll_fd_, EPOLL_CTL_ADD, fd, &ev) == 0) {
       return;
     }
   }
@@ -98,10 +104,10 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
 }
 
 void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
-  if (epoll_fd_ < 0 || fd < 0) {
+  if (!backend_ || backend_->epoll_fd_ < 0 || fd < 0) {
     return;
   }
-  ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
+  ::epoll_ctl(backend_->epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
@@ -116,7 +122,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
   constexpr int max_events = 128;
   epoll_event events[max_events]{};
 
-  int nfds = ::epoll_wait(epoll_fd_, events, max_events, timeout_ms);
+  int nfds = ::epoll_wait(backend_->epoll_fd_, events, max_events, timeout_ms);
   if (nfds < 0) {
     if (errno == EINTR) {
       return 0;
@@ -130,8 +136,8 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     int const fd = events[i].data.fd;
     std::uint32_t const ev = events[i].events;
 
-    if (fd == eventfd_) {
-      drain_eventfd(eventfd_);
+    if (fd == backend_->eventfd_) {
+      drain_eventfd(backend_->eventfd_);
       continue;
     }
 
@@ -196,9 +202,12 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 }
 
 void io_context_impl::wakeup() {
+  if (!backend_) {
+    return;
+  }
   std::uint64_t value = 1;
   for (;;) {
-    auto const n = ::write(eventfd_, &value, sizeof(value));
+    auto const n = ::write(backend_->eventfd_, &value, sizeof(value));
     if (n >= 0) {
       return;
     }
