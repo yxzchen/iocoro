@@ -47,6 +47,9 @@ class io_context_impl {
     /// If the event has been overwritten/replaced, this is a no-op.
     ///
     /// Thread-safe: if called off the context thread, cancellation is posted.
+    ///
+    /// Lifetime: the referenced io_context_impl must outlive this handle; calling cancel()
+    /// after destruction is undefined behavior.
     void cancel() const noexcept;
   };
 
@@ -89,8 +92,12 @@ class io_context_impl {
 #endif
 
  private:
+  void reconcile_fd_interest(int fd);
+  void reconcile_fd_interest_async(int fd);
+
   void backend_update_fd_interest(int fd, bool want_read, bool want_write);
   void backend_remove_fd_interest(int fd) noexcept;
+
   void cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept;
 
   auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt)

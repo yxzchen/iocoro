@@ -25,6 +25,8 @@ namespace xz::io::detail {
 [[noreturn]] void ensure_fail(char const* expr, char const* msg, char const* file, int line,
                               char const* func) noexcept;
 
+[[noreturn]] void unreachable_fail(char const* file, int line, char const* func) noexcept;
+
 }  // namespace xz::io::detail
 
 // -------------------- ASSERT --------------------
@@ -57,3 +59,7 @@ namespace xz::io::detail {
                    : ::xz::io::detail::ensure_fail(#expr, msg, __FILE__, __LINE__, __func__))
 
 #define XZ_ENSURE(...) XZ_ENSURE_SELECTOR(__VA_ARGS__, XZ_ENSURE_2, XZ_ENSURE_1)(__VA_ARGS__)
+
+// -------------------- UNREACHABLE --------------------
+
+#define XZ_UNREACHABLE() ::xz::io::detail::unreachable_fail(__FILE__, __LINE__, __func__)

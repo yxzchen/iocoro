@@ -1,3 +1,4 @@
+#include <xz/io/assert.hpp>
 #include <xz/io/detail/context/io_context_impl.hpp>
 #include <xz/io/detail/executor/executor_guard.hpp>
 #include <xz/io/detail/operation/operation_base.hpp>
@@ -22,6 +23,42 @@ auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
   // among concurrently running threads, and avoids non-portable thread-id atomics.
   static thread_local int tls_anchor = 0;
   return reinterpret_cast<std::uintptr_t>(&tls_anchor);
+}
+
+void io_context_impl::reconcile_fd_interest(int fd) {
+  bool want_read = false;
+  bool want_write = false;
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto it = fd_operations_.find(fd);
+    if (it != fd_operations_.end()) {
+      want_read = (it->second.read_op != nullptr);
+      want_write = (it->second.write_op != nullptr);
+    }
+  }
+
+  if (want_read || want_write) {
+    backend_update_fd_interest(fd, want_read, want_write);
+  } else {
+    backend_remove_fd_interest(fd);
+  }
+}
+
+void io_context_impl::reconcile_fd_interest_async(int fd) {
+  // If we're on the context thread and not stopped, update immediately so the backend
+  // state is consistent before we go back to waiting for events.
+  if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
+    reconcile_fd_interest(fd);
+    return;
+  }
+
+  post([this, fd] {
+    try {
+      reconcile_fd_interest(fd);
+    } catch (...) {
+      XZ_UNREACHABLE();
+    }
+  });
 }
 
 void io_context_impl::fd_event_handle::cancel() const noexcept {
@@ -138,7 +175,7 @@ void io_context_impl::post(std::function<void()> f) {
 }
 
 void io_context_impl::dispatch(std::function<void()> f) {
-  if (running_in_this_thread()) {
+  if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
     // Ensure awaitables that inherit the "current executor" see the right executor.
     auto const desired = executor{*this};
     if (get_current_executor() == desired) {
@@ -155,6 +192,11 @@ void io_context_impl::dispatch(std::function<void()> f) {
 auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
                                      std::function<void()> callback)
   -> std::shared_ptr<timer_entry> {
+  XZ_ASSERT(timeout.count() >= 0, "io_context_impl: negative schedule_timer timeout");
+  if (timeout.count() < 0) {
+    timeout = std::chrono::milliseconds{0};
+  }
+
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = std::chrono::steady_clock::now() + timeout;
   entry->callback = std::move(callback);
@@ -173,8 +215,6 @@ auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
 auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op)
   -> fd_event_handle {
   std::unique_ptr<operation_base> old;
-  bool want_read = false;
-  bool want_write = false;
   std::uint64_t token = 0;
 
   {
@@ -194,10 +234,8 @@ auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
     }
 
     old = std::exchange(ops.read_op, std::move(op));
-    want_read = (ops.read_op != nullptr);
-    want_write = (ops.write_op != nullptr);
 
-    if (!want_read && !want_write) {
+    if (!ops.read_op && !ops.write_op) {
       fd_operations_.erase(it);
     }
   }
@@ -205,11 +243,7 @@ auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
     old->abort(make_error_code(error::operation_aborted));
   }
 
-  if (want_read || want_write) {
-    backend_update_fd_interest(fd, want_read, want_write);
-  } else {
-    backend_remove_fd_interest(fd);
-  }
+  reconcile_fd_interest_async(fd);
 
   wakeup();
   return fd_event_handle{this, fd, fd_event_kind::read, token};
@@ -218,8 +252,6 @@ auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
 auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op)
   -> fd_event_handle {
   std::unique_ptr<operation_base> old;
-  bool want_read = false;
-  bool want_write = false;
   std::uint64_t token = 0;
 
   {
@@ -239,10 +271,8 @@ auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> 
     }
 
     old = std::exchange(ops.write_op, std::move(op));
-    want_read = (ops.read_op != nullptr);
-    want_write = (ops.write_op != nullptr);
 
-    if (!want_read && !want_write) {
+    if (!ops.read_op && !ops.write_op) {
       fd_operations_.erase(it);
     }
   }
@@ -250,11 +280,7 @@ auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> 
     old->abort(make_error_code(error::operation_aborted));
   }
 
-  if (want_read || want_write) {
-    backend_update_fd_interest(fd, want_read, want_write);
-  } else {
-    backend_remove_fd_interest(fd);
-  }
+  reconcile_fd_interest_async(fd);
 
   wakeup();
   return fd_event_handle{this, fd, fd_event_kind::write, token};
@@ -266,14 +292,15 @@ void io_context_impl::deregister_fd(int fd) {
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end()) {
-      backend_remove_fd_interest(fd);
-      return;
+      // Ensure any stale backend registration is removed, but do it out of the lock.
+    } else {
+      removed = std::move(it->second);
+      fd_operations_.erase(it);
     }
-    removed = std::move(it->second);
-    fd_operations_.erase(it);
   }
 
-  backend_remove_fd_interest(fd);
+  // Always attempt to remove interest; safe and idempotent if it wasn't registered.
+  reconcile_fd_interest_async(fd);
 
   auto const ec = make_error_code(error::operation_aborted);
   if (removed.read_op) {
@@ -292,8 +319,6 @@ void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t 
   }
 
   std::unique_ptr<operation_base> removed;
-  bool want_read = false;
-  bool want_write = false;
   bool matched = false;
 
   {
@@ -323,21 +348,14 @@ void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t 
       return;  // overwritten / already completed / different registration
     }
 
-    want_read = (ops.read_op != nullptr);
-    want_write = (ops.write_op != nullptr);
-
-    if (!want_read && !want_write) {
+    if (!ops.read_op && !ops.write_op) {
       fd_operations_.erase(it);
     }
   }
 
   // Best-effort: ignore backend errors in noexcept cancel path.
   try {
-    if (want_read || want_write) {
-      backend_update_fd_interest(fd, want_read, want_write);
-    } else {
-      backend_remove_fd_interest(fd);
-    }
+    reconcile_fd_interest_async(fd);
   } catch (...) {
   }
 
@@ -353,6 +371,8 @@ void io_context_impl::add_work_guard() noexcept {
 
 void io_context_impl::remove_work_guard() noexcept {
   auto const old = work_guard_counter_.fetch_sub(1, std::memory_order_acq_rel);
+  XZ_ENSURE(old > 0, "io_context_impl: remove_work_guard() called more times than add_work_guard()");
+
   if (old == 1) {
     wakeup();
   }

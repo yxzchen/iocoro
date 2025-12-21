@@ -11,19 +11,19 @@ namespace {
                        int line, char const* func) noexcept {
   if (msg) {
     std::fprintf(stderr,
-                 "[xz::io] %s failure\n"
+                 "[iocoro] %s failure\n"
                  "  expression: %s\n"
                  "  message   : %s\n"
                  "  location  : %s:%d\n"
                  "  function  : %s\n",
-                 kind, expr, msg, file, line, func);
+                 kind, expr ? expr : "(none)", msg, file, line, func);
   } else {
     std::fprintf(stderr,
-                 "[xz::io] %s failure\n"
+                 "[iocoro] %s failure\n"
                  "  expression: %s\n"
                  "  location  : %s:%d\n"
                  "  function  : %s\n",
-                 kind, expr, file, line, func);
+                 kind, expr ? expr : "(none)", file, line, func);
   }
   std::fflush(stderr);
   std::abort();
@@ -51,6 +51,10 @@ void ensure_fail(char const* expr, char const* file, int line, char const* func)
 void ensure_fail(char const* expr, char const* msg, char const* file, int line,
                  char const* func) noexcept {
   fail("ENSURE", expr, msg, file, line, func);
+}
+
+void unreachable_fail(char const* file, int line, char const* func) noexcept {
+  fail("UNREACHABLE", nullptr, nullptr, file, line, func);
 }
 
 }  // namespace xz::io::detail

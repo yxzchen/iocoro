@@ -19,7 +19,7 @@ class work_guard {
 
   /// Construct a work guard for the given executor
   explicit work_guard(executor_type const& ex) : executor_(ex), owns_(true) {
-    XZ_ENSURE(executor_, "[iocoro] work_guard: requires a non-empty executor");
+    XZ_ENSURE(executor_, "work_guard: requires a non-empty executor");
     executor_.add_work_guard();
   }
 

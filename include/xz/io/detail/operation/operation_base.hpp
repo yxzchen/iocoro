@@ -29,7 +29,7 @@ class operation_base {
   /// Ownership-transfer is centralized here: the reactor takes over `self`
   /// and will eventually complete / abort it.
   void start(std::unique_ptr<operation_base> self) {
-    XZ_ENSURE(self.get() == this, "[iocoro] operation_base: start(self) self must own *this");
+    XZ_ENSURE(self.get() == this, "operation_base: start(self) self must own *this");
     do_start(std::move(self));
   }
 
@@ -38,7 +38,7 @@ class operation_base {
 
  protected:
   explicit operation_base(xz::io::executor const& ex) noexcept : impl_{ex.impl_} {
-    XZ_ENSURE(impl_ != nullptr, "[iocoro] operation_base: executor has null impl_");
+    XZ_ENSURE(impl_ != nullptr, "operation_base: executor has null impl_");
   }
 
   io_context_impl* impl_;
