@@ -180,24 +180,25 @@ auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
   {
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end() && !op) {
+      return fd_event_handle{this, fd, fd_event_kind::read, 0};
+    }
+
     if (it == fd_operations_.end()) {
-      if (op) {
-        auto& ops = fd_operations_[fd];
-        token = ops.read_token = next_fd_token_++;
-        old = std::exchange(ops.read_op, std::move(op));
-        want_read = (ops.read_op != nullptr);
-        want_write = (ops.write_op != nullptr);
-      }
-    } else {
-      if (op) {
-        token = it->second.read_token = next_fd_token_++;
-      }
-      old = std::exchange(it->second.read_op, std::move(op));
-      want_read = (it->second.read_op != nullptr);
-      want_write = (it->second.write_op != nullptr);
-      if (!want_read && !want_write) {
-        fd_operations_.erase(it);
-      }
+      it = fd_operations_.emplace(fd, fd_ops{}).first;
+    }
+
+    auto& ops = it->second;
+    if (op) {
+      token = ops.read_token = next_fd_token_++;
+    }
+
+    old = std::exchange(ops.read_op, std::move(op));
+    want_read = (ops.read_op != nullptr);
+    want_write = (ops.write_op != nullptr);
+
+    if (!want_read && !want_write) {
+      fd_operations_.erase(it);
     }
   }
   if (old) {
@@ -224,24 +225,25 @@ auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> 
   {
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end() && !op) {
+      return fd_event_handle{this, fd, fd_event_kind::write, 0};
+    }
+
     if (it == fd_operations_.end()) {
-      if (op) {
-        auto& ops = fd_operations_[fd];
-        token = ops.write_token = next_fd_token_++;
-        old = std::exchange(ops.write_op, std::move(op));
-        want_read = (ops.read_op != nullptr);
-        want_write = (ops.write_op != nullptr);
-      }
-    } else {
-      if (op) {
-        token = it->second.write_token = next_fd_token_++;
-      }
-      old = std::exchange(it->second.write_op, std::move(op));
-      want_read = (it->second.read_op != nullptr);
-      want_write = (it->second.write_op != nullptr);
-      if (!want_read && !want_write) {
-        fd_operations_.erase(it);
-      }
+      it = fd_operations_.emplace(fd, fd_ops{}).first;
+    }
+
+    auto& ops = it->second;
+    if (op) {
+      token = ops.write_token = next_fd_token_++;
+    }
+
+    old = std::exchange(ops.write_op, std::move(op));
+    want_read = (ops.read_op != nullptr);
+    want_write = (ops.write_op != nullptr);
+
+    if (!want_read && !want_write) {
+      fd_operations_.erase(it);
     }
   }
   if (old) {
