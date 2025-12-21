@@ -101,11 +101,6 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
   -> std::size_t {
-  // Platform-specific reactor step:
-  // - Wait for fd readiness or wakeups.
-  // - Complete registered fd operations.
-  //
-  // NOTE: This function no longer runs timers/posted; the run loop already drives those.
   executor_guard g{executor{*this}};
 
   int timeout_ms = -1;
@@ -113,7 +108,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     timeout_ms = static_cast<int>(max_wait->count());
   }
 
-  constexpr int max_events = 64;
+  constexpr int max_events = 128;
   epoll_event events[max_events]{};
 
   int nfds = ::epoll_wait(epoll_fd_, events, max_events, timeout_ms);
