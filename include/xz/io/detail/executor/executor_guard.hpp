@@ -11,9 +11,7 @@ inline auto get_current_executor() noexcept -> executor { return current_executo
 struct executor_guard {
   executor prev;
 
-  explicit executor_guard(executor ex) noexcept : prev(current_executor) {
-    current_executor = ex;
-  }
+  explicit executor_guard(executor ex) noexcept : prev(current_executor) { current_executor = ex; }
   ~executor_guard() { current_executor = prev; }
 
   executor_guard(executor_guard const&) = delete;

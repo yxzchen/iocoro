@@ -21,5 +21,3 @@ TEST(awaitable_compile_test, can_create_and_destroy_cold_coroutine_void) {
 }
 
 }  // namespace
-
-
