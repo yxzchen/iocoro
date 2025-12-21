@@ -8,6 +8,7 @@
 #include <limits>
 #include <system_error>
 
+#include <liburing.h>
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -20,12 +21,18 @@ constexpr std::uint64_t tag_poll = 0;    // poll-add completion for an fd
 constexpr std::uint64_t tag_wakeup = 1;  // poll-add completion for eventfd wakeup
 constexpr std::uint64_t tag_remove = 2;  // poll-remove completion (ignored)
 
-auto pack_fd(int fd, std::uint64_t tag) noexcept -> std::uint64_t {
-  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(fd)) << 2) | (tag & 0x3ULL);
+constexpr std::uint64_t fd_shift = 2;
+constexpr std::uint64_t gen_shift = 34;  // 2 bits tag + 32 bits fd
+
+auto pack_fd(int fd, std::uint64_t tag, std::uint32_t gen = 0) noexcept -> std::uint64_t {
+  return (static_cast<std::uint64_t>(gen) << gen_shift) |
+         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(fd)) << fd_shift) |
+         (tag & 0x3ULL);
 }
 
 auto unpack_tag(std::uint64_t data) noexcept -> std::uint64_t { return (data & 0x3ULL); }
-auto unpack_fd(std::uint64_t data) noexcept -> int { return static_cast<int>(data >> 2); }
+auto unpack_fd(std::uint64_t data) noexcept -> int { return static_cast<int>((data >> fd_shift) & 0xFFFFFFFFULL); }
+auto unpack_gen(std::uint64_t data) noexcept -> std::uint32_t { return static_cast<std::uint32_t>(data >> gen_shift); }
 
 void close_if_valid(int& fd) noexcept {
   if (fd >= 0) {
@@ -108,30 +115,146 @@ void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool wa
   }
   mask |= (POLLERR | POLLHUP | POLLRDHUP);
 
-  auto* sqe = ::io_uring_get_sqe(&ring_);
-  if (sqe == nullptr) {
+  // Track per-fd poll state so we never have more than one pending poll_add per fd.
+  // If the desired mask changes while a poll is pending, we cancel it via poll_remove
+  // and re-arm after we observe the poll completion (often with -ECANCELED).
+  std::optional<std::uint64_t> cancel_user_data;
+  std::optional<std::uint64_t> arm_user_data;
+  int arm_mask = 0;
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto& st = uring_polls_[fd];
+    st.desired_mask = mask;
+
+    if (st.armed) {
+      if (st.active_mask == mask) {
+        return;  // already armed with the same mask
+      }
+      if (!st.cancel_requested) {
+        st.cancel_requested = true;
+        cancel_user_data = st.active_user_data;
+      }
+    } else {
+      st.armed = true;
+      st.cancel_requested = false;
+      st.active_mask = mask;
+      st.active_gen = st.next_gen++;
+      st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
+      arm_user_data = st.active_user_data;
+      arm_mask = mask;
+    }
+  }
+
+  if (cancel_user_data.has_value()) {
+    auto* sqe = ::io_uring_get_sqe(&ring_);
+    if (sqe == nullptr) {
+      int const submit = ::io_uring_submit(&ring_);
+      if (submit < 0) {
+        throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
+      }
+      sqe = ::io_uring_get_sqe(&ring_);
+      if (sqe == nullptr) {
+        throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
+                                "io_uring_get_sqe failed");
+      }
+    }
+
+    ::io_uring_prep_poll_remove(sqe, *cancel_user_data);
+    ::io_uring_sqe_set_data64(sqe, pack_fd(fd, tag_remove));
     int const submit = ::io_uring_submit(&ring_);
     if (submit < 0) {
       throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
     }
+    return;
+  }
+
+  if (!arm_user_data.has_value()) {
+    return;
+  }
+
+  auto* sqe = ::io_uring_get_sqe(&ring_);
+  if (sqe == nullptr) {
+    int const submit = ::io_uring_submit(&ring_);
+    if (submit < 0) {
+      {
+        std::scoped_lock lk{fd_mutex_};
+        auto it = uring_polls_.find(fd);
+        if (it != uring_polls_.end() && it->second.active_user_data == *arm_user_data) {
+          it->second.armed = false;
+          it->second.cancel_requested = false;
+          it->second.active_user_data = 0;
+          it->second.active_gen = 0;
+          it->second.active_mask = 0;
+        }
+      }
+      throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
+    }
     sqe = ::io_uring_get_sqe(&ring_);
     if (sqe == nullptr) {
+      {
+        std::scoped_lock lk{fd_mutex_};
+        auto it = uring_polls_.find(fd);
+        if (it != uring_polls_.end() && it->second.active_user_data == *arm_user_data) {
+          it->second.armed = false;
+          it->second.cancel_requested = false;
+          it->second.active_user_data = 0;
+          it->second.active_gen = 0;
+          it->second.active_mask = 0;
+        }
+      }
       throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
                               "io_uring_get_sqe failed");
     }
   }
 
-  ::io_uring_prep_poll_add(sqe, fd, mask);
-  ::io_uring_sqe_set_data64(sqe, pack_fd(fd, tag_poll));
+  ::io_uring_prep_poll_add(sqe, fd, arm_mask);
+  ::io_uring_sqe_set_data64(sqe, *arm_user_data);
 
   int const submit = ::io_uring_submit(&ring_);
   if (submit < 0) {
+    {
+      std::scoped_lock lk{fd_mutex_};
+      auto it = uring_polls_.find(fd);
+      if (it != uring_polls_.end() && it->second.active_user_data == *arm_user_data) {
+        it->second.armed = false;
+        it->second.cancel_requested = false;
+        it->second.active_user_data = 0;
+        it->second.active_gen = 0;
+        it->second.active_mask = 0;
+      }
+    }
     throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
   }
 }
 
 void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
   if (fd < 0) {
+    return;
+  }
+
+  std::optional<std::uint64_t> cancel_user_data;
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto it = uring_polls_.find(fd);
+    if (it == uring_polls_.end()) {
+      return;
+    }
+
+    auto& st = it->second;
+    st.desired_mask = 0;
+
+    if (!st.armed) {
+      uring_polls_.erase(it);
+      return;
+    }
+
+    if (!st.cancel_requested) {
+      st.cancel_requested = true;
+      cancel_user_data = st.active_user_data;
+    }
+  }
+
+  if (!cancel_user_data.has_value()) {
     return;
   }
 
@@ -144,7 +267,7 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
     }
   }
 
-  ::io_uring_prep_poll_remove(sqe, pack_fd(fd, tag_poll));
+  ::io_uring_prep_poll_remove(sqe, *cancel_user_data);
   ::io_uring_sqe_set_data64(sqe, pack_fd(fd, tag_remove));
   (void)::io_uring_submit(&ring_);
 }
@@ -201,16 +324,22 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     int const fd = unpack_fd(data);
+    std::uint32_t const gen = unpack_gen(data);
     int const res = cqe->res;
     std::uint32_t const ev = (res >= 0) ? static_cast<std::uint32_t>(res) : 0U;
 
+    // If we explicitly cancelled a poll (poll_remove) to update the interest mask,
+    // the poll_add completion typically arrives with -ECANCELED. This is not an I/O
+    // error and must not complete user operations.
+    bool const is_cancelled = (res == -ECANCELED);
+
     bool const is_error =
-      (res < 0) ||
+      (!is_cancelled && (res < 0)) ||
       ((ev & (static_cast<std::uint32_t>(POLLERR) | static_cast<std::uint32_t>(POLLHUP) |
               static_cast<std::uint32_t>(POLLRDHUP))) != 0);
 
-    bool const can_read = is_error || ((ev & static_cast<std::uint32_t>(POLLIN)) != 0);
-    bool const can_write = is_error || ((ev & static_cast<std::uint32_t>(POLLOUT)) != 0);
+    bool const can_read = (!is_cancelled) && (is_error || ((ev & static_cast<std::uint32_t>(POLLIN)) != 0));
+    bool const can_write = (!is_cancelled) && (is_error || ((ev & static_cast<std::uint32_t>(POLLOUT)) != 0));
 
     std::unique_ptr<operation_base> read_op;
     std::unique_ptr<operation_base> write_op;
@@ -219,12 +348,27 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 
     {
       std::scoped_lock lk{fd_mutex_};
+      // Mark the active poll as completed if this CQE corresponds to the currently
+      // armed generation for this fd.
+      auto pit = uring_polls_.find(fd);
+      if (pit != uring_polls_.end()) {
+        auto& st = pit->second;
+        if (st.armed && st.active_gen == gen) {
+          st.armed = false;
+          st.cancel_requested = false;
+          st.active_user_data = 0;
+          st.active_gen = 0;
+          st.active_mask = 0;
+          // Keep st.desired_mask as-is; it may have been updated while pending.
+        }
+      }
+
       auto it = fd_operations_.find(fd);
       if (it != fd_operations_.end()) {
-        if (can_read) {
+        if (!is_cancelled && can_read) {
           read_op = std::move(it->second.read_op);
         }
-        if (can_write) {
+        if (!is_cancelled && can_write) {
           write_op = std::move(it->second.write_op);
         }
 
@@ -241,6 +385,11 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       backend_remove_fd_interest(fd);
     } else {
       backend_update_fd_interest(fd, still_want_read, still_want_write);
+    }
+
+    if (is_cancelled) {
+      ::io_uring_cqe_seen(&ring_, cqe);
+      return;
     }
 
     if (is_error) {
@@ -303,5 +452,3 @@ void io_context_impl::wakeup() {
 }
 
 }  // namespace xz::io::detail
-
-

@@ -117,6 +117,18 @@ class io_context_impl {
 #ifdef IOCORO_USE_URING
   struct io_uring ring_;
   int eventfd_ = -1;
+
+  struct uring_poll_state {
+    bool armed = false;              // a poll_add is currently pending in the kernel
+    bool cancel_requested = false;   // a poll_remove has been submitted for the active poll
+    std::uint32_t active_gen = 0;    // generation for active_user_data
+    std::uint64_t active_user_data = 0;
+    int active_mask = 0;             // POLL* mask used for the active poll_add
+    int desired_mask = 0;            // latest desired POLL* mask
+    std::uint32_t next_gen = 1;      // monotonically increasing generation counter
+  };
+
+  std::unordered_map<int, uring_poll_state> uring_polls_;
 #else
   int epoll_fd_ = -1;
   int eventfd_ = -1;
