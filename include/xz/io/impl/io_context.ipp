@@ -35,8 +35,6 @@ auto io_context::schedule_timer(std::chrono::milliseconds timeout, std::function
   return timer_handle(entry);
 }
 
-auto io_context::native_handle() const noexcept -> int { return impl_->native_handle(); }
-
 auto io_context::get_executor() noexcept -> executor { return executor{*impl_}; }
 
 }  // namespace xz::io

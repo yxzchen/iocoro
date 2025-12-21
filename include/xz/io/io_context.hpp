@@ -39,8 +39,6 @@ class io_context {
   auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
     -> timer_handle;
 
-  auto native_handle() const noexcept -> int;
-
   /// Get an executor associated with this io_context
   auto get_executor() noexcept -> executor;
 

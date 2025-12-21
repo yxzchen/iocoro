@@ -18,10 +18,6 @@ struct io_context_impl::backend_impl {
   int eventfd = -1;
 };
 
-auto io_context_impl::native_handle() const noexcept -> std::uintptr_t {
-  return static_cast<std::uintptr_t>(backend_->epoll_fd);
-}
-
 namespace {
 
 void close_if_valid(int& fd) noexcept {

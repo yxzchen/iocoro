@@ -32,10 +32,6 @@ struct io_context_impl::backend_impl {
   std::unordered_map<int, uring_poll_state> uring_polls;
 };
 
-auto io_context_impl::native_handle() const noexcept -> std::uintptr_t {
-  return static_cast<std::uintptr_t>(backend_->ring.ring_fd);
-}
-
 namespace {
 
 constexpr std::uint64_t tag_poll = 0;    // poll-add completion for an fd
