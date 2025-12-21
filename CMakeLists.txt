@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(ioxz VERSION 0.1.0 LANGUAGES CXX)
+project(iocoro VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,18 +22,18 @@ else()
     set(LIBURING_FOUND FALSE)
 endif()
 
-add_library(ioxz INTERFACE)
-target_include_directories(ioxz INTERFACE
+add_library(iocoro INTERFACE)
+target_include_directories(iocoro INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-target_compile_features(ioxz INTERFACE cxx_std_20)
-target_link_libraries(ioxz INTERFACE pthread fmt::fmt)
+target_compile_features(iocoro INTERFACE cxx_std_20)
+target_link_libraries(iocoro INTERFACE pthread fmt::fmt)
 
 if(LIBURING_FOUND)
-    target_include_directories(ioxz INTERFACE ${LIBURING_INCLUDE_DIR})
-    target_link_libraries(ioxz INTERFACE ${LIBURING_LIBRARY})
-    target_compile_definitions(ioxz INTERFACE IOCORO_HAS_URING)
+    target_include_directories(iocoro INTERFACE ${LIBURING_INCLUDE_DIR})
+    target_link_libraries(iocoro INTERFACE ${LIBURING_LIBRARY})
+    target_compile_definitions(iocoro INTERFACE IOCORO_HAS_URING)
 endif()
 
 option(IOCORO_BUILD_TESTS "Build tests" OFF)

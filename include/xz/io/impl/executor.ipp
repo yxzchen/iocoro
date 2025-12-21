@@ -23,7 +23,7 @@ void executor::remove_work_guard() const noexcept {
 }
 
 auto executor::ensure_impl() const -> detail::io_context_impl& {
-  XZ_ENSURE(impl_, "[ioxz] executor: empty executor");
+  XZ_ENSURE(impl_, "[iocoro] executor: empty executor");
   return *impl_;
 }
 
