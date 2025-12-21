@@ -11,5 +11,5 @@ macro(make_test TEST_NAME)
   gtest_discover_tests(${TEST_NAME})
 endmacro()
 
-#make_test(io_context_test)
+make_test(io_context_test)
 make_test(awaitable_compile_test)
