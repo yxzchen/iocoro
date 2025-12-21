@@ -22,31 +22,6 @@ void close_if_valid(int& fd) noexcept {
   }
 }
 
-void epoll_ctl_del_noexcept(int epoll_fd, int fd) noexcept {
-  if (epoll_fd < 0 || fd < 0) {
-    return;
-  }
-  ::epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-}
-
-void epoll_ctl_update_or_add(int epoll_fd, int fd, std::uint32_t events) {
-  epoll_event ev{};
-  ev.events = events;
-  ev.data.fd = fd;
-
-  if (::epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) == 0) {
-    return;
-  }
-
-  if (errno == ENOENT) {
-    if (::epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) == 0) {
-      return;
-    }
-  }
-
-  throw std::system_error(errno, std::generic_category(), "epoll_ctl (add/mod) failed");
-}
-
 void drain_eventfd(int eventfd) noexcept {
   std::uint64_t value = 0;
   for (;;) {
@@ -91,80 +66,37 @@ io_context_impl::~io_context_impl() {
   close_if_valid(epoll_fd_);
 }
 
-void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
-  std::unique_ptr<operation_base> old;
-  bool want_read = false;
-  bool want_write = false;
-
-  {
-    std::scoped_lock lk{fd_mutex_};
-    auto& ops = fd_operations_[fd];
-    old = std::exchange(ops.read_op, std::move(op));
-    want_read = (ops.read_op != nullptr);
-    want_write = (ops.write_op != nullptr);
+void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool want_write) {
+  std::uint32_t events = static_cast<std::uint32_t>(EPOLLET);
+  if (want_read) {
+    events |= static_cast<std::uint32_t>(EPOLLIN);
+  }
+  if (want_write) {
+    events |= static_cast<std::uint32_t>(EPOLLOUT);
   }
 
-  if (old) {
-    old->abort(make_error_code(error::operation_aborted));
+  epoll_event ev{};
+  ev.events = events;
+  ev.data.fd = fd;
+
+  if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0) {
+    return;
   }
 
-  epoll_ctl_update_or_add(epoll_fd_, fd,
-                          (want_read ? static_cast<std::uint32_t>(EPOLLIN) : 0u) |
-                            (want_write ? static_cast<std::uint32_t>(EPOLLOUT) : 0u) |
-                            static_cast<std::uint32_t>(EPOLLET));
-
-  wakeup();
-}
-
-void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
-  std::unique_ptr<operation_base> old;
-  bool want_read = false;
-  bool want_write = false;
-
-  {
-    std::scoped_lock lk{fd_mutex_};
-    auto& ops = fd_operations_[fd];
-    old = std::exchange(ops.write_op, std::move(op));
-    want_read = (ops.read_op != nullptr);
-    want_write = (ops.write_op != nullptr);
-  }
-
-  if (old) {
-    old->abort(make_error_code(error::operation_aborted));
-  }
-
-  epoll_ctl_update_or_add(epoll_fd_, fd,
-                          (want_read ? static_cast<std::uint32_t>(EPOLLIN) : 0u) |
-                            (want_write ? static_cast<std::uint32_t>(EPOLLOUT) : 0u) |
-                            static_cast<std::uint32_t>(EPOLLET));
-
-  wakeup();
-}
-
-void io_context_impl::deregister_fd(int fd) {
-  fd_ops removed;
-  {
-    std::scoped_lock lk{fd_mutex_};
-    auto it = fd_operations_.find(fd);
-    if (it == fd_operations_.end()) {
-      epoll_ctl_del_noexcept(epoll_fd_, fd);
+  if (errno == ENOENT) {
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) == 0) {
       return;
     }
-    removed = std::move(it->second);
-    fd_operations_.erase(it);
   }
 
-  epoll_ctl_del_noexcept(epoll_fd_, fd);
+  throw std::system_error(errno, std::generic_category(), "epoll_ctl (add/mod) failed");
+}
 
-  auto const ec = make_error_code(error::operation_aborted);
-  if (removed.read_op) {
-    removed.read_op->abort(ec);
+void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
+  if (epoll_fd_ < 0 || fd < 0) {
+    return;
   }
-  if (removed.write_op) {
-    removed.write_op->abort(ec);
-  }
-
-  wakeup();
+  ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
 }
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
@@ -233,12 +165,9 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     if (!still_want_read && !still_want_write) {
-      epoll_ctl_del_noexcept(epoll_fd_, fd);
+      backend_remove_fd_interest(fd);
     } else {
-      epoll_ctl_update_or_add(epoll_fd_, fd,
-                              (still_want_read ? static_cast<std::uint32_t>(EPOLLIN) : 0u) |
-                                (still_want_write ? static_cast<std::uint32_t>(EPOLLOUT) : 0u) |
-                                static_cast<std::uint32_t>(EPOLLET));
+      backend_update_fd_interest(fd, still_want_read, still_want_write);
     }
 
     if (is_error) {

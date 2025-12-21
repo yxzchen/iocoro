@@ -3,6 +3,12 @@
 #include <xz/io/detail/operation/operation_base.hpp>
 #include <xz/io/error.hpp>
 
+#ifdef IOXZ_HAS_URING
+#include <xz/io/impl/backends/uring.ipp>
+#else
+#include <xz/io/impl/backends/epoll.ipp>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <queue>
@@ -11,16 +17,6 @@
 #include <utility>
 
 namespace xz::io::detail {
-
-// Backend note:
-// - For epoll builds, ctor/dtor + fd registration + process_events/wakeup are implemented in
-//   `impl/backends/epoll.ipp`.
-// - For uring (or no-backend-yet) builds, we keep a minimal fallback here.
-#ifdef IOCORO_HAS_URING
-io_context_impl::io_context_impl() = default;
-
-io_context_impl::~io_context_impl() { stop(); }
-#endif
 
 auto io_context_impl::run() -> std::size_t {
   set_thread_id();
@@ -149,30 +145,53 @@ auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   return entry;
 }
 
-#ifdef IOCORO_HAS_URING
 void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
   std::unique_ptr<operation_base> old;
+  bool want_read = false;
+  bool want_write = false;
+
   {
     std::scoped_lock lk{fd_mutex_};
     auto& ops = fd_operations_[fd];
     old = std::exchange(ops.read_op, std::move(op));
+    want_read = (ops.read_op != nullptr);
+    want_write = (ops.write_op != nullptr);
   }
   if (old) {
     old->abort(make_error_code(error::operation_aborted));
   }
+
+  if (want_read || want_write) {
+    backend_update_fd_interest(fd, want_read, want_write);
+  } else {
+    backend_remove_fd_interest(fd);
+  }
+
   wakeup();
 }
 
 void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
   std::unique_ptr<operation_base> old;
+  bool want_read = false;
+  bool want_write = false;
+
   {
     std::scoped_lock lk{fd_mutex_};
     auto& ops = fd_operations_[fd];
     old = std::exchange(ops.write_op, std::move(op));
+    want_read = (ops.read_op != nullptr);
+    want_write = (ops.write_op != nullptr);
   }
   if (old) {
     old->abort(make_error_code(error::operation_aborted));
   }
+
+  if (want_read || want_write) {
+    backend_update_fd_interest(fd, want_read, want_write);
+  } else {
+    backend_remove_fd_interest(fd);
+  }
+
   wakeup();
 }
 
@@ -182,11 +201,14 @@ void io_context_impl::deregister_fd(int fd) {
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end()) {
+      backend_remove_fd_interest(fd);
       return;
     }
     removed = std::move(it->second);
     fd_operations_.erase(it);
   }
+
+  backend_remove_fd_interest(fd);
 
   auto const ec = make_error_code(error::operation_aborted);
   if (removed.read_op) {
@@ -198,7 +220,6 @@ void io_context_impl::deregister_fd(int fd) {
 
   wakeup();
 }
-#endif
 
 void io_context_impl::add_work_guard() noexcept {
   work_guard_counter_.fetch_add(1, std::memory_order_acq_rel);
@@ -218,25 +239,6 @@ void io_context_impl::set_thread_id() noexcept {
 auto io_context_impl::running_in_this_thread() const noexcept -> bool {
   return thread_id_.load(std::memory_order_acquire) == std::this_thread::get_id();
 }
-
-#ifdef IOCORO_HAS_URING
-auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
-  -> std::size_t {
-  // Platform-independent fallback:
-  // - backends (epoll/uring/...) should replace this with a reactor-driven implementation
-  //   that completes fd operations and integrates wakeups.
-  // - For now, we only provide waiting semantics to avoid a tight busy-loop.
-  if (max_wait.has_value()) {
-    if (max_wait->count() > 0) {
-      std::this_thread::sleep_for(*max_wait);
-    }
-  } else {
-    // "Infinite" wait: yield so we don't spin if nothing else can wake us up.
-    std::this_thread::yield();
-  }
-  return 0;
-}
-#endif
 
 auto io_context_impl::process_timers() -> std::size_t {
   std::unique_lock lk{timer_mutex_};
@@ -336,13 +338,6 @@ auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
   }
   return std::chrono::duration_cast<std::chrono::milliseconds>(expiry - now);
 }
-
-#ifdef IOCORO_HAS_URING
-void io_context_impl::wakeup() {
-  // Platform-independent fallback: no-op.
-  // Backends should signal their reactor wait primitive here (eventfd, io_uring_enter, ...).
-}
-#endif
 
 auto io_context_impl::has_work() -> bool {
   if (work_guard_counter_.load(std::memory_order_acquire) > 0) {

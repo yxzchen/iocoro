@@ -72,6 +72,9 @@ class io_context_impl {
 #endif
 
  private:
+  void backend_update_fd_interest(int fd, bool want_read, bool want_write);
+  void backend_remove_fd_interest(int fd) noexcept;
+
   auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt)
     -> std::size_t;
   auto process_timers() -> std::size_t;
