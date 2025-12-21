@@ -353,7 +353,6 @@ auto io_context_impl::process_posted() -> std::size_t {
     auto f = std::move(local.front());
     local.pop();
     if (f) {
-      // No catch even if this might throw. Needs further consideration.
       f();
     }
     ++n;
@@ -439,13 +438,7 @@ void io_context_impl::reconcile_fd_interest_async(int fd) {
     return;
   }
 
-  post([this, fd] {
-    try {
-      reconcile_fd_interest(fd);
-    } catch (...) {
-      XZ_UNREACHABLE();
-    }
-  });
+  post([this, fd] { reconcile_fd_interest(fd); });
 }
 
 void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept {
@@ -488,11 +481,7 @@ void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t 
     }
   }
 
-  // Best-effort: ignore backend errors in noexcept cancel path.
-  try {
-    reconcile_fd_interest_async(fd);
-  } catch (...) {
-  }
+  reconcile_fd_interest_async(fd);
 
   if (removed) {
     removed->abort(make_error_code(error::operation_aborted));
