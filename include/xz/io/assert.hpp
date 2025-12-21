@@ -11,8 +11,7 @@
 #define XZ_UNLIKELY(x) (x)
 #endif
 
-namespace xz::io {
-namespace detail {
+namespace xz::io::detail {
 
 [[noreturn]] void assert_fail(char const* expr, char const* file, int line,
                               char const* func) noexcept;
@@ -26,8 +25,7 @@ namespace detail {
 [[noreturn]] void ensure_fail(char const* expr, char const* msg, char const* file, int line,
                               char const* func) noexcept;
 
-}  // namespace detail
-}  // namespace xz::io
+}  // namespace xz::io::detail
 
 // -------------------- ASSERT --------------------
 #if !defined(NDEBUG)
@@ -39,10 +37,9 @@ namespace detail {
 
 #define XZ_ASSERT_2(expr, msg) \
   (XZ_LIKELY(expr) ? (void)0   \
-                     : ::xz::io::detail::assert_fail(#expr, msg, __FILE__, __LINE__, __func__))
+                   : ::xz::io::detail::assert_fail(#expr, msg, __FILE__, __LINE__, __func__))
 
-#define XZ_ASSERT(...) \
-  XZ_ASSERT_SELECTOR(__VA_ARGS__, XZ_ASSERT_2, XZ_ASSERT_1)(__VA_ARGS__)
+#define XZ_ASSERT(...) XZ_ASSERT_SELECTOR(__VA_ARGS__, XZ_ASSERT_2, XZ_ASSERT_1)(__VA_ARGS__)
 
 #else
 #define XZ_ASSERT(...) ((void)0)
@@ -57,7 +54,6 @@ namespace detail {
 
 #define XZ_ENSURE_2(expr, msg) \
   (XZ_LIKELY(expr) ? (void)0   \
-                     : ::xz::io::detail::ensure_fail(#expr, msg, __FILE__, __LINE__, __func__))
+                   : ::xz::io::detail::ensure_fail(#expr, msg, __FILE__, __LINE__, __func__))
 
-#define XZ_ENSURE(...) \
-  XZ_ENSURE_SELECTOR(__VA_ARGS__, XZ_ENSURE_2, XZ_ENSURE_1)(__VA_ARGS__)
+#define XZ_ENSURE(...) XZ_ENSURE_SELECTOR(__VA_ARGS__, XZ_ENSURE_2, XZ_ENSURE_1)(__VA_ARGS__)
