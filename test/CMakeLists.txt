@@ -8,6 +8,9 @@ macro(make_test TEST_NAME)
     GTest::gtest
     GTest::gtest_main
   )
+  if(TARGET iocoro_warnings)
+    target_link_libraries(${TEST_NAME} PRIVATE iocoro_warnings)
+  endif()
   gtest_discover_tests(${TEST_NAME})
 endmacro()
 
