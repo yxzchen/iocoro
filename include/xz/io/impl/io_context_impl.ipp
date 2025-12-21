@@ -80,8 +80,8 @@ auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t 
       break;
     }
 
-    auto const remaining =
-      std::chrono::duration_cast<std::chrono::milliseconds>(std::max(deadline - now, {}));
+    auto const remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::max(deadline - now, std::chrono::steady_clock::duration::zero()));
 
     auto const timer_timeout = get_timeout();
     std::chrono::milliseconds wait_ms = remaining;
