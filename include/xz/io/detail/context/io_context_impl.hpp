@@ -32,6 +32,24 @@ struct timer_entry_compare {
 
 class io_context_impl {
  public:
+  enum class fd_event_kind : std::uint8_t { read, write };
+
+  struct fd_event_handle {
+    io_context_impl* impl = nullptr;
+    int fd = -1;
+    fd_event_kind kind = fd_event_kind::read;
+    std::uint64_t token = 0;
+
+    auto valid() const noexcept -> bool { return impl != nullptr && fd >= 0 && token != 0; }
+    explicit operator bool() const noexcept { return valid(); }
+
+    /// Cancel the registered event iff it is still the same registration.
+    /// If the event has been overwritten/replaced, this is a no-op.
+    ///
+    /// Thread-safe: if called off the context thread, cancellation is posted.
+    void cancel() const noexcept;
+  };
+
   io_context_impl();
   ~io_context_impl();
 
@@ -54,8 +72,8 @@ class io_context_impl {
   auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
     -> std::shared_ptr<timer_entry>;
 
-  void register_fd_read(int fd, std::unique_ptr<operation_base> op);
-  void register_fd_write(int fd, std::unique_ptr<operation_base> op);
+  auto register_fd_read(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
+  auto register_fd_write(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
   void deregister_fd(int fd);
 
   void add_work_guard() noexcept;
@@ -73,6 +91,7 @@ class io_context_impl {
  private:
   void backend_update_fd_interest(int fd, bool want_read, bool want_write);
   void backend_remove_fd_interest(int fd) noexcept;
+  void cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept;
 
   auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt)
     -> std::size_t;
@@ -97,10 +116,13 @@ class io_context_impl {
   struct fd_ops {
     std::unique_ptr<operation_base> read_op;
     std::unique_ptr<operation_base> write_op;
+    std::uint64_t read_token = 0;
+    std::uint64_t write_token = 0;
   };
 
   std::unordered_map<int, fd_ops> fd_operations_;
   std::mutex fd_mutex_;
+  std::uint64_t next_fd_token_ = 1;
 
   std::priority_queue<std::shared_ptr<timer_entry>, std::vector<std::shared_ptr<timer_entry>>,
                       timer_entry_compare>

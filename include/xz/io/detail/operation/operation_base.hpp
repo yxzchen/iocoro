@@ -58,7 +58,7 @@ class read_operation final : public operation_base {
   read_operation(int fd, xz::io::executor const& ex) noexcept : operation_base(ex), fd_{fd} {}
 
   void do_start(std::unique_ptr<operation_base> self) override {
-    impl_->register_fd_read(fd_, std::move(self));
+    (void)impl_->register_fd_read(fd_, std::move(self));
   }
 
   void execute() override {}

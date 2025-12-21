@@ -24,6 +24,25 @@ auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
   return reinterpret_cast<std::uintptr_t>(&tls_anchor);
 }
 
+void io_context_impl::fd_event_handle::cancel() const noexcept {
+  if (!valid()) {
+    return;
+  }
+
+  auto* p = impl;
+  int const local_fd = fd;
+  auto const local_kind = kind;
+  auto const local_token = token;
+
+  if (p->running_in_this_thread()) {
+    p->cancel_fd_event(local_fd, local_kind, local_token);
+  } else {
+    p->post([p, local_fd, local_kind, local_token] {
+      p->cancel_fd_event(local_fd, local_kind, local_token);
+    });
+  }
+}
+
 auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
@@ -151,10 +170,12 @@ auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   return entry;
 }
 
-void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op) {
+auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op)
+  -> fd_event_handle {
   std::unique_ptr<operation_base> old;
   bool want_read = false;
   bool want_write = false;
+  std::uint64_t token = 0;
 
   {
     std::scoped_lock lk{fd_mutex_};
@@ -162,11 +183,15 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
     if (it == fd_operations_.end()) {
       if (op) {
         auto& ops = fd_operations_[fd];
+        token = ops.read_token = next_fd_token_++;
         old = std::exchange(ops.read_op, std::move(op));
         want_read = (ops.read_op != nullptr);
         want_write = (ops.write_op != nullptr);
       }
     } else {
+      if (op) {
+        token = it->second.read_token = next_fd_token_++;
+      }
       old = std::exchange(it->second.read_op, std::move(op));
       want_read = (it->second.read_op != nullptr);
       want_write = (it->second.write_op != nullptr);
@@ -186,12 +211,15 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
   }
 
   wakeup();
+  return fd_event_handle{this, fd, fd_event_kind::read, token};
 }
 
-void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op) {
+auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op)
+  -> fd_event_handle {
   std::unique_ptr<operation_base> old;
   bool want_read = false;
   bool want_write = false;
+  std::uint64_t token = 0;
 
   {
     std::scoped_lock lk{fd_mutex_};
@@ -199,11 +227,15 @@ void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> 
     if (it == fd_operations_.end()) {
       if (op) {
         auto& ops = fd_operations_[fd];
+        token = ops.write_token = next_fd_token_++;
         old = std::exchange(ops.write_op, std::move(op));
         want_read = (ops.read_op != nullptr);
         want_write = (ops.write_op != nullptr);
       }
     } else {
+      if (op) {
+        token = it->second.write_token = next_fd_token_++;
+      }
       old = std::exchange(it->second.write_op, std::move(op));
       want_read = (it->second.read_op != nullptr);
       want_write = (it->second.write_op != nullptr);
@@ -223,6 +255,7 @@ void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> 
   }
 
   wakeup();
+  return fd_event_handle{this, fd, fd_event_kind::write, token};
 }
 
 void io_context_impl::deregister_fd(int fd) {
@@ -248,6 +281,67 @@ void io_context_impl::deregister_fd(int fd) {
     removed.write_op->abort(ec);
   }
 
+  wakeup();
+}
+
+void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept {
+  if (fd < 0 || token == 0) {
+    return;
+  }
+
+  std::unique_ptr<operation_base> removed;
+  bool want_read = false;
+  bool want_write = false;
+  bool matched = false;
+
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end()) {
+      return;
+    }
+
+    auto& ops = it->second;
+
+    if (kind == fd_event_kind::read) {
+      if (ops.read_op && ops.read_token == token) {
+        removed = std::move(ops.read_op);
+        ops.read_token = 0;
+        matched = true;
+      }
+    } else {
+      if (ops.write_op && ops.write_token == token) {
+        removed = std::move(ops.write_op);
+        ops.write_token = 0;
+        matched = true;
+      }
+    }
+
+    if (!matched) {
+      return;  // overwritten / already completed / different registration
+    }
+
+    want_read = (ops.read_op != nullptr);
+    want_write = (ops.write_op != nullptr);
+
+    if (!want_read && !want_write) {
+      fd_operations_.erase(it);
+    }
+  }
+
+  // Best-effort: ignore backend errors in noexcept cancel path.
+  try {
+    if (want_read || want_write) {
+      backend_update_fd_interest(fd, want_read, want_write);
+    } else {
+      backend_remove_fd_interest(fd);
+    }
+  } catch (...) {
+  }
+
+  if (removed) {
+    removed->abort(make_error_code(error::operation_aborted));
+  }
   wakeup();
 }
 
