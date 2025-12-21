@@ -26,13 +26,16 @@ constexpr std::uint64_t gen_shift = 34;  // 2 bits tag + 32 bits fd
 
 auto pack_fd(int fd, std::uint64_t tag, std::uint32_t gen = 0) noexcept -> std::uint64_t {
   return (static_cast<std::uint64_t>(gen) << gen_shift) |
-         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(fd)) << fd_shift) |
-         (tag & 0x3ULL);
+         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(fd)) << fd_shift) | (tag & 0x3ULL);
 }
 
 auto unpack_tag(std::uint64_t data) noexcept -> std::uint64_t { return (data & 0x3ULL); }
-auto unpack_fd(std::uint64_t data) noexcept -> int { return static_cast<int>((data >> fd_shift) & 0xFFFFFFFFULL); }
-auto unpack_gen(std::uint64_t data) noexcept -> std::uint32_t { return static_cast<std::uint32_t>(data >> gen_shift); }
+auto unpack_fd(std::uint64_t data) noexcept -> int {
+  return static_cast<int>((data >> fd_shift) & 0xFFFFFFFFULL);
+}
+auto unpack_gen(std::uint64_t data) noexcept -> std::uint32_t {
+  return static_cast<std::uint32_t>(data >> gen_shift);
+}
 
 void close_if_valid(int& fd) noexcept {
   if (fd >= 0) {
@@ -336,8 +339,10 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       ((ev & (static_cast<std::uint32_t>(POLLERR) | static_cast<std::uint32_t>(POLLHUP) |
               static_cast<std::uint32_t>(POLLRDHUP))) != 0);
 
-    bool const can_read = (!is_cancelled) && (is_error || ((ev & static_cast<std::uint32_t>(POLLIN)) != 0));
-    bool const can_write = (!is_cancelled) && (is_error || ((ev & static_cast<std::uint32_t>(POLLOUT)) != 0));
+    bool const can_read =
+      (!is_cancelled) && (is_error || ((ev & static_cast<std::uint32_t>(POLLIN)) != 0));
+    bool const can_write =
+      (!is_cancelled) && (is_error || ((ev & static_cast<std::uint32_t>(POLLOUT)) != 0));
 
     std::unique_ptr<operation_base> read_op;
     std::unique_ptr<operation_base> write_op;
