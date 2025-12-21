@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#ifdef IOCORO_HAS_URING
+#ifdef IOCORO_USE_URING
 #include <liburing.h>
 #else
 #include <sys/epoll.h>
@@ -65,7 +65,7 @@ class io_context_impl {
   void set_thread_id() noexcept;
   auto running_in_this_thread() const noexcept -> bool;
 
-#ifdef IOCORO_HAS_URING
+#ifdef IOCORO_USE_URING
   auto native_handle() const noexcept -> int { return ring_.ring_fd; }
 #else
   auto native_handle() const noexcept -> int { return epoll_fd_; }
@@ -85,7 +85,7 @@ class io_context_impl {
 
   auto has_work() -> bool;
 
-#ifdef IOCORO_HAS_URING
+#ifdef IOCORO_USE_URING
   struct io_uring ring_;
 #else
   int epoll_fd_ = -1;

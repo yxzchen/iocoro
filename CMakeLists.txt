@@ -33,7 +33,7 @@ target_link_libraries(iocoro INTERFACE pthread fmt::fmt)
 if(LIBURING_FOUND)
     target_include_directories(iocoro INTERFACE ${LIBURING_INCLUDE_DIR})
     target_link_libraries(iocoro INTERFACE ${LIBURING_LIBRARY})
-    target_compile_definitions(iocoro INTERFACE IOCORO_HAS_URING)
+    target_compile_definitions(iocoro INTERFACE IOCORO_USE_URING)
 endif()
 
 option(IOCORO_BUILD_TESTS "Build tests" OFF)

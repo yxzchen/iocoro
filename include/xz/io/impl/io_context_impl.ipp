@@ -3,7 +3,7 @@
 #include <xz/io/detail/operation/operation_base.hpp>
 #include <xz/io/error.hpp>
 
-#ifdef IOXZ_HAS_URING
+#ifdef IOCORO_USE_URING
 #include <xz/io/impl/backends/uring.ipp>
 #else
 #include <xz/io/impl/backends/epoll.ipp>
