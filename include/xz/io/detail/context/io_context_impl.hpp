@@ -92,13 +92,9 @@ class io_context_impl {
 #endif
 
  private:
-  void reconcile_fd_interest(int fd);
-  void reconcile_fd_interest_async(int fd);
-
-  void backend_update_fd_interest(int fd, bool want_read, bool want_write);
-  void backend_remove_fd_interest(int fd) noexcept;
-
-  void cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept;
+  // Opaque per-thread identity token.
+  // Only valid for equality comparison within the process lifetime.
+  static auto this_thread_token() noexcept -> std::uintptr_t;
 
   auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt)
     -> std::size_t;
@@ -109,6 +105,14 @@ class io_context_impl {
   void wakeup();
 
   auto has_work() -> bool;
+
+  void reconcile_fd_interest(int fd);
+  void reconcile_fd_interest_async(int fd);
+
+  void backend_update_fd_interest(int fd, bool want_read, bool want_write);
+  void backend_remove_fd_interest(int fd) noexcept;
+
+  void cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept;
 
 #ifdef IOCORO_USE_URING
   struct io_uring ring_;
@@ -142,9 +146,6 @@ class io_context_impl {
 
   std::atomic<std::size_t> work_guard_counter_{0};
 
-  // Opaque per-thread identity token.
-  // Only valid for equality comparison within the process lifetime.
-  static auto this_thread_token() noexcept -> std::uintptr_t;
   std::atomic<std::uintptr_t> thread_token_{0};
 };
 

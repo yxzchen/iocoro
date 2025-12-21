@@ -25,61 +25,6 @@ auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
   return reinterpret_cast<std::uintptr_t>(&tls_anchor);
 }
 
-void io_context_impl::reconcile_fd_interest(int fd) {
-  bool want_read = false;
-  bool want_write = false;
-  {
-    std::scoped_lock lk{fd_mutex_};
-    auto it = fd_operations_.find(fd);
-    if (it != fd_operations_.end()) {
-      want_read = (it->second.read_op != nullptr);
-      want_write = (it->second.write_op != nullptr);
-    }
-  }
-
-  if (want_read || want_write) {
-    backend_update_fd_interest(fd, want_read, want_write);
-  } else {
-    backend_remove_fd_interest(fd);
-  }
-}
-
-void io_context_impl::reconcile_fd_interest_async(int fd) {
-  // If we're on the context thread and not stopped, update immediately so the backend
-  // state is consistent before we go back to waiting for events.
-  if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
-    reconcile_fd_interest(fd);
-    return;
-  }
-
-  post([this, fd] {
-    try {
-      reconcile_fd_interest(fd);
-    } catch (...) {
-      XZ_UNREACHABLE();
-    }
-  });
-}
-
-void io_context_impl::fd_event_handle::cancel() const noexcept {
-  if (!valid()) {
-    return;
-  }
-
-  auto* p = impl;
-  int const local_fd = fd;
-  auto const local_kind = kind;
-  auto const local_token = token;
-
-  if (p->running_in_this_thread()) {
-    p->cancel_fd_event(local_fd, local_kind, local_token);
-  } else {
-    p->post([p, local_fd, local_kind, local_token] {
-      p->cancel_fd_event(local_fd, local_kind, local_token);
-    });
-  }
-}
-
 auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
@@ -313,58 +258,6 @@ void io_context_impl::deregister_fd(int fd) {
   wakeup();
 }
 
-void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept {
-  if (fd < 0 || token == 0) {
-    return;
-  }
-
-  std::unique_ptr<operation_base> removed;
-  bool matched = false;
-
-  {
-    std::scoped_lock lk{fd_mutex_};
-    auto it = fd_operations_.find(fd);
-    if (it == fd_operations_.end()) {
-      return;
-    }
-
-    auto& ops = it->second;
-
-    if (kind == fd_event_kind::read) {
-      if (ops.read_op && ops.read_token == token) {
-        removed = std::move(ops.read_op);
-        ops.read_token = 0;
-        matched = true;
-      }
-    } else {
-      if (ops.write_op && ops.write_token == token) {
-        removed = std::move(ops.write_op);
-        ops.write_token = 0;
-        matched = true;
-      }
-    }
-
-    if (!matched) {
-      return;  // overwritten / already completed / different registration
-    }
-
-    if (!ops.read_op && !ops.write_op) {
-      fd_operations_.erase(it);
-    }
-  }
-
-  // Best-effort: ignore backend errors in noexcept cancel path.
-  try {
-    reconcile_fd_interest_async(fd);
-  } catch (...) {
-  }
-
-  if (removed) {
-    removed->abort(make_error_code(error::operation_aborted));
-  }
-  wakeup();
-}
-
 void io_context_impl::add_work_guard() noexcept {
   work_guard_counter_.fetch_add(1, std::memory_order_acq_rel);
 }
@@ -515,6 +408,113 @@ auto io_context_impl::has_work() -> bool {
   }
 
   return false;
+}
+
+void io_context_impl::reconcile_fd_interest(int fd) {
+  bool want_read = false;
+  bool want_write = false;
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto it = fd_operations_.find(fd);
+    if (it != fd_operations_.end()) {
+      want_read = (it->second.read_op != nullptr);
+      want_write = (it->second.write_op != nullptr);
+    }
+  }
+
+  if (want_read || want_write) {
+    backend_update_fd_interest(fd, want_read, want_write);
+  } else {
+    backend_remove_fd_interest(fd);
+  }
+}
+
+void io_context_impl::reconcile_fd_interest_async(int fd) {
+  // If we're on the context thread and not stopped, update immediately so the backend
+  // state is consistent before we go back to waiting for events.
+  if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
+    reconcile_fd_interest(fd);
+    return;
+  }
+
+  post([this, fd] {
+    try {
+      reconcile_fd_interest(fd);
+    } catch (...) {
+      XZ_UNREACHABLE();
+    }
+  });
+}
+
+void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept {
+  if (fd < 0 || token == 0) {
+    return;
+  }
+
+  std::unique_ptr<operation_base> removed;
+  bool matched = false;
+
+  {
+    std::scoped_lock lk{fd_mutex_};
+    auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end()) {
+      return;
+    }
+
+    auto& ops = it->second;
+
+    if (kind == fd_event_kind::read) {
+      if (ops.read_op && ops.read_token == token) {
+        removed = std::move(ops.read_op);
+        ops.read_token = 0;
+        matched = true;
+      }
+    } else {
+      if (ops.write_op && ops.write_token == token) {
+        removed = std::move(ops.write_op);
+        ops.write_token = 0;
+        matched = true;
+      }
+    }
+
+    if (!matched) {
+      return;  // overwritten / already completed / different registration
+    }
+
+    if (!ops.read_op && !ops.write_op) {
+      fd_operations_.erase(it);
+    }
+  }
+
+  // Best-effort: ignore backend errors in noexcept cancel path.
+  try {
+    reconcile_fd_interest_async(fd);
+  } catch (...) {
+  }
+
+  if (removed) {
+    removed->abort(make_error_code(error::operation_aborted));
+  }
+  wakeup();
+}
+
+void io_context_impl::fd_event_handle::cancel() const noexcept {
+  if (!valid()) {
+    return;
+  }
+
+  auto* p = impl;
+  int const local_fd = fd;
+  auto const local_kind = kind;
+  auto const local_token = token;
+
+  if (p->running_in_this_thread()) {
+    p->cancel_fd_event(local_fd, local_kind, local_token);
+  } else {
+    p->post([p, local_fd, local_kind, local_token] {
+      p->cancel_fd_event(local_fd, local_kind, local_token);
+    });
+  }
 }
 
 }  // namespace xz::io::detail
