@@ -185,7 +185,7 @@ auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
     }
   }
   if (old) {
-    old->abort(make_error_code(error::operation_aborted));
+    old->abort(error::operation_aborted);
   }
 
   reconcile_fd_interest_async(fd);
@@ -222,7 +222,7 @@ auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> 
     }
   }
   if (old) {
-    old->abort(make_error_code(error::operation_aborted));
+    old->abort(error::operation_aborted);
   }
 
   reconcile_fd_interest_async(fd);
@@ -247,12 +247,11 @@ void io_context_impl::deregister_fd(int fd) {
   // Always attempt to remove interest; safe and idempotent if it wasn't registered.
   reconcile_fd_interest_async(fd);
 
-  auto const ec = make_error_code(error::operation_aborted);
   if (removed.read_op) {
-    removed.read_op->abort(ec);
+    removed.read_op->abort(error::operation_aborted);
   }
   if (removed.write_op) {
-    removed.write_op->abort(ec);
+    removed.write_op->abort(error::operation_aborted);
   }
 
   wakeup();
@@ -484,7 +483,7 @@ void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t 
   reconcile_fd_interest_async(fd);
 
   if (removed) {
-    removed->abort(make_error_code(error::operation_aborted));
+    removed->abort(error::operation_aborted);
   }
   wakeup();
 }
