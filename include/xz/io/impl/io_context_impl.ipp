@@ -5,9 +5,7 @@
 
 namespace xz::io::detail {
 
-io_context_impl::io_context_impl() {
-  thread_id_.store(std::thread::id{}, std::memory_order_release);
-}
+io_context_impl::io_context_impl() {}
 
 io_context_impl::~io_context_impl() { stop(); }
 

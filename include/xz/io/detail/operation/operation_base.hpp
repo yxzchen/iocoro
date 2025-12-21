@@ -1,6 +1,7 @@
 #pragma once
 
 #include <xz/io/detail/context/io_context_impl.hpp>
+#include <xz/io/assert.hpp>
 #include <xz/io/executor.hpp>
 
 #include <memory>
@@ -27,13 +28,18 @@ class operation_base {
   ///
   /// Ownership-transfer is centralized here: the reactor takes over `self`
   /// and will eventually complete / abort it.
-  void start(std::unique_ptr<operation_base> self) { do_start(std::move(self)); }
+  void start(std::unique_ptr<operation_base> self) {
+    XZ_ENSURE(self.get() == this, "[iocoro] operation_base: start(self) self must own *this");
+    do_start(std::move(self));
+  }
 
   virtual void execute() = 0;
   virtual void abort(std::error_code ec) = 0;
 
  protected:
-  explicit operation_base(xz::io::executor const& ex) noexcept : impl_{ex.impl_} {}
+  explicit operation_base(xz::io::executor const& ex) noexcept : impl_{ex.impl_} {
+    XZ_ENSURE(impl_ != nullptr, "[iocoro] operation_base: executor has null impl_");
+  }
 
   io_context_impl* impl_;
 

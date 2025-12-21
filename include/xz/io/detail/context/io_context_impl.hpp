@@ -110,7 +110,7 @@ class io_context_impl {
   std::atomic<std::size_t> work_guard_counter_{0};
 
   // Thread tracking for executor support
-  std::atomic<std::thread::id> thread_id_;
+  std::atomic<std::thread::id> thread_id_{std::thread::id{}};
 };
 
 }  // namespace xz::io::detail
