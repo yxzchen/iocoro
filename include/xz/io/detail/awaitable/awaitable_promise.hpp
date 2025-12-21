@@ -54,7 +54,7 @@ struct awaitable_promise_base {
   void set_executor(executor ex) noexcept { ex_ = ex; }
 
   void detach() noexcept {
-    IOXZ_ENSURE(ex_, "[ioxz] awaitable_promise: detach() requires executor");
+    COROX_ENSURE(ex_, "[ioxz] awaitable_promise: detach() requires executor");
     detached_ = true;
   }
 
@@ -67,7 +67,7 @@ struct awaitable_promise_base {
   void resume_continuation() noexcept {
     if (!continuation_) return;
 
-    IOXZ_ENSURE(ex_, "[ioxz] awaitable_promise: resume_continuation() requires executor");
+    COROX_ENSURE(ex_, "[ioxz] awaitable_promise: resume_continuation() requires executor");
 
     // Continuation resumption is always scheduled via executor, never inline.
     ex_.post([h = continuation_, ex = ex_]() mutable {
