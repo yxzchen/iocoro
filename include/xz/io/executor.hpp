@@ -8,6 +8,8 @@ namespace detail {
 class io_context_impl;
 struct operation_base;
 }  // namespace detail
+
+template <typename Executor>
 class work_guard;
 
 /// Executor interface for executing work on an io_context
@@ -47,7 +49,9 @@ class executor {
   }
 
  private:
+  template <typename>
   friend class work_guard;
+
   friend struct detail::operation_base;
 
   void add_work_guard() const noexcept;
