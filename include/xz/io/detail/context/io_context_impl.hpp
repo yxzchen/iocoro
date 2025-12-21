@@ -10,7 +10,6 @@
 #include <mutex>
 #include <optional>
 #include <queue>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -87,6 +86,7 @@ class io_context_impl {
 
 #ifdef IOCORO_USE_URING
   struct io_uring ring_;
+  int eventfd_ = -1;
 #else
   int epoll_fd_ = -1;
   int eventfd_ = -1;
@@ -113,8 +113,10 @@ class io_context_impl {
 
   std::atomic<std::size_t> work_guard_counter_{0};
 
-  // Thread tracking for executor support
-  std::atomic<std::thread::id> thread_id_{std::thread::id{}};
+  // Opaque per-thread identity token.
+  // Only valid for equality comparison within the process lifetime.
+  static auto this_thread_token() noexcept -> std::uintptr_t;
+  std::atomic<std::uintptr_t> thread_token_{0};
 };
 
 }  // namespace xz::io::detail

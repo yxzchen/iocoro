@@ -1,0 +1,307 @@
+#include <xz/io/detail/context/io_context_impl.hpp>
+#include <xz/io/detail/executor/executor_guard.hpp>
+#include <xz/io/detail/operation/operation_base.hpp>
+#include <xz/io/error.hpp>
+
+#include <cerrno>
+#include <cstdint>
+#include <limits>
+#include <system_error>
+
+#include <poll.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
+
+namespace xz::io::detail {
+
+namespace {
+
+constexpr std::uint64_t tag_poll = 0;    // poll-add completion for an fd
+constexpr std::uint64_t tag_wakeup = 1;  // poll-add completion for eventfd wakeup
+constexpr std::uint64_t tag_remove = 2;  // poll-remove completion (ignored)
+
+auto pack_fd(int fd, std::uint64_t tag) noexcept -> std::uint64_t {
+  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(fd)) << 2) | (tag & 0x3ULL);
+}
+
+auto unpack_tag(std::uint64_t data) noexcept -> std::uint64_t { return (data & 0x3ULL); }
+auto unpack_fd(std::uint64_t data) noexcept -> int { return static_cast<int>(data >> 2); }
+
+void close_if_valid(int& fd) noexcept {
+  if (fd >= 0) {
+    ::close(fd);
+    fd = -1;
+  }
+}
+
+void drain_eventfd(int eventfd) noexcept {
+  std::uint64_t value = 0;
+  for (;;) {
+    auto const n = ::read(eventfd, &value, sizeof(value));
+    if (n > 0) {
+      continue;
+    }
+    if (n < 0 && errno == EINTR) {
+      continue;
+    }
+    break;
+  }
+}
+
+auto to_timespec(std::chrono::milliseconds ms) noexcept -> __kernel_timespec {
+  // Clamp to avoid overflow if an extremely large timeout is requested.
+  auto const clamped =
+    std::min<long long>(ms.count(), static_cast<long long>(std::numeric_limits<int>::max()));
+  __kernel_timespec ts{};
+  ts.tv_sec = static_cast<__kernel_time64_t>(clamped / 1000);
+  ts.tv_nsec = static_cast<long>(static_cast<long long>(clamped % 1000) * 1000LL * 1000LL);
+  return ts;
+}
+
+}  // namespace
+
+io_context_impl::io_context_impl() {
+  // A small queue depth is sufficient for the current poll-based integration.
+  int const ret = ::io_uring_queue_init(256, &ring_, 0);
+  if (ret < 0) {
+    throw std::system_error(-ret, std::generic_category(), "io_uring_queue_init failed");
+  }
+
+  eventfd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (eventfd_ < 0) {
+    ::io_uring_queue_exit(&ring_);
+    throw std::system_error(errno, std::generic_category(), "eventfd failed");
+  }
+
+  // Arm a poll on the wakeup eventfd so wakeup() can interrupt waits.
+  auto* sqe = ::io_uring_get_sqe(&ring_);
+  if (sqe == nullptr) {
+    close_if_valid(eventfd_);
+    ::io_uring_queue_exit(&ring_);
+    throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
+                            "io_uring_get_sqe failed");
+  }
+  ::io_uring_prep_poll_add(sqe, eventfd_, POLLIN | POLLERR | POLLHUP);
+  ::io_uring_sqe_set_data64(sqe, pack_fd(0, tag_wakeup));
+
+  int const submit = ::io_uring_submit(&ring_);
+  if (submit < 0) {
+    close_if_valid(eventfd_);
+    ::io_uring_queue_exit(&ring_);
+    throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
+  }
+}
+
+io_context_impl::~io_context_impl() {
+  stop();
+  close_if_valid(eventfd_);
+  ::io_uring_queue_exit(&ring_);
+}
+
+void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool want_write) {
+  int mask = 0;
+  if (want_read) {
+    mask |= POLLIN;
+  }
+  if (want_write) {
+    mask |= POLLOUT;
+  }
+  mask |= (POLLERR | POLLHUP | POLLRDHUP);
+
+  auto* sqe = ::io_uring_get_sqe(&ring_);
+  if (sqe == nullptr) {
+    int const submit = ::io_uring_submit(&ring_);
+    if (submit < 0) {
+      throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
+    }
+    sqe = ::io_uring_get_sqe(&ring_);
+    if (sqe == nullptr) {
+      throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
+                              "io_uring_get_sqe failed");
+    }
+  }
+
+  ::io_uring_prep_poll_add(sqe, fd, mask);
+  ::io_uring_sqe_set_data64(sqe, pack_fd(fd, tag_poll));
+
+  int const submit = ::io_uring_submit(&ring_);
+  if (submit < 0) {
+    throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
+  }
+}
+
+void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
+  if (fd < 0) {
+    return;
+  }
+
+  auto* sqe = ::io_uring_get_sqe(&ring_);
+  if (sqe == nullptr) {
+    (void)::io_uring_submit(&ring_);
+    sqe = ::io_uring_get_sqe(&ring_);
+    if (sqe == nullptr) {
+      return;
+    }
+  }
+
+  ::io_uring_prep_poll_remove(sqe, pack_fd(fd, tag_poll));
+  ::io_uring_sqe_set_data64(sqe, pack_fd(fd, tag_remove));
+  (void)::io_uring_submit(&ring_);
+}
+
+auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
+  -> std::size_t {
+  executor_guard g{executor{*this}};
+
+  // Ensure any previously prepared SQEs are submitted before we wait.
+  int const submitted = ::io_uring_submit(&ring_);
+  if (submitted < 0) {
+    throw std::system_error(-submitted, std::generic_category(), "io_uring_submit failed");
+  }
+
+  io_uring_cqe* first = nullptr;
+  int wait_ret = 0;
+
+  if (max_wait.has_value()) {
+    auto ts = to_timespec(*max_wait);
+    wait_ret = ::io_uring_wait_cqe_timeout(&ring_, &first, &ts);
+  } else {
+    wait_ret = ::io_uring_wait_cqe(&ring_, &first);
+  }
+
+  if (wait_ret < 0) {
+    if (wait_ret == -EINTR || wait_ret == -EAGAIN || wait_ret == -ETIME) {
+      return 0;
+    }
+    throw std::system_error(-wait_ret, std::generic_category(), "io_uring_wait_cqe failed");
+  }
+
+  std::size_t count = 0;
+
+  auto handle_one = [&](io_uring_cqe* cqe) {
+    std::uint64_t const data = ::io_uring_cqe_get_data64(cqe);
+    std::uint64_t const tag = unpack_tag(data);
+
+    if (tag == tag_wakeup) {
+      drain_eventfd(eventfd_);
+      // Re-arm wakeup poll.
+      auto* sqe = ::io_uring_get_sqe(&ring_);
+      if (sqe != nullptr) {
+        ::io_uring_prep_poll_add(sqe, eventfd_, POLLIN | POLLERR | POLLHUP);
+        ::io_uring_sqe_set_data64(sqe, pack_fd(0, tag_wakeup));
+        (void)::io_uring_submit(&ring_);
+      }
+      ::io_uring_cqe_seen(&ring_, cqe);
+      return;
+    }
+
+    if (tag == tag_remove) {
+      ::io_uring_cqe_seen(&ring_, cqe);
+      return;
+    }
+
+    int const fd = unpack_fd(data);
+    int const res = cqe->res;
+    std::uint32_t const ev = (res >= 0) ? static_cast<std::uint32_t>(res) : 0U;
+
+    bool const is_error =
+      (res < 0) ||
+      ((ev & (static_cast<std::uint32_t>(POLLERR) | static_cast<std::uint32_t>(POLLHUP) |
+              static_cast<std::uint32_t>(POLLRDHUP))) != 0);
+
+    bool const can_read = is_error || ((ev & static_cast<std::uint32_t>(POLLIN)) != 0);
+    bool const can_write = is_error || ((ev & static_cast<std::uint32_t>(POLLOUT)) != 0);
+
+    std::unique_ptr<operation_base> read_op;
+    std::unique_ptr<operation_base> write_op;
+    bool still_want_read = false;
+    bool still_want_write = false;
+
+    {
+      std::scoped_lock lk{fd_mutex_};
+      auto it = fd_operations_.find(fd);
+      if (it != fd_operations_.end()) {
+        if (can_read) {
+          read_op = std::move(it->second.read_op);
+        }
+        if (can_write) {
+          write_op = std::move(it->second.write_op);
+        }
+
+        still_want_read = (it->second.read_op != nullptr);
+        still_want_write = (it->second.write_op != nullptr);
+
+        if (!still_want_read && !still_want_write) {
+          fd_operations_.erase(it);
+        }
+      }
+    }
+
+    if (!still_want_read && !still_want_write) {
+      backend_remove_fd_interest(fd);
+    } else {
+      backend_update_fd_interest(fd, still_want_read, still_want_write);
+    }
+
+    if (is_error) {
+      auto const ec = (res < 0) ? std::error_code{-res, std::generic_category()}
+                                : std::make_error_code(std::errc::connection_reset);
+      if (read_op) {
+        read_op->abort(ec);
+        ++count;
+      }
+      if (write_op) {
+        write_op->abort(ec);
+        ++count;
+      }
+    } else {
+      if (read_op) {
+        read_op->execute();
+        ++count;
+      }
+      if (write_op) {
+        write_op->execute();
+        ++count;
+      }
+    }
+
+    ::io_uring_cqe_seen(&ring_, cqe);
+  };
+
+  // Process the CQE we waited for.
+  handle_one(first);
+
+  // Then drain any other CQEs already available.
+  io_uring_cqe* batch[127]{};
+  unsigned const n = ::io_uring_peek_batch_cqe(&ring_, batch, 127);
+  for (unsigned i = 0; i < n; ++i) {
+    if (batch[i] != nullptr) {
+      handle_one(batch[i]);
+    }
+  }
+
+  return count;
+}
+
+void io_context_impl::wakeup() {
+  if (eventfd_ < 0) {
+    return;
+  }
+
+  std::uint64_t value = 1;
+  for (;;) {
+    auto const n = ::write(eventfd_, &value, sizeof(value));
+    if (n >= 0) {
+      return;
+    }
+    if (errno == EINTR) {
+      continue;
+    }
+    // Best-effort wakeup: ignore EAGAIN or EBADF races during shutdown.
+    return;
+  }
+}
+
+}  // namespace xz::io::detail
+
+

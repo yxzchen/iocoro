@@ -13,10 +13,16 @@
 #include <chrono>
 #include <queue>
 #include <system_error>
-#include <thread>
 #include <utility>
 
 namespace xz::io::detail {
+
+auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
+  // Each thread gets its own instance of this object; its address is stable and unique
+  // among concurrently running threads, and avoids non-portable thread-id atomics.
+  static thread_local int tls_anchor = 0;
+  return reinterpret_cast<std::uintptr_t>(&tls_anchor);
+}
 
 auto io_context_impl::run() -> std::size_t {
   set_thread_id();
@@ -152,10 +158,22 @@ void io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> o
 
   {
     std::scoped_lock lk{fd_mutex_};
-    auto& ops = fd_operations_[fd];
-    old = std::exchange(ops.read_op, std::move(op));
-    want_read = (ops.read_op != nullptr);
-    want_write = (ops.write_op != nullptr);
+    auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end()) {
+      if (op) {
+        auto& ops = fd_operations_[fd];
+        old = std::exchange(ops.read_op, std::move(op));
+        want_read = (ops.read_op != nullptr);
+        want_write = (ops.write_op != nullptr);
+      }
+    } else {
+      old = std::exchange(it->second.read_op, std::move(op));
+      want_read = (it->second.read_op != nullptr);
+      want_write = (it->second.write_op != nullptr);
+      if (!want_read && !want_write) {
+        fd_operations_.erase(it);
+      }
+    }
   }
   if (old) {
     old->abort(make_error_code(error::operation_aborted));
@@ -177,10 +195,22 @@ void io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> 
 
   {
     std::scoped_lock lk{fd_mutex_};
-    auto& ops = fd_operations_[fd];
-    old = std::exchange(ops.write_op, std::move(op));
-    want_read = (ops.read_op != nullptr);
-    want_write = (ops.write_op != nullptr);
+    auto it = fd_operations_.find(fd);
+    if (it == fd_operations_.end()) {
+      if (op) {
+        auto& ops = fd_operations_[fd];
+        old = std::exchange(ops.write_op, std::move(op));
+        want_read = (ops.read_op != nullptr);
+        want_write = (ops.write_op != nullptr);
+      }
+    } else {
+      old = std::exchange(it->second.write_op, std::move(op));
+      want_read = (it->second.read_op != nullptr);
+      want_write = (it->second.write_op != nullptr);
+      if (!want_read && !want_write) {
+        fd_operations_.erase(it);
+      }
+    }
   }
   if (old) {
     old->abort(make_error_code(error::operation_aborted));
@@ -233,11 +263,11 @@ void io_context_impl::remove_work_guard() noexcept {
 }
 
 void io_context_impl::set_thread_id() noexcept {
-  thread_id_.store(std::this_thread::get_id(), std::memory_order_release);
+  thread_token_.store(this_thread_token(), std::memory_order_release);
 }
 
 auto io_context_impl::running_in_this_thread() const noexcept -> bool {
-  return thread_id_.load(std::memory_order_acquire) == std::this_thread::get_id();
+  return thread_token_.load(std::memory_order_acquire) == this_thread_token();
 }
 
 auto io_context_impl::process_timers() -> std::size_t {
