@@ -26,10 +26,6 @@ struct timer_entry {
   // Constructors
   timer_entry() = default;
 
-  timer_entry(std::uint64_t timer_id, std::chrono::steady_clock::time_point expiry_time,
-              std::function<void()> cb) noexcept
-      : id(timer_id), expiry(expiry_time), callback(std::move(cb)), state(timer_state::pending) {}
-
   timer_entry(const timer_entry&) = delete;
   auto operator=(const timer_entry&) -> timer_entry& = delete;
   timer_entry(timer_entry&&) = default;

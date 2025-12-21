@@ -62,6 +62,7 @@ class io_context_impl {
   void add_work_guard() noexcept;
   void remove_work_guard() noexcept;
 
+  void set_thread_id() noexcept;
   auto running_in_this_thread() const noexcept -> bool;
 
 #ifdef IOCORO_HAS_URING
