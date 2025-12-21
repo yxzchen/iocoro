@@ -32,7 +32,9 @@ struct io_context_impl::backend_impl {
   std::unordered_map<int, uring_poll_state> uring_polls;
 };
 
-auto io_context_impl::native_handle() const noexcept -> int { return backend_->ring.ring_fd; }
+auto io_context_impl::native_handle() const noexcept -> std::uintptr_t {
+  return static_cast<std::uintptr_t>(backend_->ring.ring_fd);
+}
 
 namespace {
 

@@ -18,7 +18,9 @@ struct io_context_impl::backend_impl {
   int eventfd = -1;
 };
 
-auto io_context_impl::native_handle() const noexcept -> int { return backend_->epoll_fd; }
+auto io_context_impl::native_handle() const noexcept -> std::uintptr_t {
+  return static_cast<std::uintptr_t>(backend_->epoll_fd);
+}
 
 namespace {
 

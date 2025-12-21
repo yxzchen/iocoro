@@ -79,7 +79,7 @@ class io_context_impl {
   void set_thread_id() noexcept;
   auto running_in_this_thread() const noexcept -> bool;
 
-  auto native_handle() const noexcept -> int;
+  auto native_handle() const noexcept -> std::uintptr_t;
 
  private:
   struct backend_impl;  // PImpl for the OS backend.
