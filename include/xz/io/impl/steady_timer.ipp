@@ -20,14 +20,14 @@ inline steady_timer::steady_timer(executor ex, duration after) noexcept
 
 inline steady_timer::~steady_timer() { (void)cancel(); }
 
-inline void steady_timer::expires_at(time_point at) noexcept {
+inline auto steady_timer::expires_at(time_point at) noexcept -> std::size_t {
   expiry_ = at;
-  (void)cancel();
+  return cancel();
 }
 
-inline void steady_timer::expires_after(duration d) noexcept {
+inline auto steady_timer::expires_after(duration d) noexcept -> std::size_t {
   expiry_ = clock::now() + d;
-  (void)cancel();
+  return cancel();
 }
 
 inline void steady_timer::reschedule() {
@@ -163,7 +163,7 @@ inline auto steady_timer::cancel() noexcept -> std::size_t {
   if (!th_) {
     return 0;
   }
-  return th_.cancel() ? 1U : 0U;
+  return th_.cancel();
 }
 
 }  // namespace xz::io

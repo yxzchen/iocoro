@@ -5,20 +5,21 @@
 
 namespace xz::io {
 
-auto timer_handle::cancel() const noexcept -> bool {
+auto timer_handle::cancel() const noexcept -> std::size_t {
   if (!entry_) {
-    return false;
+    return 0;
   }
   auto const cancelled = entry_->cancel();
-  if (cancelled) {
-    // Ensure awaiters observing this timer are completed (via posted work).
-    try {
-      entry_->notify_completion();
-    } catch (...) {
-      // Best-effort: timer_handle::cancel() is noexcept.
-    }
+  if (!cancelled) {
+    return 0;
   }
-  return cancelled;
+  // Ensure awaiters observing this timer are completed (via posted work).
+  try {
+    return entry_->notify_completion();
+  } catch (...) {
+    // Best-effort: timer_handle::cancel() is noexcept.
+    return 0;
+  }
 }
 
 auto timer_handle::pending() const noexcept -> bool { return entry_ && entry_->is_pending(); }

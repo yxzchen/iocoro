@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <cstddef>
 #include <memory>
 
 namespace xz::io {
@@ -20,9 +21,10 @@ class timer_handle {
   timer_handle() noexcept = default;
 
   /// Attempts to cancel the timer.
-  /// Returns true if the timer was pending and is now cancelled.
-  /// Returns false if the timer was already fired, cancelled, or the handle is empty.
-  auto cancel() const noexcept -> bool;
+  ///
+  /// Returns the number of pending waits that were cancelled (best-effort).
+  /// Returns 0 if the timer was already fired/cancelled, or the handle is empty.
+  auto cancel() const noexcept -> std::size_t;
 
   /// Returns true if the timer is still pending (not fired or cancelled).
   auto pending() const noexcept -> bool;

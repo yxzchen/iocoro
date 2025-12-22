@@ -43,8 +43,15 @@ class steady_timer {
   auto get_executor() const noexcept -> executor { return ex_; }
 
   auto expiry() const noexcept -> time_point { return expiry_; }
-  void expires_at(time_point at) noexcept;
-  void expires_after(duration d) noexcept;
+  /// Set the timer expiry time.
+  ///
+  /// Returns the number of pending waits that were cancelled (best-effort).
+  auto expires_at(time_point at) noexcept -> std::size_t;
+
+  /// Set the timer expiry time relative to now.
+  ///
+  /// Returns the number of pending waits that were cancelled (best-effort).
+  auto expires_after(duration d) noexcept -> std::size_t;
 
   /// Wait until expiry (or cancellation) and invoke handler.
   ///
@@ -66,7 +73,9 @@ class steady_timer {
   /// - Exception: if the owning executor is stopped (or handle is empty), it completes inline.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code>;
 
-  /// Cancel the timer (best-effort). Returns 1 if a pending timer was cancelled.
+  /// Cancel pending waits on the timer (best-effort).
+  ///
+  /// Returns the number of pending waits that were cancelled (best-effort).
   auto cancel() noexcept -> std::size_t;
 
  private:

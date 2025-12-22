@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -101,26 +102,28 @@ struct timer_entry {
     }
   }
 
-  void notify_completion() {
+  auto notify_completion() -> std::size_t {
     std::vector<std::function<void()>> local;
     {
       std::scoped_lock lk{waiters_mutex};
-      if (completion_notified) return;
+      if (completion_notified) return 0;
       completion_notified = true;
       local.swap(waiters);
     }
 
     if (local.empty()) {
-      return;
+      return 0;
     }
 
     XZ_ENSURE(ex, "timer_entry: missing executor for completion notification");
     // Never execute waiters inline: always schedule via the owning executor.
+    auto const n = local.size();
     ex.post([local = std::move(local)]() mutable {
       for (auto& w : local) {
         w();
       }
     });
+    return n;
   }
 };
 

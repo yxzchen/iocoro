@@ -23,7 +23,7 @@ inline auto co_sleep(std::chrono::steady_clock::duration d) -> awaitable<void> {
   XZ_ENSURE(ex, "co_sleep: requires a bound executor");
 
   steady_timer t{ex};
-  t.expires_after(d);
+  (void)t.expires_after(d);
   (void)co_await t.async_wait(use_awaitable);
 }
 
