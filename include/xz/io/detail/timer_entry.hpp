@@ -39,7 +39,7 @@ struct timer_entry {
 
   // Waiters are completion hooks (e.g. async_wait(use_awaitable)).
   // They should never resume inline; they are expected to post/dispatch as needed.
-  std::atomic<bool> completion_notified{false};
+  bool completion_notified = false;
   std::mutex waiters_mutex{};
   std::vector<std::function<void()>> waiters{};
 
@@ -86,15 +86,10 @@ struct timer_entry {
       return;
     }
 
-    if (completion_notified.load(std::memory_order_acquire)) {
-      post_waiter(std::move(w));
-      return;
-    }
-
     bool post_now = false;
     {
       std::scoped_lock lk{waiters_mutex};
-      if (completion_notified.load(std::memory_order_relaxed)) {
+      if (completion_notified) {
         post_now = true;
       } else {
         waiters.push_back(std::move(w));
@@ -107,13 +102,11 @@ struct timer_entry {
   }
 
   void notify_completion() {
-    if (completion_notified.exchange(true, std::memory_order_acq_rel)) {
-      return;  // already notified
-    }
-
     std::vector<std::function<void()>> local;
     {
       std::scoped_lock lk{waiters_mutex};
+      if (completion_notified) return;
+      completion_notified = true;
       local.swap(waiters);
     }
 
