@@ -14,6 +14,8 @@ void executor::execute(std::function<void()> f) const { ensure_impl().post(std::
 void executor::post(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
 void executor::dispatch(std::function<void()> f) const { ensure_impl().dispatch(std::move(f)); }
 
+auto executor::stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
+
 void executor::add_work_guard() const noexcept {
   // Work guards are best-effort; if an executor is empty, it simply can't guard anything.
   if (impl_ != nullptr) {
