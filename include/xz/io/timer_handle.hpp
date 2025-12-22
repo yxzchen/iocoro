@@ -1,13 +1,11 @@
 #pragma once
 
-#include <xz/io/awaitable.hpp>
-#include <xz/io/use_awaitable.hpp>
-
 #include <memory>
 
 namespace xz::io {
 
-class io_context;
+class executor;
+class steady_timer;
 
 namespace detail {
 struct timer_entry;
@@ -26,21 +24,21 @@ class timer_handle {
   auto cancel() noexcept -> bool;
 
   /// Returns true if the timer is still pending (not fired or cancelled).
-  auto valid() const noexcept -> bool;
+  auto pending() const noexcept -> bool;
+
+  /// Returns true if the timer has fired.
+  auto fired() const noexcept -> bool;
+
+  /// Returns true if the timer has been cancelled.
+  auto cancelled() const noexcept -> bool;
 
   explicit operator bool() const noexcept;
 
-  /// Await timer completion (fired or cancelled) as an awaitable.
-  ///
-  /// Semantics:
-  /// - Resumption is scheduled via the timer's executor (never inline).
-  /// - Destroying the awaiting coroutine implicitly cancels the timer.
-  auto async_wait(use_awaitable_t) -> awaitable<void>;
-
  private:
   friend class executor;
+  friend class steady_timer;
 
-  /// Private constructor for io_context to create handles.
+  /// Private constructor for executor to create handles.
   explicit timer_handle(std::shared_ptr<detail::timer_entry> entry) noexcept;
 
   std::shared_ptr<detail::timer_entry> entry_;
