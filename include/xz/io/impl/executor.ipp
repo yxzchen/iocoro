@@ -13,12 +13,16 @@ executor::executor() noexcept : impl_{nullptr} {}
 
 inline void executor::execute(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
 inline void executor::post(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
-inline void executor::dispatch(std::function<void()> f) const { ensure_impl().dispatch(std::move(f)); }
+inline void executor::dispatch(std::function<void()> f) const {
+  ensure_impl().dispatch(std::move(f));
+}
 
-inline auto executor::stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
+inline auto executor::stopped() const noexcept -> bool {
+  return impl_ == nullptr || impl_->stopped();
+}
 
-inline auto executor::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
-  -> timer_handle {
+inline auto executor::schedule_timer(std::chrono::milliseconds timeout,
+                                     std::function<void()> callback) const -> timer_handle {
   auto entry = ensure_impl().schedule_timer(timeout, std::move(callback));
   return timer_handle(std::move(entry));
 }

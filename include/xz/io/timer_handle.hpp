@@ -1,7 +1,7 @@
 #pragma once
 
-#include <functional>
 #include <cstddef>
+#include <functional>
 #include <memory>
 
 namespace xz::io {

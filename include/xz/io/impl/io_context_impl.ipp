@@ -134,7 +134,7 @@ inline void io_context_impl::dispatch(std::function<void()> f) {
 }
 
 inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
-                                     std::function<void()> callback)
+                                            std::function<void()> callback)
   -> std::shared_ptr<timer_entry> {
   XZ_ASSERT(timeout.count() >= 0, "io_context_impl: negative schedule_timer timeout");
   if (timeout.count() < 0) {
@@ -445,7 +445,8 @@ inline void io_context_impl::reconcile_fd_interest_async(int fd) {
   post([this, fd] { reconcile_fd_interest(fd); });
 }
 
-inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept {
+inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
+                                             std::uint64_t token) noexcept {
   if (fd < 0 || token == 0) {
     return;
   }

@@ -4,8 +4,8 @@
 #include <xz/io/co_spawn.hpp>
 #include <xz/io/error.hpp>
 #include <xz/io/io_context.hpp>
-#include <xz/io/steady_timer.hpp>
 #include <xz/io/src.hpp>
+#include <xz/io/steady_timer.hpp>
 #include <xz/io/timer_handle.hpp>
 #include <xz/io/use_awaitable.hpp>
 
@@ -147,5 +147,3 @@ TEST(io_context_test, steady_timer_async_wait_resumes_on_cancel) {
 }
 
 }  // namespace
-
-

@@ -22,11 +22,15 @@ inline auto timer_handle::cancel() const noexcept -> std::size_t {
   }
 }
 
-inline auto timer_handle::pending() const noexcept -> bool { return entry_ && entry_->is_pending(); }
+inline auto timer_handle::pending() const noexcept -> bool {
+  return entry_ && entry_->is_pending();
+}
 
 inline auto timer_handle::fired() const noexcept -> bool { return entry_ && entry_->is_fired(); }
 
-inline auto timer_handle::cancelled() const noexcept -> bool { return entry_ && entry_->is_cancelled(); }
+inline auto timer_handle::cancelled() const noexcept -> bool {
+  return entry_ && entry_->is_cancelled();
+}
 
 timer_handle::operator bool() const noexcept { return entry_ != nullptr; }
 

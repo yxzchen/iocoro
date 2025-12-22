@@ -87,5 +87,3 @@ class steady_timer {
 };
 
 }  // namespace xz::io
-
-
