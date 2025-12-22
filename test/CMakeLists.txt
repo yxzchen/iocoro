@@ -15,3 +15,6 @@ macro(make_test TEST_NAME)
 endmacro()
 
 make_test(io_context_test)
+make_test(timer_test)
+make_test(co_sleep_test)
+make_test(co_spawn_test)
