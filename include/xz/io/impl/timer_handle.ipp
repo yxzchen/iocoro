@@ -14,7 +14,11 @@ auto timer_handle::cancel() noexcept -> bool {
   auto const cancelled = entry_->cancel();
   if (cancelled) {
     // Ensure awaiters observing this timer are completed (via posted work).
-    entry_->notify_completion();
+    try {
+      entry_->notify_completion();
+    } catch (...) {
+      // Best-effort: timer_handle::cancel() is noexcept.
+    }
   }
   return cancelled;
 }
@@ -29,5 +33,12 @@ timer_handle::operator bool() const noexcept { return entry_ != nullptr; }
 
 timer_handle::timer_handle(std::shared_ptr<detail::timer_entry> entry) noexcept
     : entry_(std::move(entry)) {}
+
+void timer_handle::add_waiter(std::function<void()> w) {
+  if (!entry_) {
+    return;
+  }
+  entry_->add_waiter(std::move(w));
+}
 
 }  // namespace xz::io

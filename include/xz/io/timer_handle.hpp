@@ -41,6 +41,9 @@ class timer_handle {
   /// Private constructor for executor to create handles.
   explicit timer_handle(std::shared_ptr<detail::timer_entry> entry) noexcept;
 
+  // steady_timer hook: add a completion waiter without exposing timer_entry.
+  void add_waiter(std::function<void()> w);
+
   std::shared_ptr<detail::timer_entry> entry_;
 };
 
