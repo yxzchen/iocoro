@@ -144,6 +144,7 @@ auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = std::chrono::steady_clock::now() + timeout;
   entry->callback = std::move(callback);
+  entry->ex = executor{*this};
   entry->state.store(timer_state::pending, std::memory_order_release);
 
   {
@@ -307,14 +308,15 @@ auto io_context_impl::process_timers() -> std::size_t {
       continue;
     }
 
-    auto cb = std::move(entry->callback);
     lk.unlock();
-    {
-      if (cb) {
-        executor_guard g{executor{*this}};
-        cb();
-      }
+
+    auto cb = std::move(entry->callback);
+    if (cb) {
+      executor_guard g{executor{*this}};
+      cb();
     }
+    entry->notify_completion();
+
     ++count;
     lk.lock();
   }
