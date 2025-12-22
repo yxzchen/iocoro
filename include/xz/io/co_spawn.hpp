@@ -7,8 +7,12 @@
 #include <xz/io/executor.hpp>
 #include <xz/io/use_awaitable.hpp>
 
+#include <atomic>
 #include <concepts>
 #include <exception>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -79,6 +83,169 @@ auto completion_wrapper(executor ex, awaitable<T> a, Completion completion) -> a
   }
 }
 
+template <typename T>
+struct spawn_state {
+  executor ex{};
+  std::mutex m;
+  std::atomic<bool> done{false};
+  std::coroutine_handle<> waiter{};
+  std::exception_ptr ep{};
+  std::optional<T> value{};
+
+  explicit spawn_state(executor ex_) : ex(ex_) {}
+
+  void set_value(T v) {
+    std::scoped_lock lk{m};
+    value.emplace(std::move(v));
+  }
+
+  void set_exception(std::exception_ptr e) {
+    std::scoped_lock lk{m};
+    ep = std::move(e);
+  }
+
+  void complete() {
+    std::coroutine_handle<> w{};
+    {
+      std::scoped_lock lk{m};
+      done.store(true, std::memory_order_release);
+      w = waiter;
+      waiter = {};
+    }
+    if (w) {
+      ex.post([w, ex = ex]() mutable {
+        detail::executor_guard g{ex};
+        w.resume();
+      });
+    }
+  }
+};
+
+template <>
+struct spawn_state<void> {
+  executor ex{};
+  std::mutex m;
+  std::atomic<bool> done{false};
+  std::coroutine_handle<> waiter{};
+  std::exception_ptr ep{};
+
+  explicit spawn_state(executor ex_) : ex(ex_) {}
+
+  void set_value() noexcept {}
+
+  void set_exception(std::exception_ptr e) {
+    std::scoped_lock lk{m};
+    ep = std::move(e);
+  }
+
+  void complete() {
+    std::coroutine_handle<> w{};
+    {
+      std::scoped_lock lk{m};
+      done.store(true, std::memory_order_release);
+      w = waiter;
+      waiter = {};
+    }
+    if (w) {
+      ex.post([w, ex = ex]() mutable {
+        detail::executor_guard g{ex};
+        w.resume();
+      });
+    }
+  }
+};
+
+template <typename T>
+struct state_awaiter {
+  std::shared_ptr<spawn_state<T>> st;
+
+  bool await_ready() const noexcept { return st->done.load(std::memory_order_acquire); }
+
+  void await_suspend(std::coroutine_handle<> h) {
+    bool ready = false;
+    {
+      std::scoped_lock lk{st->m};
+      ready = st->done.load(std::memory_order_acquire);
+      if (!ready) st->waiter = h;
+    }
+    if (ready) {
+      st->ex.post([h, ex = st->ex]() mutable {
+        detail::executor_guard g{ex};
+        h.resume();
+      });
+    }
+  }
+
+  auto await_resume() -> T {
+    std::exception_ptr ep;
+    std::optional<T> v;
+    {
+      std::scoped_lock lk{st->m};
+      ep = st->ep;
+      v = std::move(st->value);
+    }
+    if (ep) std::rethrow_exception(ep);
+    return std::move(*v);
+  }
+};
+
+template <>
+struct state_awaiter<void> {
+  std::shared_ptr<spawn_state<void>> st;
+
+  bool await_ready() const noexcept { return st->done.load(std::memory_order_acquire); }
+
+  void await_suspend(std::coroutine_handle<> h) {
+    bool ready = false;
+    {
+      std::scoped_lock lk{st->m};
+      ready = st->done.load(std::memory_order_acquire);
+      if (!ready) st->waiter = h;
+    }
+    if (ready) {
+      st->ex.post([h, ex = st->ex]() mutable {
+        detail::executor_guard g{ex};
+        h.resume();
+      });
+    }
+  }
+
+  void await_resume() {
+    std::exception_ptr ep;
+    {
+      std::scoped_lock lk{st->m};
+      ep = st->ep;
+    }
+    if (ep) std::rethrow_exception(ep);
+  }
+};
+
+template <typename T>
+auto await_state(std::shared_ptr<spawn_state<T>> st) -> awaitable<T> {
+  if constexpr (std::is_void_v<T>) {
+    co_await state_awaiter<void>{std::move(st)};
+    co_return;
+  } else {
+    co_return co_await state_awaiter<T>{std::move(st)};
+  }
+}
+
+template <typename T>
+auto run_to_state(executor ex, std::shared_ptr<spawn_state<T>> st, awaitable<T> a) -> awaitable<void> {
+  auto bound = bind_executor<T>(ex, std::move(a));
+  try {
+    if constexpr (std::is_void_v<T>) {
+      co_await std::move(bound);
+      st->set_value();
+    } else {
+      st->set_value(co_await std::move(bound));
+    }
+  } catch (...) {
+    st->set_exception(std::current_exception());
+  }
+  st->complete();
+}
+
 }  // namespace detail
 
 /// Start an awaitable on the given executor (detached / fire-and-forget).
@@ -106,18 +273,12 @@ void co_spawn(executor ex, awaitable<T> a, detached_t) {
 /// to obtain the result (exception is rethrown on await_resume()).
 template <typename T>
 auto co_spawn(executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
-  // Bind the spawned coroutine to the target executor before first resume so
-  // `co_await this_coro::executor` works from the start of the task.
-  auto bound = detail::bind_executor<T>(ex, std::move(a));
+  // Hot-start: start running immediately (via detached runner), and return an awaitable
+  // that only waits for completion and yields the result.
+  auto st = std::make_shared<detail::spawn_state<T>>(ex);
 
-  if constexpr (std::is_void_v<T>) {
-    co_await detail::on_executor(ex);
-    co_await std::move(bound);
-    co_return;
-  } else {
-    co_await detail::on_executor(ex);
-    co_return co_await std::move(bound);
-  }
+  co_spawn(ex, detail::run_to_state<T>(ex, st, std::move(a)), detached);
+  return detail::await_state<T>(std::move(st));
 }
 
 /// Start an awaitable on the given executor, invoking a completion callback with either

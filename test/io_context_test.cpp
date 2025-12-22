@@ -200,6 +200,26 @@ TEST(io_context_test, co_spawn_use_awaitable_rethrows_exception) {
   EXPECT_TRUE(got_exception.load(std::memory_order_relaxed));
 }
 
+TEST(io_context_test, co_spawn_use_awaitable_hot_starts_without_await) {
+  xz::io::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> ran{false};
+
+  auto child = [&]() -> xz::io::awaitable<void> {
+    ran.store(true, std::memory_order_relaxed);
+    co_return;
+  };
+
+  // Should start running immediately when co_spawn is called (once the context runs),
+  // even if we never co_await the returned awaitable.
+  auto unused = xz::io::co_spawn(ex, child(), xz::io::use_awaitable);
+  (void)unused;
+
+  (void)ctx.run();
+  EXPECT_TRUE(ran.load(std::memory_order_relaxed));
+}
+
 TEST(io_context_test, co_spawn_completion_callback_receives_value) {
   xz::io::io_context ctx;
   auto ex = ctx.get_executor();
