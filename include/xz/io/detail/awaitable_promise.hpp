@@ -82,6 +82,11 @@ struct awaitable_promise_base {
     if (exception_) std::rethrow_exception(exception_);
   }
 
+  template <typename Awaitable>
+  decltype(auto) await_transform(Awaitable&& a) noexcept {
+    return std::forward<Awaitable>(a);
+  }
+
   auto await_transform(this_coro::executor_t) noexcept {
     struct awaiter {
       executor ex;
