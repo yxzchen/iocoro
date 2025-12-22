@@ -31,6 +31,12 @@ class awaitable {
     return *this;
   }
 
+  /// Release ownership of the coroutine handle without destroying it.
+  ///
+  /// This is primarily used by spawn utilities (e.g. co_spawn) to take over the
+  /// coroutine frame lifetime.
+  auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
+
   bool await_ready() const noexcept { return false; }
   auto await_suspend(std::coroutine_handle<> cont) noexcept -> std::coroutine_handle<> {
     coro_.promise().set_continuation(cont);
@@ -42,9 +48,6 @@ class awaitable {
   }
 
  private:
-  template <typename U>
-  friend void co_spawn(class executor ex, awaitable<U> a);
-
   handle_type coro_;
 };
 
@@ -71,6 +74,9 @@ class awaitable<void> {
     return *this;
   }
 
+  /// Release ownership of the coroutine handle without destroying it.
+  auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
+
   bool await_ready() const noexcept { return false; }
   auto await_suspend(std::coroutine_handle<> cont) noexcept -> std::coroutine_handle<> {
     coro_.promise().set_continuation(cont);
@@ -82,9 +88,6 @@ class awaitable<void> {
   }
 
  private:
-  template <typename U>
-  friend void co_spawn(class executor ex, awaitable<U> a);
-
   handle_type coro_;
 };
 

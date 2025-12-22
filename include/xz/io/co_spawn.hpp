@@ -11,8 +11,7 @@ namespace xz::io {
 /// the frame will be destroyed at final_suspend.
 template <typename T>
 void co_spawn(executor ex, awaitable<T> a) {
-  auto h = a.coro_;
-  a.coro_ = {};
+  auto h = a.release();
 
   h.promise().set_executor(ex);
   h.promise().detach();

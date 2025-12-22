@@ -4,6 +4,7 @@
 #include <xz/io/basic_socket.hpp>
 #include <xz/io/co_sleep.hpp>
 #include <xz/io/co_spawn.hpp>
+#include <xz/io/detached.hpp>
 #include <xz/io/error.hpp>
 #include <xz/io/executor.hpp>
 #include <xz/io/expected.hpp>
