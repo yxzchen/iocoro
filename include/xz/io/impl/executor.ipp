@@ -11,31 +11,31 @@ executor::executor(detail::io_context_impl& impl) noexcept : impl_{&impl} {}
 
 executor::executor() noexcept : impl_{nullptr} {}
 
-void executor::execute(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
-void executor::post(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
-void executor::dispatch(std::function<void()> f) const { ensure_impl().dispatch(std::move(f)); }
+inline void executor::execute(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
+inline void executor::post(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
+inline void executor::dispatch(std::function<void()> f) const { ensure_impl().dispatch(std::move(f)); }
 
-auto executor::stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
+inline auto executor::stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
 
-auto executor::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
+inline auto executor::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
   -> timer_handle {
   auto entry = ensure_impl().schedule_timer(timeout, std::move(callback));
   return timer_handle(std::move(entry));
 }
 
-void executor::add_work_guard() const noexcept {
+inline void executor::add_work_guard() const noexcept {
   // Work guards are best-effort; if an executor is empty, it simply can't guard anything.
   if (impl_ != nullptr) {
     impl_->add_work_guard();
   }
 }
-void executor::remove_work_guard() const noexcept {
+inline void executor::remove_work_guard() const noexcept {
   if (impl_ != nullptr) {
     impl_->remove_work_guard();
   }
 }
 
-auto executor::ensure_impl() const -> detail::io_context_impl& {
+inline auto executor::ensure_impl() const -> detail::io_context_impl& {
   XZ_ENSURE(impl_, "executor: empty impl_");
   return *impl_;
 }
