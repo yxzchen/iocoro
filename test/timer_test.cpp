@@ -71,5 +71,3 @@ TEST(timer_test, steady_timer_async_wait_resumes_on_cancel) {
 }
 
 }  // namespace
-
-

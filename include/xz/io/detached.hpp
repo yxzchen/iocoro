@@ -8,5 +8,3 @@ struct detached_t {};
 inline constexpr detached_t detached{};
 
 }  // namespace xz::io
-
-

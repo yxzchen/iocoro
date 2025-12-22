@@ -134,9 +134,8 @@ TEST(io_context_impl_timer, schedule_timer_executes_callback) {
   xz::io::detail::io_context_impl impl;
   std::atomic<bool> fired{false};
 
-  auto entry = impl.schedule_timer(10ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto entry =
+    impl.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   ASSERT_NE(entry, nullptr);
   EXPECT_TRUE(entry->is_pending());
@@ -151,9 +150,8 @@ TEST(io_context_impl_timer, cancel_timer_prevents_execution) {
   xz::io::detail::io_context_impl impl;
   std::atomic<bool> fired{false};
 
-  auto entry = impl.schedule_timer(100ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto entry =
+    impl.schedule_timer(100ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   ASSERT_NE(entry, nullptr);
   EXPECT_TRUE(entry->cancel());
@@ -169,9 +167,18 @@ TEST(io_context_impl_timer, multiple_timers_fire_in_order) {
   std::atomic<int> counter{0};
   std::vector<int> order;
 
-  auto e1 = impl.schedule_timer(30ms, [&] { order.push_back(1); counter++; });
-  auto e2 = impl.schedule_timer(10ms, [&] { order.push_back(2); counter++; });
-  auto e3 = impl.schedule_timer(20ms, [&] { order.push_back(3); counter++; });
+  auto e1 = impl.schedule_timer(30ms, [&] {
+    order.push_back(1);
+    counter++;
+  });
+  auto e2 = impl.schedule_timer(10ms, [&] {
+    order.push_back(2);
+    counter++;
+  });
+  auto e3 = impl.schedule_timer(20ms, [&] {
+    order.push_back(3);
+    counter++;
+  });
 
   impl.run_for(200ms);
 
@@ -199,4 +206,3 @@ TEST(io_context_impl_basic, run_for_respects_timeout) {
 }
 
 }  // namespace
-

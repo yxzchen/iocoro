@@ -29,5 +29,3 @@ TEST(co_sleep_test, co_sleep_resumes_via_timer_and_executor) {
 }
 
 }  // namespace
-
-

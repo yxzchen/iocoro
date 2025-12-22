@@ -223,7 +223,8 @@ auto await_state(std::shared_ptr<spawn_state<T>> st) -> awaitable<T> {
 }
 
 template <typename T>
-auto run_to_state(executor ex, std::shared_ptr<spawn_state<T>> st, awaitable<T> a) -> awaitable<void> {
+auto run_to_state(executor ex, std::shared_ptr<spawn_state<T>> st, awaitable<T> a)
+  -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {

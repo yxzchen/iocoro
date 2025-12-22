@@ -54,5 +54,3 @@ TEST(io_context_basic_test, stop_prevents_run_and_restart_allows_processing) {
 }
 
 }  // namespace
-
-

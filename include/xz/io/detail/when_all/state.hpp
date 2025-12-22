@@ -44,7 +44,9 @@ struct when_all_state {
   std::exception_ptr first_ep{};
   values_tuple values{};
 
-  explicit when_all_state(executor ex_) : ex(ex_) { remaining.store(sizeof...(Ts), std::memory_order_relaxed); }
+  explicit when_all_state(executor ex_) : ex(ex_) {
+    remaining.store(sizeof...(Ts), std::memory_order_relaxed);
+  }
 
   template <std::size_t I, class V>
   void set_value(V&& v) {

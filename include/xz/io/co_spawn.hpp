@@ -48,7 +48,7 @@ void co_spawn(executor ex, awaitable<T> a, F&& completion) {
   using completion_t = std::remove_cvref_t<F>;
   co_spawn(ex,
            detail::completion_wrapper<T, completion_t>(ex, std::move(a),
-                                                      completion_t(std::forward<F>(completion))),
+                                                       completion_t(std::forward<F>(completion))),
            detached);
 }
 

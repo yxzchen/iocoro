@@ -61,9 +61,7 @@ TEST(timer_handle_lifetime, handle_survives_after_timer_fires) {
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
-  auto handle = ex.schedule_timer(10ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto handle = ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   EXPECT_TRUE(handle);
   EXPECT_TRUE(handle.pending());
@@ -84,9 +82,8 @@ TEST(timer_handle_lifetime, multiple_handles_reference_same_timer) {
   auto ex = ctx.get_executor();
   std::atomic<int> fire_count{0};
 
-  auto handle1 = ex.schedule_timer(10ms, [&fire_count] {
-    fire_count.fetch_add(1, std::memory_order_relaxed);
-  });
+  auto handle1 =
+    ex.schedule_timer(10ms, [&fire_count] { fire_count.fetch_add(1, std::memory_order_relaxed); });
   auto handle2 = handle1;
   auto handle3 = handle2;
 
@@ -106,9 +103,8 @@ TEST(timer_handle_lifetime, handle_destruction_does_not_cancel_timer) {
   std::atomic<bool> fired{false};
 
   {
-    auto handle = ex.schedule_timer(10ms, [&fired] {
-      fired.store(true, std::memory_order_relaxed);
-    });
+    auto handle =
+      ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
     EXPECT_TRUE(handle.pending());
   }  // handle destroyed here
 
@@ -123,9 +119,8 @@ TEST(timer_handle_cancel, cancel_prevents_timer_execution) {
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
-  auto handle = ex.schedule_timer(100ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto handle =
+    ex.schedule_timer(100ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   handle.cancel();
   EXPECT_TRUE(handle.cancelled());
@@ -140,9 +135,7 @@ TEST(timer_handle_cancel, cancel_after_fire_is_noop) {
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
-  auto handle = ex.schedule_timer(10ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto handle = ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   ctx.run_for(200ms);
   EXPECT_TRUE(handle.fired());
@@ -176,9 +169,7 @@ TEST(timer_handle_lifetime, handle_keeps_entry_alive_after_processing) {
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
-  auto handle = ex.schedule_timer(10ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto handle = ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   // Let the timer fire and be processed
   ctx.run_for(200ms);
@@ -204,9 +195,7 @@ TEST(timer_handle_lifetime, handle_outlives_context_safely) {
     auto ex = ctx.get_executor();
 
     handle_ptr = std::make_shared<xz::io::timer_handle>(
-      ex.schedule_timer(10ms, [&fired] {
-        fired.store(true, std::memory_order_relaxed);
-      }));
+      ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); }));
 
     ctx.run_for(200ms);
     EXPECT_TRUE(fired.load(std::memory_order_relaxed));
@@ -222,4 +211,3 @@ TEST(timer_handle_lifetime, handle_outlives_context_safely) {
 }
 
 }  // namespace
-

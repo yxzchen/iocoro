@@ -120,13 +120,11 @@ TEST(co_spawn_test, co_spawn_completion_callback_receives_value) {
 
   auto child = []() -> xz::io::awaitable<int> { co_return 7; };
 
-  xz::io::co_spawn(
-    ex, child(),
-    [&](xz::io::expected<int, std::exception_ptr> r) {
-      EXPECT_TRUE(r.has_value());
-      value.store(*r, std::memory_order_relaxed);
-      called.store(true, std::memory_order_relaxed);
-    });
+  xz::io::co_spawn(ex, child(), [&](xz::io::expected<int, std::exception_ptr> r) {
+    EXPECT_TRUE(r.has_value());
+    value.store(*r, std::memory_order_relaxed);
+    called.store(true, std::memory_order_relaxed);
+  });
 
   (void)ctx.run();
   EXPECT_TRUE(called.load(std::memory_order_relaxed));
@@ -145,19 +143,17 @@ TEST(co_spawn_test, co_spawn_completion_callback_receives_exception) {
     throw std::runtime_error("fail");
   };
 
-  xz::io::co_spawn(
-    ex, child(),
-    [&](xz::io::expected<int, std::exception_ptr> r) {
-      EXPECT_FALSE(r.has_value());
-      EXPECT_TRUE(static_cast<bool>(r.error()));
-      try {
-        std::rethrow_exception(r.error());
-      } catch (std::runtime_error const& e) {
-        EXPECT_STREQ(e.what(), "fail");
-        got_runtime_error.store(true, std::memory_order_relaxed);
-      }
-      called.store(true, std::memory_order_relaxed);
-    });
+  xz::io::co_spawn(ex, child(), [&](xz::io::expected<int, std::exception_ptr> r) {
+    EXPECT_FALSE(r.has_value());
+    EXPECT_TRUE(static_cast<bool>(r.error()));
+    try {
+      std::rethrow_exception(r.error());
+    } catch (std::runtime_error const& e) {
+      EXPECT_STREQ(e.what(), "fail");
+      got_runtime_error.store(true, std::memory_order_relaxed);
+    }
+    called.store(true, std::memory_order_relaxed);
+  });
 
   (void)ctx.run();
   EXPECT_TRUE(called.load(std::memory_order_relaxed));
@@ -165,5 +161,3 @@ TEST(co_spawn_test, co_spawn_completion_callback_receives_exception) {
 }
 
 }  // namespace
-
-

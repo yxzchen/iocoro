@@ -98,9 +98,7 @@ TEST(executor_operations, dispatch_posts_from_different_thread) {
   ctx.run_one();
 
   // Call dispatch from a different thread
-  std::thread t([&] {
-    ex.dispatch([&] { done.store(true, std::memory_order_relaxed); });
-  });
+  std::thread t([&] { ex.dispatch([&] { done.store(true, std::memory_order_relaxed); }); });
   t.join();
 
   // Should have been posted, not executed inline
@@ -138,9 +136,7 @@ TEST(executor_timer, schedule_timer_executes_callback) {
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
-  auto handle = ex.schedule_timer(10ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto handle = ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   ctx.run_for(200ms);
   EXPECT_TRUE(fired.load(std::memory_order_relaxed));
@@ -152,9 +148,8 @@ TEST(executor_timer, cancelled_timer_does_not_execute) {
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
-  auto handle = ex.schedule_timer(100ms, [&fired] {
-    fired.store(true, std::memory_order_relaxed);
-  });
+  auto handle =
+    ex.schedule_timer(100ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
 
   // cancel() returns the number of waiters notified, which is 0 if there are no waiters
   handle.cancel();
@@ -183,7 +178,7 @@ TEST(executor_work_guard, work_guard_keeps_context_alive) {
 
   // This would normally return immediately (no work), but the guard prevents that
   ctx.run();
-  
+
   t.join();
   EXPECT_TRUE(work_done.load(std::memory_order_relaxed));
 }
@@ -196,7 +191,7 @@ TEST(executor_work_guard, work_guard_is_movable) {
   xz::io::work_guard<xz::io::executor> guard2(std::move(guard1));
 
   EXPECT_TRUE(guard2.get_executor());
-  
+
   xz::io::work_guard<xz::io::executor> guard3 = std::move(guard2);
   EXPECT_TRUE(guard3.get_executor());
 }
@@ -218,4 +213,3 @@ TEST(executor_basic, executor_is_copyable) {
 }
 
 }  // namespace
-

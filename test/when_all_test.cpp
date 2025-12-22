@@ -110,5 +110,3 @@ TEST(when_all_test, container_returns_vector_and_preserves_order) {
 }
 
 }  // namespace
-
-
