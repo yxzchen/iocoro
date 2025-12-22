@@ -108,6 +108,9 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
   };
 
   struct awaiter final {
+    // Explicit constructor to ensure proper move semantics
+    explicit awaiter(executor ex_, timer_handle th_) : ex(ex_), th(std::move(th_)) {}
+
     executor ex{};
     timer_handle th{};
     std::shared_ptr<state> st{};

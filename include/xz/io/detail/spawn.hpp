@@ -1,11 +1,11 @@
 #pragma once
 
-#include <xz/io/awaitable.hpp>
 #include <xz/io/assert.hpp>
+#include <xz/io/awaitable.hpp>
 #include <xz/io/detached.hpp>
 #include <xz/io/detail/executor_guard.hpp>
-#include <xz/io/expected.hpp>
 #include <xz/io/executor.hpp>
+#include <xz/io/expected.hpp>
 #include <xz/io/use_awaitable.hpp>
 
 #include <atomic>
@@ -139,6 +139,8 @@ struct spawn_state<void> {
 
 template <typename T>
 struct state_awaiter {
+  explicit state_awaiter(std::shared_ptr<spawn_state<T>> st_) : st(std::move(st_)) {}
+
   std::shared_ptr<spawn_state<T>> st;
 
   // Always suspend and resume via executor to match the library's "never inline" policy.
@@ -177,6 +179,8 @@ struct state_awaiter {
 
 template <>
 struct state_awaiter<void> {
+  explicit state_awaiter(std::shared_ptr<spawn_state<void>> st_) : st(std::move(st_)) {}
+
   std::shared_ptr<spawn_state<void>> st;
 
   // Always suspend and resume via executor to match the library's "never inline" policy.
@@ -235,5 +239,3 @@ auto run_to_state(executor ex, std::shared_ptr<spawn_state<T>> st, awaitable<T> 
 }
 
 }  // namespace xz::io::detail
-
-
