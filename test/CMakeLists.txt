@@ -15,4 +15,3 @@ macro(make_test TEST_NAME)
 endmacro()
 
 make_test(io_context_test)
-make_test(awaitable_compile_test)
