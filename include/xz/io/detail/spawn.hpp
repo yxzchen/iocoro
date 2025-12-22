@@ -144,7 +144,7 @@ struct state_awaiter {
   // Issue: Aggregate initialization `awaiter{shared_ptr}` triggers ASan
   // use-after-free errors. Known to affect:
   // - state_awaiter<T> / state_awaiter<void> (this file)
-  // - steady_timer::awaiter (steady_timer.hpp)
+  // - awaiter inside steady_timer::async_wait (steady_timer.ipp)
   // Likely affects all awaiters containing shared_ptr members.
   //
   // Suspected cause: Aggregate init may create temporaries with incorrect
