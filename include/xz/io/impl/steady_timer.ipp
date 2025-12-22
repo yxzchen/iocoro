@@ -1,6 +1,7 @@
 #pragma once
 
 #include <xz/io/assert.hpp>
+#include <xz/io/detail/executor_guard.hpp>
 #include <xz/io/error.hpp>
 #include <xz/io/steady_timer.hpp>
 
@@ -56,7 +57,7 @@ inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
   // If the executor is stopped, complete synchronously to avoid hanging.
   if (ex_.stopped()) {
     if (h) {
-      h(make_error_code(error::operation_aborted));
+      h(error::operation_aborted);
     }
     return;
   }
@@ -66,7 +67,24 @@ inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
     reschedule();
   }
 
-  th_.async_wait(std::move(h));
+  if (!th_) {
+    if (h) {
+      h(error::operation_aborted);
+    }
+    return;
+  }
+
+  auto th = th_;
+  th_.add_waiter([ex = ex_, th, h = std::move(h)]() mutable {
+    auto ec = std::error_code{};
+    if (th.cancelled()) {
+      ec = error::operation_aborted;
+    }
+    detail::executor_guard g{ex};
+    if (h) {
+      h(ec);
+    }
+  });
 }
 
 inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_code> {
@@ -74,14 +92,73 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
 
   // If the executor is stopped, complete synchronously to avoid hanging.
   if (ex_.stopped()) {
-    co_return make_error_code(error::operation_aborted);
+    co_return error::operation_aborted;
   }
 
   if (!th_.pending()) {
     reschedule();
   }
 
-  co_return co_await th_.async_wait(use_awaitable);
+  if (!th_) {
+    co_return error::operation_aborted;
+  }
+
+  struct state final {
+    executor ex{};
+    std::coroutine_handle<> h{};
+    std::error_code ec{};
+  };
+
+  struct awaiter final {
+    executor ex{};
+    timer_handle th{};
+    std::shared_ptr<state> st{};
+
+    bool await_ready() const noexcept {
+      if (!th) {
+        return true;
+      }
+      // If already completed/cancelled, don't suspend.
+      return !th.pending();
+    }
+
+    auto await_suspend(std::coroutine_handle<> h) noexcept -> bool {
+      if (!th || !th.pending()) {
+        return false;
+      }
+
+      st = std::make_shared<state>();
+      st->ex = ex;
+      st->h = h;
+
+      std::weak_ptr<state> w = st;
+      auto th_copy = th;
+      th.add_waiter([w, th_copy]() mutable {
+        if (auto s = w.lock()) {
+          s->ec = th_copy.cancelled() ? error::operation_aborted : std::error_code{};
+
+          s->ex.post([s]() mutable {
+            detail::executor_guard g{s->ex};
+            s->h.resume();
+          });
+        }
+      });
+
+      return true;
+    }
+
+    auto await_resume() noexcept -> std::error_code {
+      if (!th || th.cancelled()) {
+        return error::operation_aborted;
+      }
+      if (st) {
+        return st->ec;
+      }
+      return std::error_code{};
+    }
+  };
+
+  co_return co_await awaiter{ex_, th_};
 }
 
 inline auto steady_timer::cancel() noexcept -> std::size_t {

@@ -2,6 +2,7 @@
 
 #include <xz/io/co_sleep.hpp>
 #include <xz/io/co_spawn.hpp>
+#include <xz/io/error.hpp>
 #include <xz/io/io_context.hpp>
 #include <xz/io/steady_timer.hpp>
 #include <xz/io/src.hpp>
@@ -95,12 +96,15 @@ TEST(io_context_test, steady_timer_async_wait_resumes_on_fire) {
   xz::io::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> done{false};
+  std::atomic<bool> aborted{false};
 
   xz::io::steady_timer t{ex};
   t.expires_after(10ms);
 
   auto task = [&]() -> xz::io::awaitable<void> {
-    co_await t.async_wait(xz::io::use_awaitable);
+    auto ec = co_await t.async_wait(xz::io::use_awaitable);
+    aborted.store(ec == xz::io::make_error_code(xz::io::error::operation_aborted),
+                  std::memory_order_relaxed);
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
@@ -109,6 +113,7 @@ TEST(io_context_test, steady_timer_async_wait_resumes_on_fire) {
 
   (void)ctx.run_for(200ms);
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
+  EXPECT_FALSE(aborted.load(std::memory_order_relaxed));
 }
 
 TEST(io_context_test, steady_timer_async_wait_resumes_on_cancel) {
@@ -117,12 +122,15 @@ TEST(io_context_test, steady_timer_async_wait_resumes_on_cancel) {
   xz::io::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> done{false};
+  std::atomic<bool> aborted{false};
 
   xz::io::steady_timer t{ex};
   t.expires_after(200ms);
 
   auto task = [&]() -> xz::io::awaitable<void> {
-    co_await t.async_wait(xz::io::use_awaitable);
+    auto ec = co_await t.async_wait(xz::io::use_awaitable);
+    aborted.store(ec == xz::io::make_error_code(xz::io::error::operation_aborted),
+                  std::memory_order_relaxed);
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
@@ -135,6 +143,7 @@ TEST(io_context_test, steady_timer_async_wait_resumes_on_cancel) {
 
   (void)ctx.run_for(50ms);
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
+  EXPECT_TRUE(aborted.load(std::memory_order_relaxed));
 }
 
 }  // namespace
