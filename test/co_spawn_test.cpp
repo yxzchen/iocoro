@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <xz/io/co_sleep.hpp>
 #include <xz/io/co_spawn.hpp>
 #include <xz/io/expected.hpp>
 #include <xz/io/io_context.hpp>
@@ -8,6 +9,7 @@
 #include <xz/io/use_awaitable.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <exception>
 
 namespace {
@@ -83,6 +85,30 @@ TEST(co_spawn_test, co_spawn_use_awaitable_hot_starts_without_await) {
 
   (void)ctx.run();
   EXPECT_TRUE(ran.load(std::memory_order_relaxed));
+}
+
+TEST(co_spawn_test, co_spawn_use_awaitable_waits_for_timer_based_child) {
+  using namespace std::chrono_literals;
+
+  xz::io::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> done{false};
+
+  auto slow = [&]() -> xz::io::awaitable<void> {
+    co_await xz::io::co_sleep(10ms);
+    done.store(true, std::memory_order_relaxed);
+  };
+
+  auto parent = [&]() -> xz::io::awaitable<void> {
+    (void)co_await xz::io::co_spawn(ex, slow(), xz::io::use_awaitable);
+    EXPECT_TRUE(done.load(std::memory_order_relaxed));
+  };
+
+  xz::io::co_spawn(ex, parent(), xz::io::detached);
+  (void)ctx.run_for(200ms);
+
+  EXPECT_TRUE(done.load(std::memory_order_relaxed));
 }
 
 TEST(co_spawn_test, co_spawn_completion_callback_receives_value) {
