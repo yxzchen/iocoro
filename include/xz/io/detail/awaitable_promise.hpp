@@ -1,7 +1,7 @@
 #pragma once
 
 #include <xz/io/assert.hpp>
-#include <xz/io/detail/executor/executor_guard.hpp>
+#include <xz/io/detail/executor_guard.hpp>
 #include <xz/io/executor.hpp>
 #include <xz/io/this_coro.hpp>
 

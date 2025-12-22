@@ -1,6 +1,6 @@
 #pragma once
 
-#include <xz/io/detail/timer/timer_entry.hpp>
+#include <xz/io/detail/timer_entry.hpp>
 #include <xz/io/timer_handle.hpp>
 
 #include <utility>

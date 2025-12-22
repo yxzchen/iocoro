@@ -1,6 +1,6 @@
 #pragma once
 
-#include <xz/io/detail/awaitable/awaitable_promise.hpp>
+#include <xz/io/detail/awaitable_promise.hpp>
 
 #include <coroutine>
 #include <exception>
