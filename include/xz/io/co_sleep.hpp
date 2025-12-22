@@ -24,7 +24,7 @@ inline auto co_sleep(std::chrono::steady_clock::duration d) -> awaitable<void> {
 
   steady_timer t{ex};
   t.expires_after(d);
-  co_await t.async_wait(use_awaitable);
+  (void)co_await t.async_wait(use_awaitable);
 }
 
 }  // namespace xz::io

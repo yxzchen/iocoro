@@ -20,8 +20,9 @@ namespace xz::io {
 /// - cancel() cancels the underlying timer and completes pending waits.
 ///
 /// Notes:
-/// - Completion handlers / coroutine resumption are scheduled via the bound executor (never inline),
-///   as long as the executor is not stopped.
+/// - Normal case: completion handlers / coroutine resumption are scheduled via the bound executor
+///   (never inline).
+/// - Exception: if the bound executor is stopped, operations may complete inline to avoid hanging.
 class steady_timer {
  public:
   using clock = std::chrono::steady_clock;
@@ -45,13 +46,15 @@ class steady_timer {
   void expires_at(time_point at) noexcept;
   void expires_after(duration d) noexcept;
 
-  /// Wait until expiry (or cancellation) and invoke handler (never inline).
+  /// Wait until expiry (or cancellation) and invoke handler.
   ///
   /// Handler signature: void(std::error_code)
   void async_wait(std::function<void(std::error_code)> h);
 
   /// Wait until expiry (or cancellation) as an awaitable.
-  auto async_wait(use_awaitable_t) -> awaitable<void>;
+  ///
+  /// Returns `operation_aborted` iff the timer was cancelled.
+  auto async_wait(use_awaitable_t) -> awaitable<std::error_code>;
 
   /// Cancel the timer (best-effort). Returns 1 if a pending timer was cancelled.
   auto cancel() noexcept -> std::size_t;

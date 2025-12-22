@@ -1,15 +1,12 @@
 #pragma once
 
 #include <xz/io/assert.hpp>
-#include <xz/io/detail/executor_guard.hpp>
-#include <xz/io/detail/timer_entry.hpp>
 #include <xz/io/error.hpp>
 #include <xz/io/steady_timer.hpp>
 
 #include <chrono>
 #include <coroutine>
 #include <functional>
-#include <memory>
 #include <system_error>
 #include <utility>
 
@@ -34,7 +31,7 @@ inline void steady_timer::expires_after(duration d) noexcept {
   (void)cancel();
 }
 
-inline void steady_timer::reschedule() noexcept {
+inline void steady_timer::reschedule() {
   if (!ex_ || ex_.stopped()) {
     th_ = {};
     return;
@@ -69,53 +66,22 @@ inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
     reschedule();
   }
 
-  // Attach a completion waiter that runs via ex_.post (never inline).
-  auto entry = th_.entry_;
-  entry->add_waiter([ex = ex_, entry, h = std::move(h)]() mutable {
-    auto ec = std::error_code{};
-    if (entry->is_cancelled()) {
-      ec = make_error_code(error::operation_aborted);
-    }
-    // Ensure handler sees correct "current executor".
-    detail::executor_guard g{ex};
-    if (h) {
-      h(ec);
-    }
-  });
+  th_.async_wait(std::move(h));
 }
 
-inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<void> {
+inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_code> {
   XZ_ENSURE(ex_, "steady_timer::async_wait: requires a bound executor");
 
   // If the executor is stopped, complete synchronously to avoid hanging.
   if (ex_.stopped()) {
-    co_return;
+    co_return make_error_code(error::operation_aborted);
   }
 
   if (!th_.pending()) {
     reschedule();
   }
 
-  struct awaiter final {
-    executor ex{};
-    std::shared_ptr<detail::timer_entry> entry{};
-    std::coroutine_handle<> h{};
-
-    bool await_ready() const noexcept { return false; }
-
-    auto await_suspend(std::coroutine_handle<> ch) noexcept -> bool {
-      h = ch;
-      entry->add_waiter([ex = ex, ch]() mutable {
-        detail::executor_guard g{ex};
-        ch.resume();
-      });
-      return true;
-    }
-
-    void await_resume() noexcept {}
-  };
-
-  co_await awaiter{ex_, th_.entry_};
+  co_return co_await th_.async_wait(use_awaitable);
 }
 
 inline auto steady_timer::cancel() noexcept -> std::size_t {
@@ -126,5 +92,3 @@ inline auto steady_timer::cancel() noexcept -> std::size_t {
 }
 
 }  // namespace xz::io
-
-

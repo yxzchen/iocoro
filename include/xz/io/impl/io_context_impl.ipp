@@ -315,7 +315,11 @@ auto io_context_impl::process_timers() -> std::size_t {
       executor_guard g{executor{*this}};
       cb();
     }
-    entry->notify_completion();
+    try {
+      entry->notify_completion();
+    } catch (...) {
+      // Best-effort: avoid exceptions escaping the event loop.
+    }
 
     ++count;
     lk.lock();
