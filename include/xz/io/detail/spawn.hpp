@@ -1,6 +1,7 @@
 #pragma once
 
 #include <xz/io/awaitable.hpp>
+#include <xz/io/assert.hpp>
 #include <xz/io/detached.hpp>
 #include <xz/io/detail/executor_guard.hpp>
 #include <xz/io/expected.hpp>
@@ -17,23 +18,6 @@
 #include <utility>
 
 namespace xz::io::detail {
-
-struct on_executor_awaiter {
-  executor ex;
-
-  bool await_ready() const noexcept { return false; }
-
-  void await_suspend(std::coroutine_handle<> h) const {
-    ex.post([h, ex = ex]() mutable {
-      executor_guard g{ex};
-      h.resume();
-    });
-  }
-
-  void await_resume() const noexcept {}
-};
-
-inline auto on_executor(executor ex) noexcept -> on_executor_awaiter { return on_executor_awaiter{ex}; }
 
 template <typename T>
 using spawn_expected = ::xz::io::expected<T, std::exception_ptr>;
@@ -157,12 +141,14 @@ template <typename T>
 struct state_awaiter {
   std::shared_ptr<spawn_state<T>> st;
 
-  bool await_ready() const noexcept { return st->done.load(std::memory_order_acquire); }
+  // Always suspend and resume via executor to match the library's "never inline" policy.
+  bool await_ready() const noexcept { return false; }
 
   void await_suspend(std::coroutine_handle<> h) {
     bool ready = false;
     {
       std::scoped_lock lk{st->m};
+      XZ_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters are not supported");
       ready = st->done.load(std::memory_order_acquire);
       if (!ready) st->waiter = h;
     }
@@ -175,14 +161,16 @@ struct state_awaiter {
   }
 
   auto await_resume() -> T {
-    std::exception_ptr ep;
-    std::optional<T> v;
+    std::exception_ptr ep{};
+    std::optional<T> v{};
     {
       std::scoped_lock lk{st->m};
       ep = st->ep;
       v = std::move(st->value);
+      st->value.reset();
     }
     if (ep) std::rethrow_exception(ep);
+    XZ_ENSURE(v.has_value(), "co_spawn(use_awaitable): missing value");
     return std::move(*v);
   }
 };
@@ -191,12 +179,14 @@ template <>
 struct state_awaiter<void> {
   std::shared_ptr<spawn_state<void>> st;
 
-  bool await_ready() const noexcept { return st->done.load(std::memory_order_acquire); }
+  // Always suspend and resume via executor to match the library's "never inline" policy.
+  bool await_ready() const noexcept { return false; }
 
   void await_suspend(std::coroutine_handle<> h) {
     bool ready = false;
     {
       std::scoped_lock lk{st->m};
+      XZ_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters are not supported");
       ready = st->done.load(std::memory_order_acquire);
       if (!ready) st->waiter = h;
     }
@@ -209,7 +199,7 @@ struct state_awaiter<void> {
   }
 
   void await_resume() {
-    std::exception_ptr ep;
+    std::exception_ptr ep{};
     {
       std::scoped_lock lk{st->m};
       ep = st->ep;
