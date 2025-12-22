@@ -1,5 +1,3 @@
-#pragma once
-
 #include <xz/io/assert.hpp>
 #include <xz/io/detail/executor_guard.hpp>
 #include <xz/io/error.hpp>

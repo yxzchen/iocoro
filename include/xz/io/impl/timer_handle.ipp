@@ -1,5 +1,3 @@
-#pragma once
-
 #include <xz/io/detail/timer_entry.hpp>
 #include <xz/io/timer_handle.hpp>
 
