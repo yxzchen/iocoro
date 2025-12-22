@@ -1,5 +1,8 @@
 #pragma once
 
+#include <xz/io/awaitable.hpp>
+#include <xz/io/use_awaitable.hpp>
+
 #include <memory>
 
 namespace xz::io {
@@ -27,8 +30,15 @@ class timer_handle {
 
   explicit operator bool() const noexcept;
 
+  /// Await timer completion (fired or cancelled) as an awaitable.
+  ///
+  /// Semantics:
+  /// - Resumption is scheduled via the timer's executor (never inline).
+  /// - Destroying the awaiting coroutine implicitly cancels the timer.
+  auto async_wait(use_awaitable_t) -> awaitable<void>;
+
  private:
-  friend class io_context;
+  friend class executor;
 
   /// Private constructor for io_context to create handles.
   explicit timer_handle(std::shared_ptr<detail::timer_entry> entry) noexcept;
