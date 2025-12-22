@@ -7,6 +7,7 @@ include(CMakePackageConfigHelpers)
 option(IOCORO_BUILD_TESTS "Build tests" ${PROJECT_IS_TOP_LEVEL})
 option(IOCORO_ENABLE_WARNINGS "Enable warning flags for iocoro tests/examples" ${PROJECT_IS_TOP_LEVEL})
 option(IOCORO_ENABLE_URING "Enable io_uring backend if liburing is available" ON)
+option(IOCORO_ENABLE_ASAN "Enable AddressSanitizer" ON)
 
 add_library(iocoro INTERFACE)
 add_library(iocoro::iocoro ALIAS iocoro)
@@ -62,6 +63,18 @@ if(IOCORO_ENABLE_WARNINGS)
     target_compile_options(iocoro_warnings INTERFACE
         $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wpedantic -Wno-unused-parameter>
     )
+endif()
+
+if(IOCORO_ENABLE_ASAN)
+    target_compile_options(iocoro INTERFACE
+        -g
+        -fno-omit-frame-pointer
+        -fsanitize=address
+    )
+    target_link_options(iocoro INTERFACE
+        -fsanitize=address
+    )
+    message(STATUS "iocoro: AddressSanitizer is ENABLED")
 endif()
 
 if(IOCORO_BUILD_TESTS)
