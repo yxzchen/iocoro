@@ -33,12 +33,6 @@ class io_context {
   void restart();
   auto stopped() const noexcept -> bool;
 
-  void post(std::function<void()> f);
-  void dispatch(std::function<void()> f);
-
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
-    -> timer_handle;
-
   /// Get an executor associated with this io_context
   auto get_executor() noexcept -> executor;
 

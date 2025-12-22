@@ -25,16 +25,6 @@ void io_context::restart() { impl_->restart(); }
 
 auto io_context::stopped() const noexcept -> bool { return impl_->stopped(); }
 
-void io_context::post(std::function<void()> f) { impl_->post(std::move(f)); }
-
-void io_context::dispatch(std::function<void()> f) { impl_->dispatch(std::move(f)); }
-
-auto io_context::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
-  -> timer_handle {
-  auto entry = impl_->schedule_timer(timeout, std::move(callback));
-  return timer_handle(entry);
-}
-
 auto io_context::get_executor() noexcept -> executor { return executor{*impl_}; }
 
 }  // namespace xz::io
