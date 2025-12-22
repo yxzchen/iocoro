@@ -139,6 +139,24 @@ struct spawn_state<void> {
 
 template <typename T>
 struct state_awaiter {
+  // IMPORTANT: Explicit constructor required to avoid ASan use-after-free errors.
+  //
+  // Issue: Aggregate initialization `awaiter{shared_ptr}` triggers ASan
+  // use-after-free errors. Known to affect:
+  // - state_awaiter<T> / state_awaiter<void> (this file)
+  // - steady_timer::awaiter (steady_timer.hpp)
+  // Likely affects all awaiters containing shared_ptr members.
+  //
+  // Suspected cause: Aggregate init may create temporaries with incorrect
+  // lifetime, leading to premature destruction of the shared state.
+  //
+  // Workaround: Explicit constructor with std::move ensures proper ownership
+  // transfer and resolves all ASan issues.
+  //
+  // TODO: Investigate root cause - possibly related to:
+  // - C++17/20 aggregate initialization rules changes
+  // - Compiler-specific temporary materialization behavior
+  // - Interaction between move semantics and aggregate members
   explicit state_awaiter(std::shared_ptr<spawn_state<T>> st_) : st(std::move(st_)) {}
 
   std::shared_ptr<spawn_state<T>> st;
