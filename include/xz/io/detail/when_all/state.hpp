@@ -26,13 +26,6 @@ struct when_all_value {
 template <class T>
 using when_all_value_t = typename when_all_value<T>::type;
 
-template <typename T>
-auto when_all_bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {
-  auto h = a.release();
-  h.promise().set_executor(ex);
-  return awaitable<T>{h};
-}
-
 template <class... Ts>
 struct when_all_state {
   using values_tuple = std::tuple<std::optional<when_all_value_t<Ts>>...>;

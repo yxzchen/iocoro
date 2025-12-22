@@ -1,5 +1,6 @@
 #pragma once
 
+#include <xz/io/detail/executor_guard.hpp>
 #include <xz/io/detail/when_all/state.hpp>
 
 #include <vector>
