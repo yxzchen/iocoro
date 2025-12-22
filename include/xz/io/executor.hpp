@@ -5,6 +5,9 @@
 
 namespace xz::io {
 
+class steady_timer;
+class timer_handle;
+
 namespace detail {
 class io_context_impl;
 struct operation_base;
@@ -42,14 +45,6 @@ class executor {
   /// Returns true if the associated context is stopped (or executor is empty).
   auto stopped() const noexcept -> bool;
 
-  /// Schedule a timer on the associated context.
-  ///
-  /// Notes:
-  /// - Timeout is clamped to >= 0.
-  /// - Callback is invoked on the context thread (via the context event loop).
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
-    -> class timer_handle;
-
   explicit operator bool() const noexcept { return impl_ != nullptr; }
 
   friend auto operator==(executor const& a, executor const& b) noexcept -> bool {
@@ -65,11 +60,21 @@ class executor {
   friend class work_guard;
 
   friend struct detail::operation_base;
+  friend class steady_timer;
 
   void add_work_guard() const noexcept;
   void remove_work_guard() const noexcept;
 
   auto ensure_impl() const -> detail::io_context_impl&;
+
+  /// Low-level timer registration primitive for steady_timer.
+  /// Schedule a timer on the associated context.
+  ///
+  /// Notes:
+  /// - Timeout is clamped to >= 0.
+  /// - Callback is invoked on the context thread (via the context event loop).
+  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
+    -> timer_handle;
 
   // Non-owning pointer. The associated io_context_impl must outlive the executor.
   detail::io_context_impl* impl_;
