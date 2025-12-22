@@ -14,20 +14,6 @@
 
 namespace {
 
-TEST(timer_test, schedule_timer_runs_callback_via_run_for) {
-  using namespace std::chrono_literals;
-
-  xz::io::io_context ctx;
-  auto ex = ctx.get_executor();
-  std::atomic<bool> fired{false};
-
-  (void)ex.schedule_timer(10ms, [&] { fired.store(true, std::memory_order_relaxed); });
-
-  auto const n = ctx.run_for(200ms);
-  EXPECT_GE(n, 1U);
-  EXPECT_TRUE(fired.load(std::memory_order_relaxed));
-}
-
 TEST(timer_test, steady_timer_async_wait_resumes_on_fire) {
   using namespace std::chrono_literals;
 

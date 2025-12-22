@@ -161,7 +161,7 @@ TEST(timer_handle_cancel, double_cancel_is_safe) {
 
   auto handle = ex.schedule_timer(100ms, [] {});
 
-  auto result1 = handle.cancel();
+  (void)handle.cancel();
   EXPECT_TRUE(handle.cancelled());
 
   // Second cancel should be a no-op

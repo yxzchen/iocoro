@@ -159,7 +159,7 @@ TEST(io_context_impl_timer, cancel_timer_prevents_execution) {
   EXPECT_TRUE(entry->cancel());
   EXPECT_TRUE(entry->is_cancelled());
 
-  auto const n = impl.run_for(200ms);
+  (void)impl.run_for(200ms);
   EXPECT_FALSE(fired.load(std::memory_order_relaxed));
 }
 
