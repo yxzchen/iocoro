@@ -3,6 +3,7 @@
 #include <xz/io/co_sleep.hpp>
 #include <xz/io/co_spawn.hpp>
 #include <xz/io/io_context.hpp>
+#include <xz/io/steady_timer.hpp>
 #include <xz/io/src.hpp>
 #include <xz/io/timer_handle.hpp>
 #include <xz/io/use_awaitable.hpp>
@@ -88,17 +89,18 @@ TEST(io_context_test, co_sleep_resumes_via_timer_and_executor) {
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
 }
 
-TEST(io_context_test, timer_handle_async_wait_resumes_on_fire) {
+TEST(io_context_test, steady_timer_async_wait_resumes_on_fire) {
   using namespace std::chrono_literals;
 
   xz::io::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> done{false};
 
-  auto th = ex.schedule_timer(10ms, [] {});
+  xz::io::steady_timer t{ex};
+  t.expires_after(10ms);
 
   auto task = [&]() -> xz::io::awaitable<void> {
-    co_await th.async_wait(xz::io::use_awaitable);
+    co_await t.async_wait(xz::io::use_awaitable);
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
@@ -109,25 +111,27 @@ TEST(io_context_test, timer_handle_async_wait_resumes_on_fire) {
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
 }
 
-TEST(io_context_test, timer_handle_async_wait_resumes_on_cancel) {
+TEST(io_context_test, steady_timer_async_wait_resumes_on_cancel) {
   using namespace std::chrono_literals;
 
   xz::io::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> done{false};
 
-  auto th = ex.schedule_timer(200ms, [] {});
+  xz::io::steady_timer t{ex};
+  t.expires_after(200ms);
 
   auto task = [&]() -> xz::io::awaitable<void> {
-    co_await th.async_wait(xz::io::use_awaitable);
+    co_await t.async_wait(xz::io::use_awaitable);
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
 
   xz::io::co_spawn(ctx.get_executor(), task());
 
-  // Cancel before running: async_wait should still complete (via posted work).
-  (void)th.cancel();
+  // Let the coroutine start and suspend on async_wait, then cancel it.
+  (void)ctx.run_one();
+  (void)t.cancel();
 
   (void)ctx.run_for(50ms);
   EXPECT_TRUE(done.load(std::memory_order_relaxed));

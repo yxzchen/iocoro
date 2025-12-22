@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <functional>
 
 namespace xz::io {
@@ -40,6 +41,14 @@ class executor {
 
   /// Returns true if the associated context is stopped (or executor is empty).
   auto stopped() const noexcept -> bool;
+
+  /// Schedule a timer on the associated context.
+  ///
+  /// Notes:
+  /// - Timeout is clamped to >= 0.
+  /// - Callback is invoked on the context thread (via the context event loop).
+  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
+    -> class timer_handle;
 
   explicit operator bool() const noexcept { return impl_ != nullptr; }
 

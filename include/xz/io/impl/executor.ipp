@@ -1,6 +1,7 @@
 #include <xz/io/assert.hpp>
 #include <xz/io/detail/context/io_context_impl.hpp>
 #include <xz/io/executor.hpp>
+#include <xz/io/timer_handle.hpp>
 
 #include <stdexcept>
 
@@ -15,6 +16,12 @@ void executor::post(std::function<void()> f) const { ensure_impl().post(std::mov
 void executor::dispatch(std::function<void()> f) const { ensure_impl().dispatch(std::move(f)); }
 
 auto executor::stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
+
+auto executor::schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
+  -> timer_handle {
+  auto entry = ensure_impl().schedule_timer(timeout, std::move(callback));
+  return timer_handle(std::move(entry));
+}
 
 void executor::add_work_guard() const noexcept {
   // Work guards are best-effort; if an executor is empty, it simply can't guard anything.

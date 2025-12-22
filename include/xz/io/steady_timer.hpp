@@ -1,0 +1,69 @@
+#pragma once
+
+#include <xz/io/awaitable.hpp>
+#include <xz/io/executor.hpp>
+#include <xz/io/timer_handle.hpp>
+#include <xz/io/use_awaitable.hpp>
+
+#include <chrono>
+#include <cstddef>
+#include <functional>
+#include <system_error>
+
+namespace xz::io {
+
+/// A reusable timer resource bound to an executor.
+///
+/// Model:
+/// - Owns a "timer resource".
+/// - You can set expiry (expires_at/after), then wait (async_wait).
+/// - cancel() cancels the underlying timer and completes pending waits.
+///
+/// Notes:
+/// - Completion handlers / coroutine resumption are scheduled via the bound executor (never inline),
+///   as long as the executor is not stopped.
+class steady_timer {
+ public:
+  using clock = std::chrono::steady_clock;
+  using time_point = clock::time_point;
+  using duration = clock::duration;
+
+  explicit steady_timer(executor ex) noexcept;
+  steady_timer(executor ex, time_point at) noexcept;
+  steady_timer(executor ex, duration after) noexcept;
+
+  steady_timer(steady_timer const&) = delete;
+  auto operator=(steady_timer const&) -> steady_timer& = delete;
+  steady_timer(steady_timer&&) = delete;
+  auto operator=(steady_timer&&) -> steady_timer& = delete;
+
+  ~steady_timer();
+
+  auto get_executor() const noexcept -> executor { return ex_; }
+
+  auto expiry() const noexcept -> time_point { return expiry_; }
+  void expires_at(time_point at) noexcept;
+  void expires_after(duration d) noexcept;
+
+  /// Wait until expiry (or cancellation) and invoke handler (never inline).
+  ///
+  /// Handler signature: void(std::error_code)
+  void async_wait(std::function<void(std::error_code)> h);
+
+  /// Wait until expiry (or cancellation) as an awaitable.
+  auto async_wait(use_awaitable_t) -> awaitable<void>;
+
+  /// Cancel the timer (best-effort). Returns 1 if a pending timer was cancelled.
+  auto cancel() noexcept -> std::size_t;
+
+ private:
+  void reschedule() noexcept;
+
+  executor ex_{};
+  time_point expiry_{clock::now()};
+  timer_handle th_{};
+};
+
+}  // namespace xz::io
+
+
