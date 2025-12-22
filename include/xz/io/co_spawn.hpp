@@ -102,12 +102,6 @@ void co_spawn(executor ex, awaitable<T> a, detached_t) {
   });
 }
 
-/// Detached overload (default).
-template <typename T>
-void co_spawn(executor ex, awaitable<T> a) {
-  co_spawn(ex, std::move(a), detached);
-}
-
 /// Start an awaitable on the given executor, returning an awaitable that can be awaited
 /// to obtain the result (exception is rethrown on await_resume()).
 template <typename T>

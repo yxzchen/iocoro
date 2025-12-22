@@ -85,7 +85,7 @@ TEST(io_context_test, co_sleep_resumes_via_timer_and_executor) {
     done.store(true, std::memory_order_relaxed);
   };
 
-  xz::io::co_spawn(ctx.get_executor(), task());
+  xz::io::co_spawn(ctx.get_executor(), task(), xz::io::detached);
 
   (void)ctx.run_for(200ms);
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
@@ -110,7 +110,7 @@ TEST(io_context_test, steady_timer_async_wait_resumes_on_fire) {
     co_return;
   };
 
-  xz::io::co_spawn(ctx.get_executor(), task());
+  xz::io::co_spawn(ctx.get_executor(), task(), xz::io::detached);
 
   (void)ctx.run_for(200ms);
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
@@ -136,7 +136,7 @@ TEST(io_context_test, steady_timer_async_wait_resumes_on_cancel) {
     co_return;
   };
 
-  xz::io::co_spawn(ctx.get_executor(), task());
+  xz::io::co_spawn(ctx.get_executor(), task(), xz::io::detached);
 
   // Let the coroutine start and suspend on async_wait, then cancel it.
   (void)ctx.run_one();
@@ -166,7 +166,7 @@ TEST(io_context_test, co_spawn_use_awaitable_returns_value) {
     done.store(true, std::memory_order_relaxed);
   };
 
-  xz::io::co_spawn(ex, parent());
+  xz::io::co_spawn(ex, parent(), xz::io::detached);
 
   (void)ctx.run();
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
@@ -194,7 +194,7 @@ TEST(io_context_test, co_spawn_use_awaitable_rethrows_exception) {
     }
   };
 
-  xz::io::co_spawn(ex, parent());
+  xz::io::co_spawn(ex, parent(), xz::io::detached);
 
   (void)ctx.run();
   EXPECT_TRUE(got_exception.load(std::memory_order_relaxed));
