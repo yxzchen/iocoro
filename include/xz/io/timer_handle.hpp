@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 namespace xz::io {
@@ -21,7 +22,7 @@ class timer_handle {
   /// Attempts to cancel the timer.
   /// Returns true if the timer was pending and is now cancelled.
   /// Returns false if the timer was already fired, cancelled, or the handle is empty.
-  auto cancel() noexcept -> bool;
+  auto cancel() const noexcept -> bool;
 
   /// Returns true if the timer is still pending (not fired or cancelled).
   auto pending() const noexcept -> bool;
@@ -42,7 +43,7 @@ class timer_handle {
   explicit timer_handle(std::shared_ptr<detail::timer_entry> entry) noexcept;
 
   // steady_timer hook: add a completion waiter without exposing timer_entry.
-  void add_waiter(std::function<void()> w);
+  void add_waiter(std::function<void()> w) const;
 
   std::shared_ptr<detail::timer_entry> entry_;
 };
