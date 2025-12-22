@@ -49,18 +49,28 @@ class steady_timer {
   /// Wait until expiry (or cancellation) and invoke handler.
   ///
   /// Handler signature: void(std::error_code)
+  ///
+  /// Completion semantics:
+  /// - Normal case: handler is invoked via the timer's owning executor (never inline).
+  /// - Exception: if the owning executor is stopped (or handle is empty), completion may be inline.
+  /// - `ec == operation_aborted` iff the timer was cancelled.
   void async_wait(std::function<void(std::error_code)> h);
 
   /// Wait until expiry (or cancellation) as an awaitable.
   ///
-  /// Returns `operation_aborted` iff the timer was cancelled.
+  /// Returns:
+  /// - `ec == operation_aborted` iff the timer was cancelled.
+  ///
+  /// Completion semantics:
+  /// - Normal case: coroutine resumption occurs via the timer's owning executor (never inline).
+  /// - Exception: if the owning executor is stopped (or handle is empty), it completes inline.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code>;
 
   /// Cancel the timer (best-effort). Returns 1 if a pending timer was cancelled.
   auto cancel() noexcept -> std::size_t;
 
  private:
-  void reschedule() noexcept;
+  void reschedule();
 
   executor ex_{};
   time_point expiry_{clock::now()};
