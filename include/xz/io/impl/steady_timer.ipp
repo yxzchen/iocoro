@@ -73,7 +73,7 @@ inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
   }
 
   auto th = th_;
-  th_.add_waiter([ex = ex_, th, h = std::move(h)]() mutable {
+  th.add_waiter([ex = ex_, th, h = std::move(h)]() mutable {
     auto ec = std::error_code{};
     if (th.cancelled()) {
       ec = error::operation_aborted;
@@ -120,7 +120,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
       return !th.pending();
     }
 
-    auto await_suspend(std::coroutine_handle<> h) noexcept -> bool {
+    auto await_suspend(std::coroutine_handle<> h) -> bool {
       if (!th || !th.pending()) {
         return false;
       }
