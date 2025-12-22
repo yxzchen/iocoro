@@ -12,6 +12,7 @@
 #include <xz/io/socket_option.hpp>
 #include <xz/io/this_coro.hpp>
 #include <xz/io/timer_handle.hpp>
+#include <xz/io/use_awaitable.hpp>
 #include <xz/io/when_all.hpp>
 #include <xz/io/when_any.hpp>
 #include <xz/io/work_guard.hpp>
