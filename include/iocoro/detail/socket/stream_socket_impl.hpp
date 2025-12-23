@@ -15,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <cstdint>
 #include <system_error>
 
 // Native socket address types (POSIX).
@@ -57,14 +58,15 @@ class stream_socket_impl {
   ///
   /// Semantics:
   /// - Aborts waiters registered with the reactor (connect/read/write readiness waits).
+  /// - Does NOT directly modify stream-level state (e.g. conn_state). The awaiting coroutines
+  ///   observe cancellation via their wait result and clean up accordingly.
   /// - Does NOT reset in-flight flags here; the awaiting coroutines will clear them on resume.
   void cancel() noexcept {
-    base_.cancel();
-    // If a connect was in progress, treat cancellation as abandoning it.
-    std::scoped_lock lk{mtx_};
-    if (state_ == conn_state::connecting) {
-      state_ = conn_state::closed;
+    {
+      std::scoped_lock lk{mtx_};
+      ++epoch_;
     }
+    base_.cancel();
   }
 
   /// Close the stream socket (best-effort, idempotent).
@@ -73,12 +75,14 @@ class stream_socket_impl {
   /// - Cancels and closes the underlying fd via socket_impl_base.
   /// - Resets stream-level state so the object can be reused after a later assign/open.
   void close() noexcept {
+    {
+      std::scoped_lock lk{mtx_};
+      ++epoch_;
+      state_ = conn_state::closed;
+      shutdown_ = {};
+      // NOTE: do not touch read_in_flight_/write_in_flight_ here; their owner is the coroutine.
+    }
     base_.close();
-    std::scoped_lock lk{mtx_};
-    state_ = conn_state::closed;
-    shutdown_ = {};
-    read_in_flight_ = false;
-    write_in_flight_ = false;
   }
 
   template <class Option>
@@ -98,6 +102,7 @@ class stream_socket_impl {
       co_return error::not_open;
     }
 
+    std::uint64_t my_epoch = 0;
     {
       std::scoped_lock lk{mtx_};
       if (state_ == conn_state::connecting) {
@@ -107,6 +112,7 @@ class stream_socket_impl {
         co_return error::already_connected;
       }
       state_ = conn_state::connecting;
+      my_epoch = epoch_;
     }
 
     // We intentionally keep syscall logic outside the mutex.
@@ -139,6 +145,15 @@ class stream_socket_impl {
       co_return wait_ec;
     }
 
+    {
+      // If cancel()/close() happened while we were waiting, treat as aborted.
+      std::scoped_lock lk{mtx_};
+      if (epoch_ != my_epoch) {
+        state_ = conn_state::closed;
+        co_return error::operation_aborted;
+      }
+    }
+
     int so_error = 0;
     socklen_t optlen = sizeof(so_error);
     if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
@@ -156,6 +171,10 @@ class stream_socket_impl {
 
     {
       std::scoped_lock lk{mtx_};
+      if (epoch_ != my_epoch) {
+        state_ = conn_state::closed;
+        co_return error::operation_aborted;
+      }
       state_ = conn_state::connected;
     }
     co_return std::error_code{};
@@ -169,6 +188,7 @@ class stream_socket_impl {
       co_return unexpected<std::error_code>(error::not_open);
     }
 
+    std::uint64_t my_epoch = 0;
     {
       std::scoped_lock lk{mtx_};
       if (state_ != conn_state::connected) {
@@ -181,6 +201,7 @@ class stream_socket_impl {
         co_return unexpected<std::error_code>(error::busy);
       }
       read_in_flight_ = true;
+      my_epoch = epoch_;
     }
 
     auto guard = finally([this] {
@@ -208,6 +229,12 @@ class stream_socket_impl {
         if (ec) {
           co_return unexpected<std::error_code>(ec);
         }
+        {
+          std::scoped_lock lk{mtx_};
+          if (epoch_ != my_epoch) {
+            co_return unexpected<std::error_code>(error::operation_aborted);
+          }
+        }
         continue;
       }
       co_return unexpected<std::error_code>(std::error_code(errno, std::generic_category()));
@@ -222,6 +249,7 @@ class stream_socket_impl {
       co_return unexpected<std::error_code>(error::not_open);
     }
 
+    std::uint64_t my_epoch = 0;
     {
       std::scoped_lock lk{mtx_};
       if (state_ != conn_state::connected) {
@@ -234,6 +262,7 @@ class stream_socket_impl {
         co_return unexpected<std::error_code>(error::busy);
       }
       write_in_flight_ = true;
+      my_epoch = epoch_;
     }
 
     auto guard = finally([this] {
@@ -248,6 +277,7 @@ class stream_socket_impl {
     for (;;) {
       auto n = ::write(fd, buffer.data(), buffer.size());
       if (n >= 0) {
+        // Note: write returning 0 is uncommon; treat it as a successful 0-byte write.
         co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(n));
       }
       if (errno == EINTR) {
@@ -257,6 +287,12 @@ class stream_socket_impl {
         auto ec = co_await wait_write_ready();
         if (ec) {
           co_return unexpected<std::error_code>(ec);
+        }
+        {
+          std::scoped_lock lk{mtx_};
+          if (epoch_ != my_epoch) {
+            co_return unexpected<std::error_code>(error::operation_aborted);
+          }
         }
         continue;
       }
@@ -269,19 +305,12 @@ class stream_socket_impl {
     if (fd < 0) return error::not_open;
 
     int how = SHUT_RDWR;
-    {
-      std::scoped_lock lk{mtx_};
-      if (what == shutdown_type::receive) {
-        shutdown_.read = true;
-        how = SHUT_RD;
-      } else if (what == shutdown_type::send) {
-        shutdown_.write = true;
-        how = SHUT_WR;
-      } else {
-        shutdown_.read = true;
-        shutdown_.write = true;
-        how = SHUT_RDWR;
-      }
+    if (what == shutdown_type::receive) {
+      how = SHUT_RD;
+    } else if (what == shutdown_type::send) {
+      how = SHUT_WR;
+    } else {
+      how = SHUT_RDWR;
     }
 
     if (::shutdown(fd, how) != 0) {
@@ -289,6 +318,19 @@ class stream_socket_impl {
         return error::not_connected;
       }
       return std::error_code(errno, std::generic_category());
+    }
+
+    // Update logical shutdown state only after syscall succeeds.
+    {
+      std::scoped_lock lk{mtx_};
+      if (what == shutdown_type::receive) {
+        shutdown_.read = true;
+      } else if (what == shutdown_type::send) {
+        shutdown_.write = true;
+      } else {
+        shutdown_.read = true;
+        shutdown_.write = true;
+      }
     }
     return {};
   }
@@ -441,6 +483,7 @@ class stream_socket_impl {
 
   mutable std::mutex mtx_{};
   conn_state state_{conn_state::closed};
+  std::uint64_t epoch_{0};
   shutdown_state shutdown_{};
   bool read_in_flight_{false};
   bool write_in_flight_{false};
