@@ -1,7 +1,7 @@
 #pragma once
 
 #include <xz/io/assert.hpp>
-#include <xz/io/detail/context/io_context_impl.hpp>
+#include <xz/io/detail/io_context_impl.hpp>
 #include <xz/io/executor.hpp>
 
 #include <memory>

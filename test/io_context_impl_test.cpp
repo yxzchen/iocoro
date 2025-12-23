@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <xz/io/detail/context/io_context_impl.hpp>
+#include <xz/io/detail/io_context_impl.hpp>
 #include <xz/io/src.hpp>
 
 #include <atomic>
