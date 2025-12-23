@@ -27,11 +27,6 @@ template <class T>
 using when_all_value_t = typename when_all_value<T>::type;
 
 // Shared state base for when_all (variadic + container).
-//
-// Notes:
-// - `done` is protected by the mutex and is the canonical "completed" flag.
-//   This avoids missed-wakeup races that can happen when trying to infer
-//   completion from `remaining` (which is updated without taking the mutex).
 template <class Derived>
 struct when_all_state_base {
   executor ex{};
@@ -39,11 +34,9 @@ struct when_all_state_base {
   std::atomic<std::size_t> remaining{0};
   std::coroutine_handle<> waiter{};
   std::exception_ptr first_ep{};
-  bool done{false};
 
   when_all_state_base(executor ex_, std::size_t n) : ex(ex_) {
     remaining.store(n, std::memory_order_relaxed);
-    done = (n == 0);
   }
 
   void set_exception(std::exception_ptr ep) noexcept {
@@ -59,7 +52,6 @@ struct when_all_state_base {
     std::coroutine_handle<> w{};
     {
       std::scoped_lock lk{m};
-      done = true;
       w = waiter;
       waiter = {};
     }
@@ -99,7 +91,9 @@ struct when_all_awaiter {
   bool await_suspend(std::coroutine_handle<> h) {
     std::scoped_lock lk{st->m};
     XZ_ENSURE(!st->waiter, "when_all: multiple awaiters are not supported");
-    if (st->done) return false;  // already completed; resume immediately
+    if (st->remaining.load(std::memory_order_relaxed) == 0) {
+      return false;  // already completed; resume immediately
+    }
     st->waiter = h;
     return true;
   }
