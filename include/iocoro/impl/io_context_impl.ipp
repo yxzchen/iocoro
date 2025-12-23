@@ -166,7 +166,7 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::read, 0};
+      return fd_event_handle{this, fd, fd_event_kind::read, invalid_fd_token};
     }
 
     if (it == fd_operations_.end()) {
@@ -203,7 +203,7 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::write, 0};
+      return fd_event_handle{this, fd, fd_event_kind::write, invalid_fd_token};
     }
 
     if (it == fd_operations_.end()) {
