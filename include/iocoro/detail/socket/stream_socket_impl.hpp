@@ -352,15 +352,6 @@ class stream_socket_impl {
     }
 
     void complete(std::error_code ec) {
-      // Clear stored handle (best-effort) so future operations don't cancel a stale token.
-      if (base_ != nullptr) {
-        if (kind_ == kind::read) {
-          base_->set_read_handle({});
-        } else {
-          base_->set_write_handle({});
-        }
-      }
-
       st_->ec = ec;
       st_->ex.post([s = st_] { s->h.resume(); });
     }
