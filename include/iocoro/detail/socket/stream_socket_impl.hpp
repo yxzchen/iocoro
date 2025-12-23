@@ -33,6 +33,12 @@ namespace iocoro::detail::socket {
 /// Concurrency:
 /// - At most one in-flight read and one in-flight write are intended (full-duplex).
 /// - Conflicting operations should return `error::busy` (first stage: stub).
+///
+/// Cancellation token contract (ties into `socket_impl_base`):
+/// - This type guarantees at most one in-flight readiness waiter per direction via
+///   `read_in_flight_` / `write_in_flight_`.
+/// - It is therefore valid for `socket_impl_base` to store only the most-recent cancel handle
+///   per direction (read/write).
 class stream_socket_impl {
  public:
   stream_socket_impl() noexcept = default;
@@ -362,7 +368,6 @@ class stream_socket_impl {
   }
 
   struct wait_state {
-    executor ex{};
     std::coroutine_handle<> h{};
     std::error_code ec{};
     std::atomic<bool> done{false};
@@ -382,6 +387,9 @@ class stream_socket_impl {
    private:
     void do_start(std::unique_ptr<iocoro::detail::operation_base> self) override {
       // Register and publish handle for cancellation.
+      // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
+      // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
+      // "single waiter per direction" invariant for correctness.
       if (kind_ == kind::read) {
         auto h = impl_->register_fd_read(fd_, std::move(self));
         if (base_ != nullptr) {
@@ -401,7 +409,7 @@ class stream_socket_impl {
         return;
       }
       st_->ec = ec;
-      st_->ex.post([s = st_] { s->h.resume(); });
+      ex_.post([s = st_] { s->h.resume(); });
     }
 
     kind kind_;
@@ -420,7 +428,6 @@ class stream_socket_impl {
 
     // Create a shared state for completion.
     auto st = std::make_shared<wait_state>();
-    st->ex = ex;
 
     struct awaiter {
       stream_socket_impl* self;
@@ -454,7 +461,6 @@ class stream_socket_impl {
     if (!ex) co_return error::not_open;
 
     auto st = std::make_shared<wait_state>();
-    st->ex = ex;
 
     struct awaiter {
       stream_socket_impl* self;

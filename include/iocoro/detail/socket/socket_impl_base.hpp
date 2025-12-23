@@ -274,11 +274,23 @@ class socket_impl_base {
 
   friend class stream_socket_impl;
 
+  /// Publish the current cancellation handle for the "read readiness" waiter.
+  ///
+  /// Ownership / contract:
+  /// - `socket_impl_base` stores exactly ONE handle per direction (read/write).
+  /// - Each call overwrites the previous handle; only the most-recent handle is retained.
+  /// - `cancel()` / `close()` / `release()` will atomically `exchange()` the stored handle
+  ///   and call `handle.cancel()` outside the lock.
+  ///
+  /// Therefore, higher layers MUST enforce that, per-direction, there is at most one
+  /// in-flight waiter that relies on this handle for cancellation.
   void set_read_handle(fd_event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     read_handle_ = h;
   }
 
+  /// Publish the current cancellation handle for the "write readiness" waiter.
+  /// See `set_read_handle()` for the ownership/contract details.
   void set_write_handle(fd_event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     write_handle_ = h;
