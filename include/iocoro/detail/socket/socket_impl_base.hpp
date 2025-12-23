@@ -31,7 +31,7 @@ namespace iocoro::detail::socket {
 ///   or return `error::busy` when conflicting ops are in-flight.
 class socket_impl_base {
  public:
-  enum class state : std::uint8_t { closed, open, closing };
+  enum class state : std::uint8_t { closed, opening, open, closing };
 
   socket_impl_base() noexcept = default;
   explicit socket_impl_base(executor ex) noexcept : ex_(ex) {}
@@ -41,11 +41,12 @@ class socket_impl_base {
   socket_impl_base(socket_impl_base&&) = delete;
   auto operator=(socket_impl_base&&) -> socket_impl_base& = delete;
 
-  ~socket_impl_base() = default;
+  ~socket_impl_base() { close(); }
 
   auto get_executor() const noexcept -> executor { return ex_; }
 
   auto get_state() const noexcept -> state { return state_.load(std::memory_order_acquire); }
+  auto is_closing() const noexcept -> bool { return get_state() == state::closing; }
 
   /// Native handle. Returns -1 if not open.
   auto native_handle() const noexcept -> int { return fd_.load(std::memory_order_acquire); }
@@ -58,24 +59,42 @@ class socket_impl_base {
   /// - error::busy if already open
   /// - std::error_code(errno, generic_category()) for sys failures
   auto open(int domain, int type, int protocol) noexcept -> std::error_code {
-    std::scoped_lock lk{mtx_};
-    if (state_.load(std::memory_order_relaxed) != state::closed || native_handle() >= 0) {
-      return error::busy;
+    {
+      std::scoped_lock lk{mtx_};
+      if (state_.load(std::memory_order_relaxed) != state::closed || native_handle() >= 0) {
+        return error::busy;
+      }
+      state_.store(state::opening, std::memory_order_release);
     }
 
     int fd = ::socket(domain, type, protocol);
     if (fd < 0) {
+      // Roll back the transient state.
+      std::scoped_lock lk{mtx_};
+      state_.store(state::closed, std::memory_order_release);
       return std::error_code(errno, std::generic_category());
     }
 
-    // Best-effort: set CLOEXEC
+    // Best-effort: set CLOEXEC + non-blocking.
     (void)set_cloexec(fd);
-    // Best-effort: set non-blocking
     (void)set_nonblocking(fd);
 
-    fd_.store(fd, std::memory_order_release);
-    state_.store(state::open, std::memory_order_release);
-    return {};
+    {
+      std::scoped_lock lk{mtx_};
+      // Someone may have called close()/assign() while we were opening.
+      if (state_.load(std::memory_order_relaxed) == state::opening) {
+        fd_.store(fd, std::memory_order_release);
+        state_.store(state::open, std::memory_order_release);
+        return {};
+      }
+      // If close() observed opening and transitioned to closing, roll it back now.
+      if (state_.load(std::memory_order_relaxed) == state::closing) {
+        state_.store(state::closed, std::memory_order_release);
+      }
+    }
+
+    (void)::close(fd);
+    return error::busy;
   }
 
   /// Adopt an existing native handle (e.g. accept()).
@@ -124,30 +143,12 @@ class socket_impl_base {
 
   /// Cancel pending operations (best-effort).
   void cancel() noexcept {
-    auto fd = native_handle();
-    fd_event_handle rh{};
-    fd_event_handle wh{};
-    {
-      std::scoped_lock lk{mtx_};
-      rh = std::exchange(read_handle_, {});
-      wh = std::exchange(write_handle_, {});
-    }
-
-    // Best-effort: cancel the specific registrations (token-based).
-    rh.cancel();
-    wh.cancel();
-
-    // Best-effort: ensure reactor interest is removed and any ops are aborted.
-    if (ex_.impl_ != nullptr && fd >= 0) {
-      ex_.impl_->deregister_fd(fd);
-    }
+    cancel_common(native_handle(), /*deregister=*/true);
   }
 
   /// Close the socket (best-effort, idempotent).
   void close() noexcept {
     int fd = -1;
-    fd_event_handle rh{};
-    fd_event_handle wh{};
     {
       std::scoped_lock lk{mtx_};
       auto s = state_.load(std::memory_order_relaxed);
@@ -157,18 +158,10 @@ class socket_impl_base {
       }
       state_.store(state::closing, std::memory_order_release);
       fd = fd_.exchange(-1, std::memory_order_acq_rel);
-      rh = std::exchange(read_handle_, {});
-      wh = std::exchange(write_handle_, {});
     }
 
-    // Ensure reactor interest is removed before the fd can be reused by the OS.
-    if (ex_.impl_ != nullptr && fd >= 0) {
-      ex_.impl_->deregister_fd(fd);
-    }
-
-    // Best-effort cancel (may be no-op after deregister).
-    rh.cancel();
-    wh.cancel();
+    // Cancel & deregister interest first (best-effort).
+    cancel_common(fd, /*deregister=*/true);
 
     if (fd >= 0) {
       (void)::close(fd);
@@ -178,6 +171,9 @@ class socket_impl_base {
   }
 
   /// Release ownership of the native handle without closing it.
+  ///
+  /// IMPORTANT: This deregisters the fd from the reactor, so any pending operations will be
+  /// cancelled. The caller is responsible for managing the returned fd, including closing it.
   auto release() noexcept -> int {
     int fd = -1;
     {
@@ -220,6 +216,30 @@ class socket_impl_base {
   void set_native_handle(int fd) noexcept { fd_.store(fd, std::memory_order_release); }
 
  private:
+  void cancel_common(int fd, bool deregister) noexcept {
+    fd_event_handle rh{};
+    fd_event_handle wh{};
+    {
+      std::scoped_lock lk{mtx_};
+      rh = std::exchange(read_handle_, {});
+      wh = std::exchange(write_handle_, {});
+
+      // If we're opening and someone cancels/closes, move into closing to prevent
+      // open() from committing the fd.
+      if (state_.load(std::memory_order_relaxed) == state::opening) {
+        state_.store(state::closing, std::memory_order_release);
+      }
+    }
+
+    // Best-effort: cancel the specific registrations (token-based).
+    rh.cancel();
+    wh.cancel();
+
+    if (deregister && ex_.impl_ != nullptr && fd >= 0) {
+      ex_.impl_->deregister_fd(fd);
+    }
+  }
+
   static auto set_nonblocking(int fd) noexcept -> bool {
     int flags = ::fcntl(fd, F_GETFL, 0);
     if (flags < 0) return false;
