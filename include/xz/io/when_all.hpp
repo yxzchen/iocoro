@@ -29,7 +29,7 @@ auto when_all_bind_executor(executor ex, awaitable<T>&& a) -> awaitable<T> {
 
 // Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-auto when_all_run_one(executor ex, std::shared_ptr<when_all_state<Ts...>> st, awaitable<T> a)
+auto when_all_run_one(executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st, awaitable<T> a)
   -> awaitable<void> {
   auto bound = when_all_bind_executor<T>(ex, std::move(a));
   try {
@@ -49,7 +49,7 @@ auto when_all_run_one(executor ex, std::shared_ptr<when_all_state<Ts...>> st, aw
 
 template <class... Ts, std::size_t... Is>
 void when_all_start_variadic([[maybe_unused]] executor ex,
-                             [[maybe_unused]] std::shared_ptr<when_all_state<Ts...>> st,
+                             [[maybe_unused]] std::shared_ptr<when_all_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
   (co_spawn(ex,
@@ -60,7 +60,7 @@ void when_all_start_variadic([[maybe_unused]] executor ex,
 }
 
 template <class... Ts, std::size_t... Is>
-auto when_all_collect_variadic([[maybe_unused]] typename when_all_state<Ts...>::values_tuple values,
+auto when_all_collect_variadic([[maybe_unused]] typename when_all_variadic_state<Ts...>::values_tuple values,
                                std::index_sequence<Is...>) -> std::tuple<when_value_t<Ts>...> {
   return std::tuple<when_value_t<Ts>...>{
     ([&]() -> when_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
@@ -108,14 +108,14 @@ auto when_all(awaitable<Ts>... tasks)
     co_return std::tuple<::xz::io::detail::when_value_t<Ts>...>{};
   }
 
-  auto st = std::make_shared<::xz::io::detail::when_all_state<Ts...>>(ex);
+  auto st = std::make_shared<::xz::io::detail::when_all_variadic_state<Ts...>>(ex);
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
   co_await ::xz::io::detail::await_when(st);
 
   std::exception_ptr ep{};
-  typename ::xz::io::detail::when_all_state<Ts...>::values_tuple values{};
+  typename ::xz::io::detail::when_all_variadic_state<Ts...>::values_tuple values{};
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;

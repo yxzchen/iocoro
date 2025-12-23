@@ -16,14 +16,14 @@
 namespace xz::io::detail {
 
 template <class... Ts>
-struct when_any_state : when_state_base<when_any_state<Ts...>> {
+struct when_any_variadic_state : when_state_base<when_any_variadic_state<Ts...>> {
   using values_variant = std::variant<std::monostate, std::optional<when_value_t<Ts>>...>;
 
   std::mutex result_m;
   std::size_t completed_index{0};
   values_variant result{};
 
-  explicit when_any_state(executor ex_) : when_state_base<when_any_state<Ts...>>(ex_, 1) {}
+  explicit when_any_variadic_state(executor ex_) : when_state_base<when_any_variadic_state<Ts...>>(ex_, 1) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {

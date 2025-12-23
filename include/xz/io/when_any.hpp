@@ -30,7 +30,7 @@ auto when_any_bind_executor(executor ex, awaitable<T>&& a) -> awaitable<T> {
 
 // Runner coroutine for variadic when_any
 template <std::size_t I, class T, class... Ts>
-auto when_any_run_one(executor ex, std::shared_ptr<when_any_state<Ts...>> st, awaitable<T> a)
+auto when_any_run_one(executor ex, std::shared_ptr<when_any_variadic_state<Ts...>> st, awaitable<T> a)
   -> awaitable<void> {
   auto bound = when_any_bind_executor<T>(ex, std::move(a));
   try {
@@ -57,7 +57,7 @@ auto when_any_run_one(executor ex, std::shared_ptr<when_any_state<Ts...>> st, aw
 
 template <class... Ts, std::size_t... Is>
 void when_any_start_variadic([[maybe_unused]] executor ex,
-                             [[maybe_unused]] std::shared_ptr<when_any_state<Ts...>> st,
+                             [[maybe_unused]] std::shared_ptr<when_any_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
   (co_spawn(ex,
@@ -69,7 +69,7 @@ void when_any_start_variadic([[maybe_unused]] executor ex,
 
 template <class... Ts, std::size_t... Is>
 auto when_any_collect_variadic(std::size_t index,
-                               typename when_any_state<Ts...>::values_variant result,
+                               typename when_any_variadic_state<Ts...>::values_variant result,
                                std::index_sequence<Is...>) -> std::variant<when_value_t<Ts>...> {
   std::variant<when_value_t<Ts>...> out;
   bool found =
@@ -132,7 +132,7 @@ auto when_any(awaitable<Ts>... tasks)
   auto ex = co_await this_coro::executor;
   XZ_ENSURE(ex, "when_any: requires a bound executor");
 
-  auto st = std::make_shared<::xz::io::detail::when_any_state<Ts...>>(ex);
+  auto st = std::make_shared<::xz::io::detail::when_any_variadic_state<Ts...>>(ex);
   detail::when_any_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
@@ -140,7 +140,7 @@ auto when_any(awaitable<Ts>... tasks)
 
   std::exception_ptr ep{};
   std::size_t index{};
-  typename ::xz::io::detail::when_any_state<Ts...>::values_variant result{};
+  typename ::xz::io::detail::when_any_variadic_state<Ts...>::values_variant result{};
   {
     std::scoped_lock lk{st->result_m};
     ep = st->first_ep;

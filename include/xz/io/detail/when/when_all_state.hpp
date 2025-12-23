@@ -18,13 +18,13 @@
 namespace xz::io::detail {
 
 template <class... Ts>
-struct when_all_state : when_state_base<when_all_state<Ts...>> {
+struct when_all_variadic_state : when_state_base<when_all_variadic_state<Ts...>> {
   using values_tuple = std::tuple<std::optional<when_value_t<Ts>>...>;
 
   values_tuple values{};
 
-  explicit when_all_state(executor ex_)
-      : when_state_base<when_all_state<Ts...>>(ex_, sizeof...(Ts)) {}
+  explicit when_all_variadic_state(executor ex_)
+      : when_state_base<when_all_variadic_state<Ts...>>(ex_, sizeof...(Ts)) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {
@@ -40,7 +40,7 @@ struct when_all_container_state : when_state_base<when_all_container_state<T>> {
   // Only used for non-void T
   std::vector<std::optional<value_t>> values{};
 
-  when_all_container_state(executor ex_, std::size_t n)
+  explicit when_all_container_state(executor ex_, std::size_t n)
       : when_state_base<when_all_container_state<T>>(ex_, n) {
     if constexpr (!std::is_void_v<T>) {
       values.resize(n);
