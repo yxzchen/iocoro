@@ -57,7 +57,7 @@ class endpoint {
     len_ = sizeof(sockaddr_in6);
   }
 
-  endpoint(::iocoro::ip::address addr, std::uint16_t port) noexcept {
+  endpoint(iocoro::ip::address addr, std::uint16_t port) noexcept {
     if (addr.is_v4()) {
       *this = endpoint(addr.to_v4(), port);
     } else {
@@ -65,7 +65,7 @@ class endpoint {
     }
   }
 
-  auto address() const noexcept -> ::iocoro::ip::address {
+  auto address() const noexcept -> iocoro::ip::address {
     // Stub: decode only minimal cases.
     if (family() == AF_INET) {
       auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
@@ -76,15 +76,15 @@ class endpoint {
         static_cast<std::uint8_t>((raw >> 8) & 0xFF),
         static_cast<std::uint8_t>(raw & 0xFF),
       };
-      return ::iocoro::ip::address{address_v4{b}};
+      return iocoro::ip::address{address_v4{b}};
     }
     if (family() == AF_INET6) {
       auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
       address_v6::bytes_type b{};
       std::memcpy(b.data(), sa->sin6_addr.s6_addr, 16);
-      return ::iocoro::ip::address{address_v6{b, sa->sin6_scope_id}};
+      return iocoro::ip::address{address_v6{b, sa->sin6_scope_id}};
     }
-    return ::iocoro::ip::address{address_v4::any()};
+    return iocoro::ip::address{address_v4::any()};
   }
 
   auto port() const noexcept -> std::uint16_t {

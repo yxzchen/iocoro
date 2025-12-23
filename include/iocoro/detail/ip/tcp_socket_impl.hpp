@@ -17,7 +17,7 @@ namespace iocoro::detail::ip {
 /// TCP socket implementation (IP-specific adapter).
 ///
 /// Design choice:
-/// - Uses composition (NOT inheritance): holds a `detail::socket::stream_socket_impl`.
+/// - Uses composition (NOT inheritance): holds a `socket::stream_socket_impl`.
 /// - This avoids exposing unrelated stream interfaces when we add other stream protocols
 ///   (e.g. Unix domain sockets) that also reuse `stream_socket_impl`.
 class tcp_socket_impl {
@@ -39,7 +39,7 @@ class tcp_socket_impl {
   void cancel() noexcept { stream_.cancel(); }
   void close() noexcept { stream_.close(); }
 
-  auto async_connect(use_awaitable_t t, ::iocoro::ip::endpoint const& ep)
+  auto async_connect(use_awaitable_t t, iocoro::ip::endpoint const& ep)
     -> awaitable<std::error_code> {
     (void)t;
     return stream_.async_connect(use_awaitable, ep.data(), ep.size());
@@ -58,7 +58,7 @@ class tcp_socket_impl {
   }
 
  private:
-  ::iocoro::detail::socket::stream_socket_impl stream_{};
+  socket::stream_socket_impl stream_{};
 };
 
 }  // namespace iocoro::detail::ip

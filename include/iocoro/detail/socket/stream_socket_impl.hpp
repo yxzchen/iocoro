@@ -45,29 +45,29 @@ class stream_socket_impl {
   /// Connect to a native endpoint.
   auto async_connect(use_awaitable_t, sockaddr const* /*addr*/, socklen_t /*len*/)
     -> awaitable<std::error_code> {
-    co_return make_error_code(error::not_implemented);
+    co_return error::not_implemented;
   }
 
   /// Read at most `size` bytes into `data`.
   auto async_read_some(use_awaitable_t, void* /*data*/, std::size_t /*size*/)
     -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return unexpected<std::error_code>(make_error_code(error::not_implemented));
+    co_return unexpected<std::error_code>(error::not_implemented);
   }
 
   /// Write at most `size` bytes from `data`.
   auto async_write_some(use_awaitable_t, void const* /*data*/, std::size_t /*size*/)
     -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return unexpected<std::error_code>(make_error_code(error::not_implemented));
+    co_return unexpected<std::error_code>(error::not_implemented);
   }
 
   auto shutdown_read() noexcept -> std::error_code {
-    return make_error_code(error::not_implemented);
+    return error::not_implemented;
   }
   auto shutdown_write() noexcept -> std::error_code {
-    return make_error_code(error::not_implemented);
+    return error::not_implemented;
   }
   auto shutdown_both() noexcept -> std::error_code {
-    return make_error_code(error::not_implemented);
+    return error::not_implemented;
   }
 
  private:

@@ -42,7 +42,7 @@ class socket_impl_base {
 
   /// Open the socket resource. (Stub; returns not_implemented.)
   auto open(int /*domain*/, int /*type*/, int /*protocol*/) noexcept -> std::error_code {
-    return make_error_code(error::not_implemented);
+    return error::not_implemented;
   }
 
   /// Cancel pending operations (best-effort).
@@ -66,7 +66,7 @@ class socket_impl_base {
 
  protected:
   // Reactor registration handles for cancellation. Concrete implementations will set these.
-  using fd_event_handle = ::iocoro::detail::io_context_impl::fd_event_handle;
+  using fd_event_handle = io_context_impl::fd_event_handle;
 
   void set_read_handle(fd_event_handle h) noexcept {
     std::scoped_lock lk{mtx_};

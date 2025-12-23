@@ -51,13 +51,12 @@ class address_v4 {
   /// Parse a textual IPv4 address.
   ///
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> ::iocoro::expected<address_v4, std::error_code> {
+  static auto from_string(std::string_view s) -> expected<address_v4, std::error_code> {
     auto addr = in_addr{};
     // inet_pton expects a null-terminated string.
     auto tmp = std::string(s);
     if (::inet_pton(AF_INET, tmp.c_str(), &addr) != 1) {
-      return ::iocoro::unexpected<std::error_code>(
-        ::iocoro::make_error_code(::iocoro::error::invalid_argument));
+      return unexpected<std::error_code>(error::invalid_argument);
     }
     bytes_type b{};
     std::memcpy(b.data(), &addr.s_addr, 4);
@@ -113,7 +112,7 @@ class address_v6 {
   ///
   /// Supports an optional numeric scope_id suffix: "fe80::1%2".
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> ::iocoro::expected<address_v6, std::error_code> {
+  static auto from_string(std::string_view s) -> expected<address_v6, std::error_code> {
     std::uint32_t scope = 0;
     auto ip_part = s;
 
@@ -121,23 +120,20 @@ class address_v6 {
       ip_part = s.substr(0, pos);
       auto scope_part = s.substr(pos + 1);
       if (scope_part.empty()) {
-        return ::iocoro::unexpected<std::error_code>(
-          ::iocoro::make_error_code(::iocoro::error::invalid_argument));
+        return unexpected<std::error_code>(error::invalid_argument);
       }
       auto* first = scope_part.data();
       auto* last = scope_part.data() + scope_part.size();
       auto r = std::from_chars(first, last, scope);
       if (r.ec != std::errc{} || r.ptr != last) {
-        return ::iocoro::unexpected<std::error_code>(
-          ::iocoro::make_error_code(::iocoro::error::invalid_argument));
+        return unexpected<std::error_code>(error::invalid_argument);
       }
     }
 
     auto addr = in6_addr{};
     auto tmp = std::string(ip_part);
     if (::inet_pton(AF_INET6, tmp.c_str(), &addr) != 1) {
-      return ::iocoro::unexpected<std::error_code>(
-        ::iocoro::make_error_code(::iocoro::error::invalid_argument));
+      return unexpected<std::error_code>(error::invalid_argument);
     }
 
     bytes_type b{};
@@ -177,7 +173,7 @@ class address {
   /// Selection:
   /// - If the string contains ':', it is treated as IPv6.
   /// - Otherwise, IPv4.
-  static auto from_string(std::string_view s) -> ::iocoro::expected<address, std::error_code> {
+  static auto from_string(std::string_view s) -> expected<address, std::error_code> {
     if (s.find(':') != std::string_view::npos) {
       return address_v6::from_string(s).transform([](address_v6 a) { return address{a}; });
     }
