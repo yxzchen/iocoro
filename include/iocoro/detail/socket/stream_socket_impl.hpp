@@ -10,6 +10,7 @@
 
 #include <coroutine>
 #include <cstddef>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -322,6 +323,7 @@ class stream_socket_impl {
     executor ex{};
     std::coroutine_handle<> h{};
     std::error_code ec{};
+    std::atomic<bool> done{false};
   };
 
   class fd_wait_operation final : public iocoro::detail::operation_base {
@@ -352,6 +354,10 @@ class stream_socket_impl {
     }
 
     void complete(std::error_code ec) {
+      // Guard against double completion (execute + abort, or repeated signals).
+      if (st_->done.exchange(true, std::memory_order_acq_rel)) {
+        return;
+      }
       st_->ec = ec;
       st_->ex.post([s = st_] { s->h.resume(); });
     }
