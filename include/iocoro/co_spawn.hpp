@@ -28,6 +28,17 @@ void co_spawn(executor ex, awaitable<T> a, detached_t) {
   });
 }
 
+/// Start a callable that returns iocoro::awaitable<T> on the given executor (detached).
+///
+/// This overload is the safe/idiomatic way to spawn coroutine lambdas with captures:
+/// passing `[](...) -> awaitable<T> { ... }()` directly can leave the coroutine holding
+/// a dangling `this` pointer to a temporary closure object (GCC/ASan).
+template <typename F>
+  requires detail::awaitable_factory<std::remove_cvref_t<F>>
+void co_spawn(executor ex, F&& f, detached_t) {
+  co_spawn(ex, detail::invoke_and_await(std::remove_cvref_t<F>(std::forward<F>(f))), detached);
+}
+
 /// Start an awaitable on the given executor, returning an awaitable that can be awaited
 /// to obtain the result (exception is rethrown on await_resume()).
 template <typename T>

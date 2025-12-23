@@ -19,6 +19,36 @@
 
 namespace iocoro::detail {
 
+template <typename A>
+struct awaitable_traits;
+
+template <typename T>
+struct awaitable_traits<::iocoro::awaitable<T>> {
+  using value_type = T;
+};
+
+template <typename F>
+using awaitable_value_t = typename awaitable_traits<std::invoke_result_t<F&>>::value_type;
+
+template <typename F>
+concept awaitable_factory = std::invocable<F&> && requires { typename awaitable_value_t<F>; };
+
+/// Wrap a callable that returns iocoro::awaitable<T> into an awaitable<T> whose coroutine
+/// frame *owns* the callable.
+///
+/// This avoids GCC/ASan issues where invoking a coroutine lambda on a temporary closure object
+/// can leave the coroutine holding a dangling `this` pointer to the closure.
+template <typename Fn>
+  requires awaitable_factory<Fn>
+auto invoke_and_await(Fn fn) -> ::iocoro::awaitable<awaitable_value_t<Fn>> {
+  if constexpr (std::is_void_v<awaitable_value_t<Fn>>) {
+    co_await fn();
+    co_return;
+  } else {
+    co_return co_await fn();
+  }
+}
+
 template <typename T>
 using spawn_expected = ::iocoro::expected<T, std::exception_ptr>;
 

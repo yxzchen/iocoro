@@ -102,7 +102,7 @@ TEST(stream_socket_impl_test, redis_ping_ipv4) {
       }
       st->reply = std::move(*rr);
       st->done.store(true, std::memory_order_relaxed);
-    }(),
+    },
     iocoro::detached);
 
   (void)ctx.run_for(1s);
@@ -156,7 +156,7 @@ TEST(stream_socket_impl_test, redis_ping_ipv6) {
       }
       st->reply = std::move(*rr);
       st->done.store(true, std::memory_order_relaxed);
-    }(),
+    },
     iocoro::detached);
 
   (void)ctx.run_for(1s);

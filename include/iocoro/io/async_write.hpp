@@ -22,7 +22,6 @@ template <async_stream Stream>
 auto async_write(Stream& s, std::span<std::byte const> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const wanted = buf.size();
-  std::size_t total = 0;
 
   while (!buf.empty()) {
     auto r = co_await s.async_write_some(buf);
@@ -35,11 +34,9 @@ auto async_write(Stream& s, std::span<std::byte const> buf)
       co_return unexpected<std::error_code>(error::broken_pipe);
     }
 
-    total += n;
     buf = buf.subspan(n);
   }
 
-  (void)total;
   co_return expected<std::size_t, std::error_code>(wanted);
 }
 
