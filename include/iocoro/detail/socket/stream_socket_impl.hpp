@@ -8,6 +8,7 @@
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <cstddef>
+#include <span>
 #include <system_error>
 
 // Native socket address types (POSIX).
@@ -59,13 +60,13 @@ class stream_socket_impl {
   }
 
   /// Read at most `size` bytes into `data`.
-  auto async_read_some(use_awaitable_t, void* /*data*/, std::size_t /*size*/)
+  auto async_read_some(use_awaitable_t, std::span<std::byte> /*buffer*/)
     -> awaitable<expected<std::size_t, std::error_code>> {
     co_return unexpected<std::error_code>(error::not_implemented);
   }
 
   /// Write at most `size` bytes from `data`.
-  auto async_write_some(use_awaitable_t, void const* /*data*/, std::size_t /*size*/)
+  auto async_write_some(use_awaitable_t, std::span<std::byte const> /*buffer*/)
     -> awaitable<expected<std::size_t, std::error_code>> {
     co_return unexpected<std::error_code>(error::not_implemented);
   }

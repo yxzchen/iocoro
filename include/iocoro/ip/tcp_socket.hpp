@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <system_error>
 
 namespace iocoro::ip {
@@ -33,18 +34,26 @@ class tcp_socket : public basic_socket<tcp_socket_impl> {
 
   tcp_socket(tcp_socket const&) = delete;
   auto operator=(tcp_socket const&) -> tcp_socket& = delete;
+
+  /// Move assignment.
+  /// Note: if the moved-from socket had pending operations, they may continue to run
+  /// against the moved-from object's impl instance (impl is shared_ptr-based).
   tcp_socket(tcp_socket&&) = default;
   auto operator=(tcp_socket&&) -> tcp_socket& = default;
 
   auto async_connect(use_awaitable_t, endpoint const& ep) -> awaitable<std::error_code>;
 
-  auto async_read_some(use_awaitable_t, void* data, std::size_t size)
+  auto async_read_some(use_awaitable_t, std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
-  auto async_write_some(use_awaitable_t, void const* data, std::size_t size)
+  auto async_write_some(use_awaitable_t, std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
+  using base_type::cancel;
+  using base_type::close;
   using base_type::get_option;
+  using base_type::is_open;
+  using base_type::native_handle;
   using base_type::set_option;
 };
 

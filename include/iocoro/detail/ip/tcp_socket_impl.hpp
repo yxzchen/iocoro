@@ -10,6 +10,7 @@
 #include <iocoro/ip/endpoint.hpp>
 
 #include <cstddef>
+#include <span>
 #include <system_error>
 
 namespace iocoro::detail::ip {
@@ -55,16 +56,16 @@ class tcp_socket_impl {
     return stream_.async_connect(use_awaitable, ep.data(), ep.size());
   }
 
-  auto async_read_some(use_awaitable_t t, void* data, std::size_t size)
+  auto async_read_some(use_awaitable_t t, std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>> {
     (void)t;
-    return stream_.async_read_some(use_awaitable, data, size);
+    return stream_.async_read_some(use_awaitable, buffer);
   }
 
-  auto async_write_some(use_awaitable_t t, void const* data, std::size_t size)
+  auto async_write_some(use_awaitable_t t, std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>> {
     (void)t;
-    return stream_.async_write_some(use_awaitable, data, size);
+    return stream_.async_write_some(use_awaitable, buffer);
   }
 
  private:

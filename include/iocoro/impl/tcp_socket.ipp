@@ -16,20 +16,20 @@ inline auto tcp_socket::async_connect(use_awaitable_t, endpoint const& ep)
   co_return co_await impl_->async_connect(use_awaitable, ep);
 }
 
-inline auto tcp_socket::async_read_some(use_awaitable_t, void* data, std::size_t size)
+inline auto tcp_socket::async_read_some(use_awaitable_t, std::span<std::byte> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
   if (!impl_) {
     co_return unexpected<std::error_code>(error::not_open);
   }
-  co_return co_await impl_->async_read_some(use_awaitable, data, size);
+  co_return co_await impl_->async_read_some(use_awaitable, buffer);
 }
 
-inline auto tcp_socket::async_write_some(use_awaitable_t, void const* data, std::size_t size)
+inline auto tcp_socket::async_write_some(use_awaitable_t, std::span<std::byte const> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
   if (!impl_) {
     co_return unexpected<std::error_code>(error::not_open);
   }
-  co_return co_await impl_->async_write_some(use_awaitable, data, size);
+  co_return co_await impl_->async_write_some(use_awaitable, buffer);
 }
 
 }  // namespace iocoro::ip
