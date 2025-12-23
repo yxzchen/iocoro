@@ -17,6 +17,8 @@
 
 namespace iocoro::detail::socket {
 
+class stream_socket_impl;
+
 /// Base class for socket-like implementations.
 ///
 /// Responsibilities:
@@ -269,6 +271,8 @@ class socket_impl_base {
  protected:
   // Reactor registration handles for cancellation. Concrete implementations will set these.
   using fd_event_handle = io_context_impl::fd_event_handle;
+
+  friend class stream_socket_impl;
 
   void set_read_handle(fd_event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
