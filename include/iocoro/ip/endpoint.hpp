@@ -5,10 +5,12 @@
 #include <iocoro/expected.hpp>
 
 #include <charconv>
+#include <compare>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 // Native socket address types (POSIX).
 #include <arpa/inet.h>
@@ -16,6 +18,24 @@
 #include <sys/socket.h>
 
 namespace iocoro::ip {
+
+namespace detail {
+
+inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error_code> {
+  if (p.empty()) {
+    return unexpected<std::error_code>(error::invalid_argument);
+  }
+  unsigned value = 0;
+  auto* first = p.data();
+  auto* last = p.data() + p.size();
+  auto r = std::from_chars(first, last, value);
+  if (r.ec != std::errc{} || r.ptr != last || value > 65535u) {
+    return unexpected<std::error_code>(error::invalid_argument);
+  }
+  return static_cast<std::uint16_t>(value);
+}
+
+}  // namespace detail
 
 /// Endpoint value type for IP sockets.
 ///
@@ -46,20 +66,6 @@ class endpoint {
   ///
   /// Returns invalid_argument on parse failure.
   static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
-    auto parse_port = [](std::string_view p) -> expected<std::uint16_t, std::error_code> {
-      if (p.empty()) {
-        return unexpected<std::error_code>(error::invalid_argument);
-      }
-      unsigned value = 0;
-      auto* first = p.data();
-      auto* last = p.data() + p.size();
-      auto r = std::from_chars(first, last, value);
-      if (r.ec != std::errc{} || r.ptr != last || value > 65535u) {
-        return unexpected<std::error_code>(error::invalid_argument);
-      }
-      return static_cast<std::uint16_t>(value);
-    };
-
     if (s.empty()) {
       return unexpected<std::error_code>(error::invalid_argument);
     }
@@ -73,7 +79,7 @@ class endpoint {
       auto host = s.substr(1, close - 1);
       auto port_str = s.substr(close + 2);
 
-      auto port = parse_port(port_str);
+      auto port = detail::parse_port(port_str);
       if (!port) {
         return unexpected<std::error_code>(port.error());
       }
@@ -99,7 +105,7 @@ class endpoint {
       return unexpected<std::error_code>(error::invalid_argument);
     }
 
-    auto port = parse_port(port_str);
+    auto port = detail::parse_port(port_str);
     if (!port) {
       return unexpected<std::error_code>(port.error());
     }
@@ -152,8 +158,14 @@ class endpoint {
   auto size() const noexcept -> socklen_t;
   auto family() const noexcept -> int;
 
-  friend auto operator==(endpoint const&, endpoint const&) noexcept -> bool = default;
-  friend auto operator<=>(endpoint const&, endpoint const&) noexcept = default;
+  friend auto operator==(endpoint const& a, endpoint const& b) noexcept -> bool {
+    if (a.family() != b.family()) return false;
+    return a.port() == b.port() && a.address() == b.address();
+  }
+
+  friend auto operator<=>(endpoint const& a, endpoint const& b) noexcept -> std::strong_ordering {
+    return std::tuple{a.family(), a.address(), a.port()} <=> std::tuple{b.family(), b.address(), b.port()};
+  }
 
  private:
   void init_v4(address_v4 addr, std::uint16_t port) noexcept {
