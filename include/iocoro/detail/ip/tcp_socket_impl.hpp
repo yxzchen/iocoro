@@ -39,6 +39,16 @@ class tcp_socket_impl {
   void cancel() noexcept { stream_.cancel(); }
   void close() noexcept { stream_.close(); }
 
+  template <class Option>
+  auto set_option(Option const& opt) noexcept -> std::error_code {
+    return stream_.set_option(opt);
+  }
+
+  template <class Option>
+  auto get_option(Option& opt) noexcept -> std::error_code {
+    return stream_.get_option(opt);
+  }
+
   auto async_connect(use_awaitable_t t, iocoro::ip::endpoint const& ep)
     -> awaitable<std::error_code> {
     (void)t;

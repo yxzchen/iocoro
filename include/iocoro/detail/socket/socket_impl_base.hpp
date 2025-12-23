@@ -3,11 +3,16 @@
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
+#include <iocoro/socket_option.hpp>
 
 #include <atomic>
 #include <cstdint>
+#include <cerrno>
 #include <mutex>
 #include <system_error>
+
+// Native socket API.
+#include <sys/socket.h>
 
 namespace iocoro::detail::socket {
 
@@ -43,6 +48,29 @@ class socket_impl_base {
   /// Open the socket resource. (Stub; returns not_implemented.)
   auto open(int /*domain*/, int /*type*/, int /*protocol*/) noexcept -> std::error_code {
     return error::not_implemented;
+  }
+
+  template <class Option>
+  auto set_option(Option const& opt) noexcept -> std::error_code {
+    auto const fd = native_handle();
+    if (fd < 0) return error::not_open;
+
+    if (::setsockopt(fd, opt.level(), opt.name(), opt.data(), opt.size()) != 0) {
+      return std::error_code(errno, std::generic_category());
+    }
+    return {};
+  }
+
+  template <class Option>
+  auto get_option(Option& opt) noexcept -> std::error_code {
+    auto const fd = native_handle();
+    if (fd < 0) return error::not_open;
+
+    socklen_t len = opt.size();
+    if (::getsockopt(fd, opt.level(), opt.name(), opt.data(), &len) != 0) {
+      return std::error_code(errno, std::generic_category());
+    }
+    return {};
   }
 
   /// Cancel pending operations (best-effort).

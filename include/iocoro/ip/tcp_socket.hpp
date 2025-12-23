@@ -38,6 +38,9 @@ class tcp_socket : public basic_socket<tcp_socket_impl> {
 
   auto async_write_some(use_awaitable_t, void const* data, std::size_t size)
     -> awaitable<expected<std::size_t, std::error_code>>;
+
+  using base_type::get_option;
+  using base_type::set_option;
 };
 
 }  // namespace iocoro::ip
