@@ -14,6 +14,73 @@
 
 namespace {
 
+TEST(co_spawn_test, co_spawn_factory_detached_runs) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> ran{false};
+
+  // Use the factory overload (callable returning awaitable) to avoid temporary-lambda pitfalls.
+  iocoro::co_spawn(
+    ex,
+    [&]() -> iocoro::awaitable<void> {
+      ran.store(true, std::memory_order_relaxed);
+      co_return;
+    },
+    iocoro::detached);
+
+  (void)ctx.run();
+  EXPECT_TRUE(ran.load(std::memory_order_relaxed));
+}
+
+TEST(co_spawn_test, co_spawn_factory_use_awaitable_returns_value) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> done{false};
+  std::atomic<int> value{0};
+
+  auto parent = [&]() -> iocoro::awaitable<void> {
+    auto v = co_await iocoro::co_spawn(
+      ex,
+      [ex]() -> iocoro::awaitable<int> {
+        auto cur = co_await iocoro::this_coro::executor;
+        EXPECT_EQ(cur, ex);
+        co_return 42;
+      },
+      iocoro::use_awaitable);
+
+    value.store(v, std::memory_order_relaxed);
+    done.store(true, std::memory_order_relaxed);
+  };
+
+  iocoro::co_spawn(ex, parent(), iocoro::detached);
+  (void)ctx.run();
+  EXPECT_TRUE(done.load(std::memory_order_relaxed));
+  EXPECT_EQ(value.load(std::memory_order_relaxed), 42);
+}
+
+TEST(co_spawn_test, co_spawn_factory_completion_callback_receives_value) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> called{false};
+  std::atomic<int> value{0};
+
+  iocoro::co_spawn(
+    ex,
+    []() -> iocoro::awaitable<int> { co_return 7; },
+    [&](iocoro::expected<int, std::exception_ptr> r) {
+      EXPECT_TRUE(r.has_value());
+      value.store(*r, std::memory_order_relaxed);
+      called.store(true, std::memory_order_relaxed);
+    });
+
+  (void)ctx.run();
+  EXPECT_TRUE(called.load(std::memory_order_relaxed));
+  EXPECT_EQ(value.load(std::memory_order_relaxed), 7);
+}
+
 TEST(co_spawn_test, co_spawn_use_awaitable_hot_starts_without_await) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
