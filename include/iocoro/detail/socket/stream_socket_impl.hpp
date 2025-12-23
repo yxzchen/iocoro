@@ -45,10 +45,40 @@ class stream_socket_impl {
 
   auto get_executor() const noexcept -> executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
-  auto is_open() const noexcept -> bool { return base_.is_open(); }
 
-  void cancel() noexcept { base_.cancel(); }
-  void close() noexcept { base_.close(); }
+  auto is_open() const noexcept -> bool { return base_.is_open(); }
+  auto is_connected() const noexcept -> bool {
+    std::scoped_lock lk{mtx_};
+    return (state_ == conn_state::connected);
+  }
+
+  /// Cancel pending operations (best-effort).
+  ///
+  /// Semantics:
+  /// - Aborts waiters registered with the reactor (connect/read/write readiness waits).
+  /// - Does NOT reset in-flight flags here; the awaiting coroutines will clear them on resume.
+  void cancel() noexcept {
+    base_.cancel();
+    // If a connect was in progress, treat cancellation as abandoning it.
+    std::scoped_lock lk{mtx_};
+    if (state_ == conn_state::connecting) {
+      state_ = conn_state::closed;
+    }
+  }
+
+  /// Close the stream socket (best-effort, idempotent).
+  ///
+  /// Semantics:
+  /// - Cancels and closes the underlying fd via socket_impl_base.
+  /// - Resets stream-level state so the object can be reused after a later assign/open.
+  void close() noexcept {
+    base_.close();
+    std::scoped_lock lk{mtx_};
+    state_ = conn_state::closed;
+    shutdown_ = {};
+    read_in_flight_ = false;
+    write_in_flight_ = false;
+  }
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {
