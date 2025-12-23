@@ -62,7 +62,7 @@ struct when_state_base {
 
 template <class State>
 struct when_awaiter {
-  explicit when_awaiter(std::shared_ptr<State> s) : st(s) {}
+  explicit when_awaiter(std::shared_ptr<State> st_) : st(st_) {}
 
   std::shared_ptr<State> st;
 
