@@ -4,6 +4,7 @@
 
 #include <xz/io/assert.hpp>
 #include <xz/io/co_spawn.hpp>
+#include <xz/io/detached.hpp>
 #include <xz/io/detail/when_all/container_state.hpp>
 #include <xz/io/detail/when_all/state.hpp>
 #include <xz/io/this_coro.hpp>
@@ -19,29 +20,30 @@ namespace xz::io {
 
 namespace detail {
 
+// Bind executor to an awaitable
+template <typename T>
+auto when_all_bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {
+  auto h = a.release();
+  h.promise().set_executor(ex);
+  return awaitable<T>{h};
+}
+
+// Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-void when_all_spawn_one(executor ex, std::shared_ptr<when_all_state<Ts...>> st, awaitable<T> a) {
-  // Start task concurrently and report completion via callback (no use_awaitable/co_spawn hot-waiters).
-  co_spawn(ex, std::move(a), [st = std::move(st)](auto r) mutable {
-    try {
-      if constexpr (std::is_void_v<T>) {
-        if (r.has_value()) {
-          st->template set_value<I>(std::monostate{});
-        } else {
-          st->set_exception(std::move(r).error());
-        }
-      } else {
-        if (r.has_value()) {
-          st->template set_value<I>(std::move(r).value());
-        } else {
-          st->set_exception(std::move(r).error());
-        }
-      }
-    } catch (...) {
-      st->set_exception(std::current_exception());
+auto when_all_run_one(executor ex, std::shared_ptr<when_all_state<Ts...>> st, awaitable<T> a)
+  -> awaitable<void> {
+  auto bound = when_all_bind_executor<T>(ex, std::move(a));
+  try {
+    if constexpr (std::is_void_v<T>) {
+      co_await std::move(bound);
+      st->template set_value<I>(std::monostate{});
+    } else {
+      st->template set_value<I>(co_await std::move(bound));
     }
-    st->arrive();
-  });
+  } catch (...) {
+    st->set_exception(std::current_exception());
+  }
+  st->arrive();
 }
 
 template <class... Ts, std::size_t... Is>
@@ -49,8 +51,9 @@ void when_all_start_variadic(executor ex,
                             std::shared_ptr<when_all_state<Ts...>> st,
                             std::tuple<awaitable<Ts>...> tasks,
                             std::index_sequence<Is...>) {
-  (when_all_spawn_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-     ex, st, std::move(std::get<Is>(tasks))),
+  (co_spawn(ex, when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
+                  ex, st, std::move(std::get<Is>(tasks))),
+            detached),
    ...);
 }
 
@@ -66,29 +69,23 @@ auto when_all_collect_variadic(typename when_all_state<Ts...>::values_tuple valu
     })()...};
 }
 
+// Runner coroutine for container when_all
 template <class T>
-void when_all_container_spawn_one(executor ex,
-                                 std::shared_ptr<when_all_container_state<T>> st,
-                                 std::size_t i,
-                                 awaitable<T> a) {
-  co_spawn(ex, std::move(a), [st = std::move(st), i](auto r) mutable {
-    try {
-      if constexpr (std::is_void_v<T>) {
-        if (!r.has_value()) {
-          st->set_exception(std::move(r).error());
-        }
-      } else {
-        if (r.has_value()) {
-          st->set_value(i, std::move(r).value());
-        } else {
-          st->set_exception(std::move(r).error());
-        }
-      }
-    } catch (...) {
-      st->set_exception(std::current_exception());
+auto when_all_container_run_one(executor ex,
+                                std::shared_ptr<when_all_container_state<T>> st,
+                                std::size_t i,
+                                awaitable<T> a) -> awaitable<void> {
+  auto bound = when_all_bind_executor<T>(ex, std::move(a));
+  try {
+    if constexpr (std::is_void_v<T>) {
+      co_await std::move(bound);
+    } else {
+      st->set_value(i, co_await std::move(bound));
     }
-    st->arrive();
-  });
+  } catch (...) {
+    st->set_exception(std::current_exception());
+  }
+  st->arrive();
 }
 
 }  // namespace detail
@@ -107,8 +104,6 @@ auto when_all(awaitable<Ts>... tasks)
   XZ_ENSURE(ex, "when_all: requires a bound executor");
 
   auto st = std::make_shared<::xz::io::detail::when_all_state<Ts...>>(ex);
-  XZ_ENSURE(st->remaining.load(std::memory_order_relaxed) == sizeof...(Ts),
-            "when_all: internal remaining init mismatch");
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                         std::index_sequence_for<Ts...>{});
 
@@ -119,10 +114,14 @@ auto when_all(awaitable<Ts>... tasks)
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;
-    values = std::move(st->values);
+    if (!ep) {
+      values = std::move(st->values);
+    }
   }
 
-  if (ep) std::rethrow_exception(ep);
+  if (ep) {
+    std::rethrow_exception(ep);
+  }
   co_return detail::when_all_collect_variadic<Ts...>(std::move(values), std::index_sequence_for<Ts...>{});
 }
 
@@ -135,12 +134,18 @@ auto when_all(std::vector<awaitable<T>> tasks)
   auto ex = co_await this_coro::executor;
   XZ_ENSURE(ex, "when_all(vector): requires a bound executor");
 
+  if (tasks.empty()) {
+    if constexpr (std::is_void_v<T>) {
+      co_return;
+    } else {
+      co_return std::vector<std::remove_cvref_t<T>>{};
+    }
+  }
+
   auto st = std::make_shared<::xz::io::detail::when_all_container_state<T>>(ex, tasks.size());
-  XZ_ENSURE(st->remaining.load(std::memory_order_relaxed) == tasks.size(),
-            "when_all(vector): internal remaining init mismatch");
 
   for (std::size_t i = 0; i < tasks.size(); ++i) {
-    detail::when_all_container_spawn_one<T>(ex, st, i, std::move(tasks[i]));
+    co_spawn(ex, detail::when_all_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);
   }
 
   co_await ::xz::io::detail::await_when_all(st);
@@ -150,7 +155,7 @@ auto when_all(std::vector<awaitable<T>> tasks)
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;
-    if constexpr (!std::is_void_v<T>) {
+    if (!ep && !std::is_void_v<T>) {
       values = std::move(st->values);
     }
   }

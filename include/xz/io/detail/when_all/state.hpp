@@ -74,6 +74,8 @@ struct when_all_state {
 
 template <class State>
 struct when_all_awaiter {
+  explicit when_all_awaiter(std::shared_ptr<State> s) : st(s) {}
+
   std::shared_ptr<State> st;
 
   bool await_ready() const noexcept { return false; }

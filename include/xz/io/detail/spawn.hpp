@@ -145,10 +145,13 @@ struct state_awaiter {
   // use-after-free errors. Known to affect:
   // - state_awaiter<T> / state_awaiter<void> (this file)
   // - awaiter inside steady_timer::async_wait (steady_timer.ipp)
+  // - when_all_awaiter (when_all/state.hpp)
   // Likely affects all awaiters containing shared_ptr members.
   //
   // Suspected cause: Aggregate init may create temporaries with incorrect
   // lifetime, leading to premature destruction of the shared state.
+  //
+  // gcc version: 12.2.0
   //
   // Workaround: Explicit constructor with std::move ensures proper ownership
   // transfer and resolves all ASan issues.
