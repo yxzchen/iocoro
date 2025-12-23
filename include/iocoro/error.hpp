@@ -27,6 +27,12 @@ enum class error {
   /// Socket is already connected.
   already_connected,
 
+  /// End of file / orderly shutdown by peer (read returned 0).
+  eof,
+
+  /// Write failed because the peer has closed the connection / write end is shut down.
+  broken_pipe,
+
   /// Endpoint is invalid or unsupported for the requested operation.
   invalid_endpoint,
 

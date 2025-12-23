@@ -54,6 +54,28 @@ class stream_socket_impl {
   auto get_executor() const noexcept -> executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
 
+  /// Open a new native socket (best-effort, non-blocking).
+  ///
+  /// This is a thin forwarding API to `socket_impl_base` intended for composing
+  /// protocol-specific adapters (e.g. TCP) and for basic integration tests.
+  ///
+  /// NOTE (internal/testing):
+  /// - This is NOT part of the public, user-facing networking API.
+  /// - End users should prefer higher-level protocol types (e.g. `ip::tcp_socket`).
+  auto open(int domain, int type, int protocol) noexcept -> std::error_code {
+    return base_.open(domain, type, protocol);
+  }
+
+  /// Adopt an existing native handle (e.g. accept()).
+  ///
+  /// NOTE (internal/testing): helper for adapters/tests; not a public API surface.
+  auto assign(int fd) noexcept -> std::error_code { return base_.assign(fd); }
+
+  /// Release ownership of the native handle without closing it.
+  ///
+  /// NOTE (internal/testing): helper for adapters/tests; not a public API surface.
+  auto release() noexcept -> int { return base_.release(); }
+
   auto is_open() const noexcept -> bool { return base_.is_open(); }
   auto is_connected() const noexcept -> bool {
     std::scoped_lock lk{mtx_};
@@ -272,7 +294,7 @@ class stream_socket_impl {
         co_return unexpected<std::error_code>(error::not_connected);
       }
       if (shutdown_.write) {
-        co_return unexpected<std::error_code>(std::make_error_code(std::errc::broken_pipe));
+        co_return unexpected<std::error_code>(error::broken_pipe);
       }
       if (write_in_flight_) {
         co_return unexpected<std::error_code>(error::busy);

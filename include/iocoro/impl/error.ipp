@@ -24,6 +24,10 @@ class error_category_impl : public std::error_category {
         return "not connected";
       case error::already_connected:
         return "already connected";
+      case error::eof:
+        return "end of file";
+      case error::broken_pipe:
+        return "broken pipe";
       case error::invalid_endpoint:
         return "invalid endpoint";
       case error::unsupported_address_family:
