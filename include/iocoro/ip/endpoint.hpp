@@ -1,10 +1,14 @@
 #pragma once
 
+#include <iocoro/error.hpp>
 #include <iocoro/ip/address.hpp>
+#include <iocoro/expected.hpp>
 
+#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <string_view>
 
 // Native socket address types (POSIX).
 #include <arpa/inet.h>
@@ -32,6 +36,79 @@ class endpoint {
     } else {
       init_v6(addr.to_v6(), port);
     }
+  }
+
+  /// Parse an endpoint from string.
+  ///
+  /// Supported forms:
+  /// - "1.2.3.4:80"
+  /// - "[::1]:80" (IPv6 must use brackets to avoid ambiguity)
+  ///
+  /// Returns invalid_argument on parse failure.
+  static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
+    auto parse_port = [](std::string_view p) -> expected<std::uint16_t, std::error_code> {
+      if (p.empty()) {
+        return unexpected<std::error_code>(error::invalid_argument);
+      }
+      unsigned value = 0;
+      auto* first = p.data();
+      auto* last = p.data() + p.size();
+      auto r = std::from_chars(first, last, value);
+      if (r.ec != std::errc{} || r.ptr != last || value > 65535u) {
+        return unexpected<std::error_code>(error::invalid_argument);
+      }
+      return static_cast<std::uint16_t>(value);
+    };
+
+    if (s.empty()) {
+      return unexpected<std::error_code>(error::invalid_argument);
+    }
+
+    // Bracketed IPv6: [addr]:port
+    if (s.front() == '[') {
+      auto const close = s.find(']');
+      if (close == std::string_view::npos || close + 2 > s.size() || s[close + 1] != ':') {
+        return unexpected<std::error_code>(error::invalid_argument);
+      }
+      auto host = s.substr(1, close - 1);
+      auto port_str = s.substr(close + 2);
+
+      auto port = parse_port(port_str);
+      if (!port) {
+        return unexpected<std::error_code>(port.error());
+      }
+
+      // Force IPv6 parsing for bracketed form.
+      auto a6 = address_v6::from_string(host);
+      if (!a6) {
+        return unexpected<std::error_code>(a6.error());
+      }
+      return endpoint{*a6, *port};
+    }
+
+    // IPv4: host:port (reject raw IPv6 without brackets).
+    auto const pos = s.rfind(':');
+    if (pos == std::string_view::npos) {
+      return unexpected<std::error_code>(error::invalid_argument);
+    }
+    auto host = s.substr(0, pos);
+    auto port_str = s.substr(pos + 1);
+
+    // If host contains ':' here, it's an unbracketed IPv6; reject.
+    if (host.find(':') != std::string_view::npos) {
+      return unexpected<std::error_code>(error::invalid_argument);
+    }
+
+    auto port = parse_port(port_str);
+    if (!port) {
+      return unexpected<std::error_code>(port.error());
+    }
+
+    auto a4 = address_v4::from_string(host);
+    if (!a4) {
+      return unexpected<std::error_code>(a4.error());
+    }
+    return endpoint{*a4, *port};
   }
 
   auto address() const noexcept -> iocoro::ip::address {
@@ -63,7 +140,11 @@ class endpoint {
   }
 
   auto to_string() const -> std::string {
-    return address().to_string() + ":" + std::to_string(port());
+    auto addr_str = address().to_string();
+    if (family() == AF_INET6) {
+      return "[" + addr_str + "]:" + std::to_string(port());
+    }
+    return addr_str + ":" + std::to_string(port());
   }
 
   /// Accessors for native interop.
@@ -114,7 +195,7 @@ inline auto endpoint::data() const noexcept -> sockaddr const* {
 inline auto endpoint::size() const noexcept -> socklen_t { return len_; }
 
 inline auto endpoint::family() const noexcept -> int {
-  return reinterpret_cast<sockaddr const*>(&storage_)->sa_family;
+  return static_cast<int>(storage_.ss_family);
 }
 
 }  // namespace iocoro::ip
