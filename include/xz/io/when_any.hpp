@@ -6,7 +6,7 @@
 #include <xz/io/co_spawn.hpp>
 #include <xz/io/detached.hpp>
 #include <xz/io/detail/when_any/container_state.hpp>
-#include <xz/io/detail/when_any/state.hpp>
+#include <xz/io/detail/when_any/variadic_state.hpp>
 #include <xz/io/this_coro.hpp>
 
 #include <cstddef>

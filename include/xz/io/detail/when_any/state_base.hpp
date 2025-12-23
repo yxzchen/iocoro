@@ -1,21 +1,13 @@
 #pragma once
 
-#include <xz/io/assert.hpp>
-#include <xz/io/awaitable.hpp>
 #include <xz/io/detail/executor_guard.hpp>
 #include <xz/io/executor.hpp>
 
 #include <atomic>
 #include <coroutine>
-#include <cstddef>
 #include <exception>
-#include <memory>
 #include <mutex>
-#include <optional>
-#include <tuple>
-#include <type_traits>
 #include <utility>
-#include <variant>
 
 namespace xz::io::detail {
 
@@ -28,7 +20,6 @@ template <class T>
 using when_any_value_t = typename when_any_value<T>::type;
 
 // Shared state base for when_any (variadic + container).
-// Similar to when_all_state_base but for "first to complete" semantics.
 template <class Derived>
 struct when_any_state_base {
   executor ex{};
@@ -67,25 +58,6 @@ struct when_any_state_base {
   }
 };
 
-template <class... Ts>
-struct when_any_state : when_any_state_base<when_any_state<Ts...>> {
-  using values_variant = std::variant<std::monostate, std::optional<when_any_value_t<Ts>>...>;
-
-  std::mutex result_m;
-  std::size_t completed_index{0};
-  values_variant result{};
-
-  explicit when_any_state(executor ex_)
-    : when_any_state_base<when_any_state<Ts...>>(ex_) {}
-
-  template <std::size_t I, class V>
-  void set_value(V&& v) {
-    std::scoped_lock lk{result_m};
-    completed_index = I;
-    result.template emplace<I + 1>(std::forward<V>(v));
-  }
-};
-
 template <class State>
 struct when_any_awaiter {
   explicit when_any_awaiter(std::shared_ptr<State> s) : st(s) {}
@@ -113,3 +85,4 @@ auto await_when_any(std::shared_ptr<State> st) -> ::xz::io::awaitable<void> {
 }
 
 }  // namespace xz::io::detail
+

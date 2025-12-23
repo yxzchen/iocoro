@@ -1,6 +1,6 @@
 #pragma once
 
-#include <xz/io/detail/when_any/state.hpp>
+#include <xz/io/detail/when_any/state_base.hpp>
 
 #include <cstddef>
 #include <mutex>

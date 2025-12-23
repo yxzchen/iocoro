@@ -1,7 +1,12 @@
 #pragma once
 
-#include <xz/io/detail/when_all/state.hpp>
+#include <xz/io/detail/when_all/state_base.hpp>
 
+#include <cstddef>
+#include <mutex>
+#include <optional>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace xz::io::detail {
