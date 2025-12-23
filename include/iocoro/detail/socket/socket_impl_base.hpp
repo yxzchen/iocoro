@@ -31,6 +31,13 @@ namespace iocoro::detail::socket {
 ///   or return `error::busy` when conflicting ops are in-flight.
 class socket_impl_base {
  public:
+  /// Socket resource lifecycle state (fd-level).
+  ///
+  /// This state machine is intentionally minimal and protocol-agnostic:
+  /// - It tracks ownership/opening/closing of the native handle (fd).
+  /// - It does NOT attempt to model protocol semantics such as connecting/connected,
+  ///   shutdown state, etc. Those belong in higher-level implementations
+  ///   (e.g. stream_socket_impl / tcp_socket_impl), which can build richer state machines.
   enum class state : std::uint8_t { closed, opening, open, closing };
 
   socket_impl_base() noexcept = default;
@@ -143,7 +150,7 @@ class socket_impl_base {
 
   /// Cancel pending operations (best-effort).
   void cancel() noexcept {
-    cancel_common(native_handle(), /*deregister=*/true);
+    cancel_impl(native_handle());
   }
 
   /// Close the socket (best-effort, idempotent).
@@ -161,7 +168,7 @@ class socket_impl_base {
     }
 
     // Cancel & deregister interest first (best-effort).
-    cancel_common(fd, /*deregister=*/true);
+    cancel_impl(fd);
 
     if (fd >= 0) {
       (void)::close(fd);
@@ -216,7 +223,7 @@ class socket_impl_base {
   void set_native_handle(int fd) noexcept { fd_.store(fd, std::memory_order_release); }
 
  private:
-  void cancel_common(int fd, bool deregister) noexcept {
+  void cancel_impl(int fd) noexcept {
     fd_event_handle rh{};
     fd_event_handle wh{};
     {
@@ -229,7 +236,9 @@ class socket_impl_base {
     rh.cancel();
     wh.cancel();
 
-    if (deregister && ex_.impl_ != nullptr && fd >= 0) {
+    // Best-effort: remove interest and abort registered ops for this fd.
+    // Assumes io_context_impl::deregister_fd is thread-safe and idempotent.
+    if (ex_.impl_ != nullptr && fd >= 0) {
       ex_.impl_->deregister_fd(fd);
     }
   }
