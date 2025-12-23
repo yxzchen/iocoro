@@ -163,7 +163,9 @@ auto when_all(std::vector<awaitable<T>> tasks)
     }
   }
 
-  if (ep) std::rethrow_exception(ep);
+  if (ep) {
+    std::rethrow_exception(ep);
+  }
 
   if constexpr (std::is_void_v<T>) {
     co_return;

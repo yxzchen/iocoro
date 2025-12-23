@@ -41,11 +41,15 @@ struct when_all_state_base {
 
   void set_exception(std::exception_ptr ep) noexcept {
     std::scoped_lock lk{m};
-    if (!first_ep) first_ep = std::move(ep);
+    if (!first_ep) {
+      first_ep = std::move(ep);
+    }
   }
 
   void arrive() noexcept {
-    if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) complete();
+    if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      complete();
+    }
   }
 
   void complete() noexcept {
