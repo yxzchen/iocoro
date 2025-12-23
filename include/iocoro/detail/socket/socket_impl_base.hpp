@@ -6,13 +6,15 @@
 #include <iocoro/socket_option.hpp>
 
 #include <atomic>
-#include <cerrno>
 #include <cstdint>
 #include <mutex>
 #include <system_error>
+#include <utility>
 
-// Native socket API.
+#include <cerrno>
+#include <fcntl.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 namespace iocoro::detail::socket {
 
@@ -29,6 +31,8 @@ namespace iocoro::detail::socket {
 ///   or return `error::busy` when conflicting ops are in-flight.
 class socket_impl_base {
  public:
+  enum class state : std::uint8_t { closed, open, closing };
+
   socket_impl_base() noexcept = default;
   explicit socket_impl_base(executor ex) noexcept : ex_(ex) {}
 
@@ -41,13 +45,58 @@ class socket_impl_base {
 
   auto get_executor() const noexcept -> executor { return ex_; }
 
+  auto get_state() const noexcept -> state { return state_.load(std::memory_order_acquire); }
+
   /// Native handle. Returns -1 if not open.
   auto native_handle() const noexcept -> int { return fd_.load(std::memory_order_acquire); }
   auto is_open() const noexcept -> bool { return native_handle() >= 0; }
 
-  /// Open the socket resource. (Stub; returns not_implemented.)
-  auto open(int /*domain*/, int /*type*/, int /*protocol*/) noexcept -> std::error_code {
-    return error::not_implemented;
+  /// Open a new socket and set it non-blocking + close-on-exec (best-effort).
+  ///
+  /// Returns:
+  /// - {} on success
+  /// - error::busy if already open
+  /// - std::error_code(errno, generic_category()) for sys failures
+  auto open(int domain, int type, int protocol) noexcept -> std::error_code {
+    std::scoped_lock lk{mtx_};
+    if (state_.load(std::memory_order_relaxed) != state::closed || native_handle() >= 0) {
+      return error::busy;
+    }
+
+    int fd = ::socket(domain, type, protocol);
+    if (fd < 0) {
+      return std::error_code(errno, std::generic_category());
+    }
+
+    // Best-effort: set CLOEXEC
+    (void)set_cloexec(fd);
+    // Best-effort: set non-blocking
+    (void)set_nonblocking(fd);
+
+    fd_.store(fd, std::memory_order_release);
+    state_.store(state::open, std::memory_order_release);
+    return {};
+  }
+
+  /// Adopt an existing native handle (e.g. accept()).
+  ///
+  /// Note: cancels/clears any pending registrations currently stored in this object.
+  auto assign(int fd) noexcept -> std::error_code {
+    if (fd < 0) return error::invalid_argument;
+
+    // Close existing state first (idempotent).
+    close();
+
+    // Best-effort flags.
+    (void)set_cloexec(fd);
+    (void)set_nonblocking(fd);
+
+    {
+      std::scoped_lock lk{mtx_};
+      fd_.store(fd, std::memory_order_release);
+      state_.store(state::open, std::memory_order_release);
+    }
+    return {};
   }
 
   template <class Option>
@@ -75,22 +124,74 @@ class socket_impl_base {
 
   /// Cancel pending operations (best-effort).
   void cancel() noexcept {
-    // Stub: no real registrations yet.
-    // We still clear any stored handles so future implementations can be swapped in
-    // without changing this interface.
-    std::scoped_lock lk{mtx_};
-    read_handle_ = {};
-    write_handle_ = {};
+    auto fd = native_handle();
+    fd_event_handle rh{};
+    fd_event_handle wh{};
+    {
+      std::scoped_lock lk{mtx_};
+      rh = std::exchange(read_handle_, {});
+      wh = std::exchange(write_handle_, {});
+    }
+
+    // Best-effort: cancel the specific registrations (token-based).
+    rh.cancel();
+    wh.cancel();
+
+    // Best-effort: ensure reactor interest is removed and any ops are aborted.
+    if (ex_.impl_ != nullptr && fd >= 0) {
+      ex_.impl_->deregister_fd(fd);
+    }
   }
 
   /// Close the socket (best-effort, idempotent).
   void close() noexcept {
-    cancel();
-    fd_.store(-1, std::memory_order_release);
+    int fd = -1;
+    fd_event_handle rh{};
+    fd_event_handle wh{};
+    {
+      std::scoped_lock lk{mtx_};
+      auto s = state_.load(std::memory_order_relaxed);
+      if (s == state::closed) {
+        fd_.store(-1, std::memory_order_release);
+        return;
+      }
+      state_.store(state::closing, std::memory_order_release);
+      fd = fd_.exchange(-1, std::memory_order_acq_rel);
+      rh = std::exchange(read_handle_, {});
+      wh = std::exchange(write_handle_, {});
+    }
+
+    // Ensure reactor interest is removed before the fd can be reused by the OS.
+    if (ex_.impl_ != nullptr && fd >= 0) {
+      ex_.impl_->deregister_fd(fd);
+    }
+
+    // Best-effort cancel (may be no-op after deregister).
+    rh.cancel();
+    wh.cancel();
+
+    if (fd >= 0) {
+      (void)::close(fd);
+    }
+
+    state_.store(state::closed, std::memory_order_release);
   }
 
   /// Release ownership of the native handle without closing it.
-  auto release() noexcept -> int { return fd_.exchange(-1, std::memory_order_acq_rel); }
+  auto release() noexcept -> int {
+    int fd = -1;
+    {
+      std::scoped_lock lk{mtx_};
+      fd = fd_.exchange(-1, std::memory_order_acq_rel);
+      state_.store(state::closed, std::memory_order_release);
+      read_handle_ = {};
+      write_handle_ = {};
+    }
+    if (ex_.impl_ != nullptr && fd >= 0) {
+      ex_.impl_->deregister_fd(fd);
+    }
+    return fd;
+  }
 
  protected:
   // Reactor registration handles for cancellation. Concrete implementations will set these.
@@ -119,8 +220,23 @@ class socket_impl_base {
   void set_native_handle(int fd) noexcept { fd_.store(fd, std::memory_order_release); }
 
  private:
+  static auto set_nonblocking(int fd) noexcept -> bool {
+    int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags < 0) return false;
+    if ((flags & O_NONBLOCK) != 0) return true;
+    return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+  }
+
+  static auto set_cloexec(int fd) noexcept -> bool {
+    int flags = ::fcntl(fd, F_GETFD, 0);
+    if (flags < 0) return false;
+    if ((flags & FD_CLOEXEC) != 0) return true;
+    return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+  }
+
   executor ex_{};
   std::atomic<int> fd_{-1};
+  std::atomic<state> state_{state::closed};
 
   mutable std::mutex mtx_{};
   fd_event_handle read_handle_{};
