@@ -1,7 +1,7 @@
 #pragma once
 
 #include <xz/io/basic_socket.hpp>
-#include <xz/io/detail/net/stream_socket_impl.hpp>
+#include <xz/io/detail/ip/tcp_socket_impl.hpp>
 #include <xz/io/ip/endpoint.hpp>
 
 namespace xz::io {}
