@@ -30,8 +30,8 @@ auto when_any_bind_executor(executor ex, awaitable<T>&& a) -> awaitable<T> {
 
 // Runner coroutine for variadic when_any
 template <std::size_t I, class T, class... Ts>
-auto when_any_run_one(executor ex, std::shared_ptr<when_any_variadic_state<Ts...>> st, awaitable<T> a)
-  -> awaitable<void> {
+auto when_any_run_one(executor ex, std::shared_ptr<when_any_variadic_state<Ts...>> st,
+                      awaitable<T> a) -> awaitable<void> {
   auto bound = when_any_bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {

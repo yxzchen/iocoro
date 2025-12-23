@@ -29,8 +29,8 @@ auto when_all_bind_executor(executor ex, awaitable<T>&& a) -> awaitable<T> {
 
 // Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-auto when_all_run_one(executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st, awaitable<T> a)
-  -> awaitable<void> {
+auto when_all_run_one(executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st,
+                      awaitable<T> a) -> awaitable<void> {
   auto bound = when_all_bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {
@@ -60,7 +60,8 @@ void when_all_start_variadic([[maybe_unused]] executor ex,
 }
 
 template <class... Ts, std::size_t... Is>
-auto when_all_collect_variadic([[maybe_unused]] typename when_all_variadic_state<Ts...>::values_tuple values,
+auto when_all_collect_variadic([[maybe_unused]]
+                               typename when_all_variadic_state<Ts...>::values_tuple values,
                                std::index_sequence<Is...>) -> std::tuple<when_value_t<Ts>...> {
   return std::tuple<when_value_t<Ts>...>{
     ([&]() -> when_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {

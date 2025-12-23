@@ -23,7 +23,8 @@ struct when_any_variadic_state : when_state_base<when_any_variadic_state<Ts...>>
   std::size_t completed_index{0};
   values_variant result{};
 
-  explicit when_any_variadic_state(executor ex_) : when_state_base<when_any_variadic_state<Ts...>>(ex_, 1) {}
+  explicit when_any_variadic_state(executor ex_)
+      : when_state_base<when_any_variadic_state<Ts...>>(ex_, 1) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {

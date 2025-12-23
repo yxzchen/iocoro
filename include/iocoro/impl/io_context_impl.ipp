@@ -1,6 +1,6 @@
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 
@@ -264,7 +264,7 @@ inline void io_context_impl::add_work_guard() noexcept {
 inline void io_context_impl::remove_work_guard() noexcept {
   auto const old = work_guard_counter_.fetch_sub(1, std::memory_order_acq_rel);
   IOCORO_ENSURE(old > 0,
-            "io_context_impl: remove_work_guard() called more times than add_work_guard()");
+                "io_context_impl: remove_work_guard() called more times than add_work_guard()");
 
   if (old == 1) {
     wakeup();
