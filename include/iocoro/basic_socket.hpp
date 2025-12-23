@@ -1,9 +1,8 @@
 #pragma once
 
+#include <iocoro/executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/socket_option.hpp>
-
-#include <iocoro/executor.hpp>
 
 #include <memory>
 
@@ -24,6 +23,11 @@ class basic_socket {
 
   explicit basic_socket(executor ex) : impl_(std::make_shared<Impl>(ex)) {}
   explicit basic_socket(io_context& ctx) : basic_socket(ctx.get_executor()) {}
+
+  basic_socket(basic_socket const&) = delete;
+  basic_socket& operator=(basic_socket const&) = delete;
+  basic_socket(basic_socket&&) noexcept = default;
+  basic_socket& operator=(basic_socket&&) noexcept = default;
 
   auto get_executor() const noexcept -> executor {
     return impl_ ? impl_->get_executor() : executor{};
