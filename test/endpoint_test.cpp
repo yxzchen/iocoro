@@ -64,5 +64,3 @@ TEST(endpoint_test, parse_rejects_invalid_ports) {
 }
 
 }  // namespace
-
-

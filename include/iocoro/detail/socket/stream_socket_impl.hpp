@@ -60,15 +60,9 @@ class stream_socket_impl {
     co_return unexpected<std::error_code>(error::not_implemented);
   }
 
-  auto shutdown_read() noexcept -> std::error_code {
-    return error::not_implemented;
-  }
-  auto shutdown_write() noexcept -> std::error_code {
-    return error::not_implemented;
-  }
-  auto shutdown_both() noexcept -> std::error_code {
-    return error::not_implemented;
-  }
+  auto shutdown_read() noexcept -> std::error_code { return error::not_implemented; }
+  auto shutdown_write() noexcept -> std::error_code { return error::not_implemented; }
+  auto shutdown_both() noexcept -> std::error_code { return error::not_implemented; }
 
  private:
   socket_impl_base base_{};
