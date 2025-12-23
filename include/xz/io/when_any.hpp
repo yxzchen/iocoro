@@ -70,19 +70,20 @@ void when_any_start_variadic([[maybe_unused]] executor ex,
 
 template <class... Ts, std::size_t... Is>
 auto when_any_collect_variadic(std::size_t index,
-                                typename when_any_state<Ts...>::values_variant result,
-                                std::index_sequence<Is...>)
+                               typename when_any_state<Ts...>::values_variant result,
+                               std::index_sequence<Is...>)
   -> std::variant<when_any_value_t<Ts>...> {
   std::variant<when_any_value_t<Ts>...> out;
-  bool found = ((index == Is ? (out.template emplace<Is>(
-                                  [&]() -> when_any_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
-                                    auto& opt = std::get<Is + 1>(result);
-                                    XZ_ENSURE(opt.has_value(), "when_any: missing value");
-                                    return std::move(*opt);
-                                  }()),
-                                true)
-                             : false) ||
-                ...);
+  bool found =
+    ((index == Is ? (out.template emplace<Is>(
+                       [&]() -> when_any_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
+                         auto& opt = std::get<Is + 1>(result);
+                         XZ_ENSURE(opt.has_value(), "when_any: missing value");
+                         return std::move(*opt);
+                       }()),
+                     true)
+                  : false) ||
+     ...);
   XZ_ENSURE(found, "when_any: invalid completed index");
   return out;
 }
@@ -155,10 +156,8 @@ auto when_any(awaitable<Ts>... tasks)
     std::rethrow_exception(ep);
   }
 
-  co_return std::make_pair(
-    index,
-    detail::when_any_collect_variadic<Ts...>(index, std::move(result),
-                                             std::index_sequence_for<Ts...>{}));
+  co_return std::make_pair(index, detail::when_any_collect_variadic<Ts...>(
+                                    index, std::move(result), std::index_sequence_for<Ts...>{}));
 }
 
 /// Wait for any awaitable to complete (container).
@@ -166,10 +165,8 @@ auto when_any(awaitable<Ts>... tasks)
 /// Semantics are similar to the variadic overload.
 /// Returns the index and value of the first completed task.
 template <class T>
-auto when_any(std::vector<awaitable<T>> tasks)
-  -> awaitable<std::pair<std::size_t,
-                        std::conditional_t<std::is_void_v<T>, std::monostate,
-                                          std::remove_cvref_t<T>>>> {
+auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
+  std::size_t, std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>>> {
   auto ex = co_await this_coro::executor;
   XZ_ENSURE(ex, "when_any(vector): requires a bound executor");
   XZ_ENSURE(!tasks.empty(), "when_any(vector): requires at least one task");

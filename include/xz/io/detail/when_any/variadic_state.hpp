@@ -23,8 +23,7 @@ struct when_any_state : when_any_state_base<when_any_state<Ts...>> {
   std::size_t completed_index{0};
   values_variant result{};
 
-  explicit when_any_state(executor ex_)
-    : when_any_state_base<when_any_state<Ts...>>(ex_) {}
+  explicit when_any_state(executor ex_) : when_any_state_base<when_any_state<Ts...>>(ex_) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {
@@ -35,4 +34,3 @@ struct when_any_state : when_any_state_base<when_any_state<Ts...>> {
 };
 
 }  // namespace xz::io::detail
-

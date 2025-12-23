@@ -23,7 +23,7 @@ struct when_all_state : when_all_state_base<when_all_state<Ts...>> {
   values_tuple values{};
 
   explicit when_all_state(executor ex_)
-    : when_all_state_base<when_all_state<Ts...>>(ex_, sizeof...(Ts)) {}
+      : when_all_state_base<when_all_state<Ts...>>(ex_, sizeof...(Ts)) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {
@@ -33,4 +33,3 @@ struct when_all_state : when_all_state_base<when_all_state<Ts...>> {
 };
 
 }  // namespace xz::io::detail
-

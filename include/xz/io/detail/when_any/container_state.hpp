@@ -19,7 +19,7 @@ struct when_any_container_state : when_any_state_base<when_any_container_state<T
   std::optional<value_t> result{};
 
   explicit when_any_container_state(executor ex_)
-    : when_any_state_base<when_any_container_state<T>>(ex_) {}
+      : when_any_state_base<when_any_container_state<T>>(ex_) {}
 
   void set_value(std::size_t i, value_t v) {
     static_assert(!std::is_void_v<T>);

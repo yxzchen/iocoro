@@ -89,4 +89,3 @@ auto await_when_all(std::shared_ptr<State> st) -> ::xz::io::awaitable<void> {
 }
 
 }  // namespace xz::io::detail
-

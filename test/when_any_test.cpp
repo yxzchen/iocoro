@@ -160,4 +160,3 @@ TEST(when_any_test, container_void_returns_index) {
 }
 
 }  // namespace
-

@@ -38,9 +38,7 @@ struct when_any_state_base {
   }
 
   // Try to mark as completed. Returns true if this is the first to complete.
-  bool try_complete() noexcept {
-    return !completed.exchange(true, std::memory_order_acq_rel);
-  }
+  bool try_complete() noexcept { return !completed.exchange(true, std::memory_order_acq_rel); }
 
   void complete() noexcept {
     std::coroutine_handle<> w{};
@@ -85,4 +83,3 @@ auto await_when_any(std::shared_ptr<State> st) -> ::xz::io::awaitable<void> {
 }
 
 }  // namespace xz::io::detail
-
