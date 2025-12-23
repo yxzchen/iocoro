@@ -43,13 +43,13 @@ class basic_socket {
   }
 
   template <class Option>
-  auto set_option(Option const& opt) noexcept -> std::error_code {
+  auto set_option(Option const& opt) -> std::error_code {
     if (!impl_) return error::not_open;
     return impl_->set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) noexcept -> std::error_code {
+  auto get_option(Option& opt) -> std::error_code {
     if (!impl_) return error::not_open;
     return impl_->get_option(opt);
   }

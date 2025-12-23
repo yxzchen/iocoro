@@ -51,7 +51,7 @@ class socket_impl_base {
   }
 
   template <class Option>
-  auto set_option(Option const& opt) noexcept -> std::error_code {
+  auto set_option(Option const& opt) -> std::error_code {
     auto const fd = native_handle();
     if (fd < 0) return error::not_open;
 
@@ -62,7 +62,7 @@ class socket_impl_base {
   }
 
   template <class Option>
-  auto get_option(Option& opt) noexcept -> std::error_code {
+  auto get_option(Option& opt) -> std::error_code {
     auto const fd = native_handle();
     if (fd < 0) return error::not_open;
 

@@ -40,12 +40,12 @@ class tcp_socket_impl {
   void close() noexcept { stream_.close(); }
 
   template <class Option>
-  auto set_option(Option const& opt) noexcept -> std::error_code {
+  auto set_option(Option const& opt) -> std::error_code {
     return stream_.set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) noexcept -> std::error_code {
+  auto get_option(Option& opt) -> std::error_code {
     return stream_.get_option(opt);
   }
 
