@@ -32,4 +32,29 @@ inline auto tcp_socket::async_write_some(use_awaitable_t, std::span<std::byte co
   co_return co_await impl_->async_write_some(use_awaitable, buffer);
 }
 
+inline auto tcp_socket::local_endpoint() const -> endpoint {
+  if (!impl_) {
+    return endpoint{};
+  }
+  return impl_->local_endpoint();
+}
+
+inline auto tcp_socket::remote_endpoint() const -> endpoint {
+  if (!impl_) {
+    return endpoint{};
+  }
+  return impl_->remote_endpoint();
+}
+
+inline auto tcp_socket::shutdown(shutdown_type what) -> std::error_code {
+  if (!impl_) {
+    return error::not_open;
+  }
+  return impl_->shutdown(what);
+}
+
+inline auto tcp_socket::is_connected() const noexcept -> bool {
+  return impl_ ? impl_->is_connected() : false;
+}
+
 }  // namespace iocoro::ip

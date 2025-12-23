@@ -4,6 +4,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/shutdown.hpp>
 #include <iocoro/use_awaitable.hpp>
 
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
@@ -39,6 +40,13 @@ class tcp_socket_impl {
 
   void cancel() noexcept { stream_.cancel(); }
   void close() noexcept { stream_.close(); }
+
+  auto local_endpoint() const -> iocoro::ip::endpoint { return iocoro::ip::endpoint{}; }
+  auto remote_endpoint() const -> iocoro::ip::endpoint { return iocoro::ip::endpoint{}; }
+
+  auto shutdown(shutdown_type what) -> std::error_code { return stream_.shutdown(what); }
+
+  auto is_connected() const noexcept -> bool { return false; }
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {

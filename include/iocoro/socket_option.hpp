@@ -32,10 +32,14 @@ class option {
 
   constexpr auto value() const noexcept -> T const& { return value_; }
   constexpr auto value() noexcept -> T& { return value_; }
-  constexpr void value(T v) noexcept(std::is_nothrow_move_assignable_v<T>) { value_ = std::move(v); }
+  constexpr void value(T v) noexcept(std::is_nothrow_move_assignable_v<T>) {
+    value_ = std::move(v);
+  }
 
   auto data() noexcept -> void* { return static_cast<void*>(std::addressof(value_)); }
-  auto data() const noexcept -> void const* { return static_cast<void const*>(std::addressof(value_)); }
+  auto data() const noexcept -> void const* {
+    return static_cast<void const*>(std::addressof(value_));
+  }
   static constexpr auto size() noexcept -> socklen_t { return static_cast<socklen_t>(sizeof(T)); }
 
  private:

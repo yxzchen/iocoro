@@ -6,6 +6,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/shutdown.hpp>
 #include <iocoro/use_awaitable.hpp>
 
 #include <cstddef>
@@ -48,6 +49,13 @@ class tcp_socket : public basic_socket<tcp_socket_impl> {
 
   auto async_write_some(use_awaitable_t, std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
+
+  auto local_endpoint() const -> endpoint;
+  auto remote_endpoint() const -> endpoint;
+
+  auto shutdown(shutdown_type what) -> std::error_code;
+
+  auto is_connected() const noexcept -> bool;
 
   using base_type::cancel;
   using base_type::close;

@@ -6,8 +6,8 @@
 #include <iocoro/socket_option.hpp>
 
 #include <atomic>
-#include <cstdint>
 #include <cerrno>
+#include <cstdint>
 #include <mutex>
 #include <system_error>
 
