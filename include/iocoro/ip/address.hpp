@@ -5,6 +5,7 @@
 
 #include <array>
 #include <charconv>
+#include <compare>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -16,6 +17,25 @@
 #include <netinet/in.h>
 
 namespace iocoro::ip {
+
+namespace detail {
+
+// Convert a string_view to a null-terminated C string in a fixed-size buffer.
+// Returns false if the input is too long to fit (including terminator).
+template <std::size_t N>
+inline auto to_cstr(std::string_view s, char (&buf)[N]) noexcept -> bool {
+  static_assert(N > 0);
+  if (s.size() >= N) {
+    return false;
+  }
+  if (!s.empty()) {
+    std::memcpy(buf, s.data(), s.size());
+  }
+  buf[s.size()] = '\0';
+  return true;
+}
+
+}  // namespace detail
 
 /// IPv4 address value type.
 class address_v4 {
@@ -32,6 +52,9 @@ class address_v4 {
 
   constexpr auto is_unspecified() const noexcept -> bool { return bytes_ == bytes_type{}; }
   constexpr auto is_loopback() const noexcept -> bool { return bytes_ == loopback().bytes_; }
+
+  friend constexpr auto operator==(address_v4 const&, address_v4 const&) noexcept -> bool = default;
+  friend constexpr auto operator<=>(address_v4 const&, address_v4 const&) noexcept = default;
 
   /// Human-readable representation. (Stub-friendly; implementation may evolve.)
   auto to_string() const -> std::string {
@@ -54,8 +77,11 @@ class address_v4 {
   static auto from_string(std::string_view s) -> expected<address_v4, std::error_code> {
     auto addr = in_addr{};
     // inet_pton expects a null-terminated string.
-    auto tmp = std::string(s);
-    if (::inet_pton(AF_INET, tmp.c_str(), &addr) != 1) {
+    char buf[46]{};  // max textual IP length + null (IPv6 max is 45)
+    if (!detail::to_cstr(s, buf)) {
+      return unexpected<std::error_code>(error::invalid_argument);
+    }
+    if (::inet_pton(AF_INET, buf, &addr) != 1) {
       return unexpected<std::error_code>(error::invalid_argument);
     }
     bytes_type b{};
@@ -87,7 +113,12 @@ class address_v6 {
   constexpr auto scope_id() const noexcept -> std::uint32_t { return scope_id_; }
 
   constexpr auto is_unspecified() const noexcept -> bool { return bytes_ == bytes_type{}; }
-  constexpr auto is_loopback() const noexcept -> bool { return bytes_ == loopback().bytes_; }
+  constexpr auto is_loopback() const noexcept -> bool {
+    return bytes_ == loopback().bytes_ && scope_id_ == 0;
+  }
+
+  friend constexpr auto operator==(address_v6 const&, address_v6 const&) noexcept -> bool = default;
+  friend constexpr auto operator<=>(address_v6 const&, address_v6 const&) noexcept = default;
 
   auto to_string() const -> std::string {
     auto addr = in6_addr{};
@@ -131,8 +162,11 @@ class address_v6 {
     }
 
     auto addr = in6_addr{};
-    auto tmp = std::string(ip_part);
-    if (::inet_pton(AF_INET6, tmp.c_str(), &addr) != 1) {
+    char buf[46]{};  // max textual IPv6 length + null (without %scope)
+    if (!detail::to_cstr(ip_part, buf)) {
+      return unexpected<std::error_code>(error::invalid_argument);
+    }
+    if (::inet_pton(AF_INET6, buf, &addr) != 1) {
       return unexpected<std::error_code>(error::invalid_argument);
     }
 
@@ -152,6 +186,9 @@ class address {
   constexpr address() noexcept : storage_(address_v4{}) {}
   constexpr address(address_v4 v4) noexcept : storage_(v4) {}
   constexpr address(address_v6 v6) noexcept : storage_(v6) {}
+
+  friend constexpr auto operator==(address const&, address const&) noexcept -> bool = default;
+  friend constexpr auto operator<=>(address const&, address const&) noexcept = default;
 
   constexpr auto is_v4() const noexcept -> bool {
     return std::holds_alternative<address_v4>(storage_);

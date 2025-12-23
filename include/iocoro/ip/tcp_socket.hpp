@@ -14,15 +14,17 @@
 
 namespace iocoro::ip {
 
+using tcp_socket_impl = ::iocoro::detail::ip::tcp_socket_impl;
+
 /// Public TCP socket type (RAII + coroutine async interface).
 ///
 /// First-stage contract:
 /// - Only `use_awaitable` based async APIs are provided.
 /// - Implementations are stubs for now (compilation-only).
 /// - Future: methods will perform real non-blocking I/O backed by io_context_impl.
-class tcp_socket : public basic_socket<detail::ip::tcp_socket_impl> {
+class tcp_socket : public basic_socket<tcp_socket_impl> {
  public:
-  using base_type = basic_socket<detail::ip::tcp_socket_impl>;
+  using base_type = basic_socket<tcp_socket_impl>;
 
   tcp_socket() noexcept = default;
 
