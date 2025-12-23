@@ -22,14 +22,25 @@ namespace iocoro::detail {
 template <typename A>
 struct awaitable_traits;
 
+/// Specialization for iocoro::awaitable<T>
 template <typename T>
 struct awaitable_traits<::iocoro::awaitable<T>> {
   using value_type = T;
 };
 
-template <typename F>
-using awaitable_value_t = typename awaitable_traits<std::invoke_result_t<F&>>::value_type;
+/// Helper alias that strips cv/ref before trait lookup.
+template <typename A>
+using awaitable_traits_t = awaitable_traits<std::remove_cvref_t<A>>;
 
+/// Extract the value type `T` from a callable returning `iocoro::awaitable<T>`.
+///
+/// This alias is intentionally ill-formed if `F()` does not return
+/// `iocoro::awaitable<T>`, so that misuse is diagnosed at the concept boundary.
+template <typename F>
+using awaitable_value_t = typename awaitable_traits_t<std::invoke_result_t<F&>>::value_type;
+
+/// A callable that can be invoked with no arguments and returns
+/// `iocoro::awaitable<T>` for some `T`.
 template <typename F>
 concept awaitable_factory = std::invocable<F&> && requires { typename awaitable_value_t<F>; };
 
