@@ -22,7 +22,7 @@ namespace detail {
 
 // Bind executor to an awaitable
 template <typename T>
-auto when_all_bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {
+auto when_all_bind_executor(executor ex, awaitable<T>&& a) -> awaitable<T> {
   auto h = a.release();
   h.promise().set_executor(ex);
   return awaitable<T>{h};
@@ -102,6 +102,10 @@ auto when_all(awaitable<Ts>... tasks)
   -> awaitable<std::tuple<::xz::io::detail::when_all_value_t<Ts>...>> {
   auto ex = co_await this_coro::executor;
   XZ_ENSURE(ex, "when_all: requires a bound executor");
+
+  if constexpr (sizeof...(Ts) == 0) {
+    co_return std::tuple<::xz::io::detail::when_all_value_t<Ts>...>{};
+  }
 
   auto st = std::make_shared<::xz::io::detail::when_all_state<Ts...>>(ex);
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},

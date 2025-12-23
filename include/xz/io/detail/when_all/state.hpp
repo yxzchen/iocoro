@@ -26,25 +26,24 @@ struct when_all_value {
 template <class T>
 using when_all_value_t = typename when_all_value<T>::type;
 
-template <class... Ts>
-struct when_all_state {
-  using values_tuple = std::tuple<std::optional<when_all_value_t<Ts>>...>;
-
+// Shared state base for when_all (variadic + container).
+//
+// Notes:
+// - `done` is protected by the mutex and is the canonical "completed" flag.
+//   This avoids missed-wakeup races that can happen when trying to infer
+//   completion from `remaining` (which is updated without taking the mutex).
+template <class Derived>
+struct when_all_state_base {
   executor ex{};
   std::mutex m;
   std::atomic<std::size_t> remaining{0};
   std::coroutine_handle<> waiter{};
   std::exception_ptr first_ep{};
-  values_tuple values{};
+  bool done{false};
 
-  explicit when_all_state(executor ex_) : ex(ex_) {
-    remaining.store(sizeof...(Ts), std::memory_order_relaxed);
-  }
-
-  template <std::size_t I, class V>
-  void set_value(V&& v) {
-    std::scoped_lock lk{m};
-    std::get<I>(values).emplace(std::forward<V>(v));
+  when_all_state_base(executor ex_, std::size_t n) : ex(ex_) {
+    remaining.store(n, std::memory_order_relaxed);
+    done = (n == 0);
   }
 
   void set_exception(std::exception_ptr ep) noexcept {
@@ -60,6 +59,7 @@ struct when_all_state {
     std::coroutine_handle<> w{};
     {
       std::scoped_lock lk{m};
+      done = true;
       w = waiter;
       waiter = {};
     }
@@ -72,6 +72,22 @@ struct when_all_state {
   }
 };
 
+template <class... Ts>
+struct when_all_state : when_all_state_base<when_all_state<Ts...>> {
+  using values_tuple = std::tuple<std::optional<when_all_value_t<Ts>>...>;
+
+  values_tuple values{};
+
+  explicit when_all_state(executor ex_)
+    : when_all_state_base<when_all_state<Ts...>>(ex_, sizeof...(Ts)) {}
+
+  template <std::size_t I, class V>
+  void set_value(V&& v) {
+    std::scoped_lock lk{this->m};
+    std::get<I>(values).emplace(std::forward<V>(v));
+  }
+};
+
 template <class State>
 struct when_all_awaiter {
   explicit when_all_awaiter(std::shared_ptr<State> s) : st(s) {}
@@ -80,20 +96,12 @@ struct when_all_awaiter {
 
   bool await_ready() const noexcept { return false; }
 
-  void await_suspend(std::coroutine_handle<> h) {
-    bool ready = false;
-    {
-      std::scoped_lock lk{st->m};
-      XZ_ENSURE(!st->waiter, "when_all: multiple awaiters are not supported");
-      ready = (st->remaining.load(std::memory_order_acquire) == 0);
-      if (!ready) st->waiter = h;
-    }
-    if (ready) {
-      st->ex.post([h, ex = st->ex]() mutable {
-        executor_guard g{ex};
-        h.resume();
-      });
-    }
+  bool await_suspend(std::coroutine_handle<> h) {
+    std::scoped_lock lk{st->m};
+    XZ_ENSURE(!st->waiter, "when_all: multiple awaiters are not supported");
+    if (st->done) return false;  // already completed; resume immediately
+    st->waiter = h;
+    return true;
   }
 
   void await_resume() noexcept {}

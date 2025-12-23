@@ -41,6 +41,26 @@ TEST(when_all_test, variadic_returns_tuple_and_preserves_order_and_monostate) {
   EXPECT_EQ(std::get<1>(result), 123);
 }
 
+TEST(when_all_test, variadic_empty_returns_empty_tuple) {
+  xz::io::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> done{false};
+  std::tuple<> result{};
+
+  auto parent = [&]() -> xz::io::awaitable<void> {
+    result = co_await xz::io::when_all();
+    done.store(true, std::memory_order_relaxed);
+    co_return;
+  };
+
+  xz::io::co_spawn(ex, parent(), xz::io::detached);
+  (void)ctx.run();
+
+  EXPECT_TRUE(done.load(std::memory_order_relaxed));
+  EXPECT_EQ(std::tuple_size_v<decltype(result)>, 0u);
+}
+
 TEST(when_all_test, rethrows_first_exception_after_all_tasks_complete) {
   using namespace std::chrono_literals;
 
