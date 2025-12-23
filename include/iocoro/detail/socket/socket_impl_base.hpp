@@ -10,10 +10,10 @@
 #include <mutex>
 #include <system_error>
 
-#include <cerrno>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <cerrno>
 
 namespace iocoro::detail::socket {
 
@@ -65,6 +65,9 @@ class socket_impl_base {
   /// - The atomic is used to avoid data races for lock-free reads; it does not guarantee
   ///   any consistency beyond that.
   auto native_handle() const noexcept -> int { return fd_.load(std::memory_order_acquire); }
+
+  /// Returns true if the socket is in the 'open' state and has a valid fd.
+  /// Returns false during 'opening' (fd not yet assigned) and 'closed' states.
   auto is_open() const noexcept -> bool { return native_handle() >= 0; }
 
   /// Open a new socket and set it non-blocking + close-on-exec (best-effort).
