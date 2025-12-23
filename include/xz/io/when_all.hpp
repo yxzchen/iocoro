@@ -48,19 +48,19 @@ auto when_all_run_one(executor ex, std::shared_ptr<when_all_state<Ts...>> st, aw
 
 template <class... Ts, std::size_t... Is>
 void when_all_start_variadic([[maybe_unused]] executor ex,
-                            [[maybe_unused]] std::shared_ptr<when_all_state<Ts...>> st,
-                            [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
-                            std::index_sequence<Is...>) {
-  (co_spawn(ex, when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-                  ex, st, std::move(std::get<Is>(tasks))),
+                             [[maybe_unused]] std::shared_ptr<when_all_state<Ts...>> st,
+                             [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
+                             std::index_sequence<Is...>) {
+  (co_spawn(ex,
+            when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
+              ex, st, std::move(std::get<Is>(tasks))),
             detached),
    ...);
 }
 
 template <class... Ts, std::size_t... Is>
 auto when_all_collect_variadic([[maybe_unused]] typename when_all_state<Ts...>::values_tuple values,
-                               std::index_sequence<Is...>)
-  -> std::tuple<when_all_value_t<Ts>...> {
+                               std::index_sequence<Is...>) -> std::tuple<when_all_value_t<Ts>...> {
   return std::tuple<when_all_value_t<Ts>...>{
     ([&]() -> when_all_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
       auto& opt = std::get<Is>(values);
@@ -71,10 +71,8 @@ auto when_all_collect_variadic([[maybe_unused]] typename when_all_state<Ts...>::
 
 // Runner coroutine for container when_all
 template <class T>
-auto when_all_container_run_one(executor ex,
-                                std::shared_ptr<when_all_container_state<T>> st,
-                                std::size_t i,
-                                awaitable<T> a) -> awaitable<void> {
+auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_state<T>> st,
+                                std::size_t i, awaitable<T> a) -> awaitable<void> {
   auto bound = when_all_bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {
@@ -109,7 +107,7 @@ auto when_all(awaitable<Ts>... tasks)
 
   auto st = std::make_shared<::xz::io::detail::when_all_state<Ts...>>(ex);
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
-                                        std::index_sequence_for<Ts...>{});
+                                         std::index_sequence_for<Ts...>{});
 
   co_await ::xz::io::detail::await_when_all(st);
 
@@ -126,7 +124,8 @@ auto when_all(awaitable<Ts>... tasks)
   if (ep) {
     std::rethrow_exception(ep);
   }
-  co_return detail::when_all_collect_variadic<Ts...>(std::move(values), std::index_sequence_for<Ts...>{});
+  co_return detail::when_all_collect_variadic<Ts...>(std::move(values),
+                                                     std::index_sequence_for<Ts...>{});
 }
 
 /// Wait for all awaitables to complete (container).

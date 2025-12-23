@@ -14,7 +14,7 @@ struct when_all_container_state : when_all_state_base<when_all_container_state<T
   std::vector<std::optional<value_t>> values{};
 
   when_all_container_state(executor ex_, std::size_t n)
-    : when_all_state_base<when_all_container_state<T>>(ex_, n) {
+      : when_all_state_base<when_all_container_state<T>>(ex_, n) {
     if constexpr (!std::is_void_v<T>) {
       values.resize(n);
     }
