@@ -1,8 +1,8 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/ip/address.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/ip/address.hpp>
 
 #include <charconv>
 #include <compare>
@@ -10,7 +10,6 @@
 #include <cstring>
 #include <string>
 #include <string_view>
-#include <tuple>
 
 // Native socket address types (POSIX).
 #include <arpa/inet.h>
@@ -159,12 +158,14 @@ class endpoint {
   auto family() const noexcept -> int;
 
   friend auto operator==(endpoint const& a, endpoint const& b) noexcept -> bool {
-    if (a.family() != b.family()) return false;
-    return a.port() == b.port() && a.address() == b.address();
+    if (a.len_ != b.len_) return false;
+    return std::memcmp(&a.storage_, &b.storage_, a.len_) == 0;
   }
 
   friend auto operator<=>(endpoint const& a, endpoint const& b) noexcept -> std::strong_ordering {
-    return std::tuple{a.family(), a.address(), a.port()} <=> std::tuple{b.family(), b.address(), b.port()};
+    if (auto cmp = a.family() <=> b.family(); cmp != 0) return cmp;
+    if (auto cmp = a.address() <=> b.address(); cmp != 0) return cmp;
+    return a.port() <=> b.port();
   }
 
  private:
