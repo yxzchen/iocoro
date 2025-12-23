@@ -43,7 +43,9 @@ auto when_all_run_one(executor ex, std::shared_ptr<when_all_state<Ts...>> st, aw
   } catch (...) {
     st->set_exception(std::current_exception());
   }
-  st->arrive();
+  if (st->try_complete()) {
+    st->complete();
+  }
 }
 
 template <class... Ts, std::size_t... Is>
@@ -60,9 +62,9 @@ void when_all_start_variadic([[maybe_unused]] executor ex,
 
 template <class... Ts, std::size_t... Is>
 auto when_all_collect_variadic([[maybe_unused]] typename when_all_state<Ts...>::values_tuple values,
-                               std::index_sequence<Is...>) -> std::tuple<when_all_value_t<Ts>...> {
-  return std::tuple<when_all_value_t<Ts>...>{
-    ([&]() -> when_all_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
+                               std::index_sequence<Is...>) -> std::tuple<when_value_t<Ts>...> {
+  return std::tuple<when_value_t<Ts>...>{
+    ([&]() -> when_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
       auto& opt = std::get<Is>(values);
       XZ_ENSURE(opt.has_value(), "when_all: missing value");
       return std::move(*opt);
@@ -83,7 +85,9 @@ auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_
   } catch (...) {
     st->set_exception(std::current_exception());
   }
-  st->arrive();
+  if (st->try_complete()) {
+    st->complete();
+  }
 }
 
 }  // namespace detail
@@ -97,19 +101,19 @@ auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_
 /// - void results are represented as std::monostate in the returned tuple.
 template <class... Ts>
 auto when_all(awaitable<Ts>... tasks)
-  -> awaitable<std::tuple<::xz::io::detail::when_all_value_t<Ts>...>> {
+  -> awaitable<std::tuple<::xz::io::detail::when_value_t<Ts>...>> {
   auto ex = co_await this_coro::executor;
   XZ_ENSURE(ex, "when_all: requires a bound executor");
 
   if constexpr (sizeof...(Ts) == 0) {
-    co_return std::tuple<::xz::io::detail::when_all_value_t<Ts>...>{};
+    co_return std::tuple<::xz::io::detail::when_value_t<Ts>...>{};
   }
 
   auto st = std::make_shared<::xz::io::detail::when_all_state<Ts...>>(ex);
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
-  co_await ::xz::io::detail::await_when_all(st);
+  co_await ::xz::io::detail::await_when(st);
 
   std::exception_ptr ep{};
   typename ::xz::io::detail::when_all_state<Ts...>::values_tuple values{};
@@ -151,10 +155,10 @@ auto when_all(std::vector<awaitable<T>> tasks)
     co_spawn(ex, detail::when_all_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);
   }
 
-  co_await ::xz::io::detail::await_when_all(st);
+  co_await ::xz::io::detail::await_when(st);
 
   std::exception_ptr ep{};
-  std::vector<std::optional<::xz::io::detail::when_all_value_t<T>>> values{};
+  std::vector<std::optional<::xz::io::detail::when_value_t<T>>> values{};
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;

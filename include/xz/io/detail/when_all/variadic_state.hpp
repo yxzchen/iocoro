@@ -2,7 +2,7 @@
 
 #include <xz/io/assert.hpp>
 #include <xz/io/awaitable.hpp>
-#include <xz/io/detail/when_all/state_base.hpp>
+#include <xz/io/detail/when_common/state_base.hpp>
 
 #include <coroutine>
 #include <cstddef>
@@ -17,13 +17,13 @@
 namespace xz::io::detail {
 
 template <class... Ts>
-struct when_all_state : when_all_state_base<when_all_state<Ts...>> {
-  using values_tuple = std::tuple<std::optional<when_all_value_t<Ts>>...>;
+struct when_all_state : when_state_base<when_all_state<Ts...>> {
+  using values_tuple = std::tuple<std::optional<when_value_t<Ts>>...>;
 
   values_tuple values{};
 
   explicit when_all_state(executor ex_)
-      : when_all_state_base<when_all_state<Ts...>>(ex_, sizeof...(Ts)) {}
+      : when_state_base<when_all_state<Ts...>>(ex_, sizeof...(Ts)) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {

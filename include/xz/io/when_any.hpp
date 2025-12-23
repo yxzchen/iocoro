@@ -71,12 +71,11 @@ void when_any_start_variadic([[maybe_unused]] executor ex,
 template <class... Ts, std::size_t... Is>
 auto when_any_collect_variadic(std::size_t index,
                                typename when_any_state<Ts...>::values_variant result,
-                               std::index_sequence<Is...>)
-  -> std::variant<when_any_value_t<Ts>...> {
-  std::variant<when_any_value_t<Ts>...> out;
+                               std::index_sequence<Is...>) -> std::variant<when_value_t<Ts>...> {
+  std::variant<when_value_t<Ts>...> out;
   bool found =
     ((index == Is ? (out.template emplace<Is>(
-                       [&]() -> when_any_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
+                       [&]() -> when_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
                          auto& opt = std::get<Is + 1>(result);
                          XZ_ENSURE(opt.has_value(), "when_any: missing value");
                          return std::move(*opt);
@@ -128,7 +127,7 @@ auto when_any_container_run_one(executor ex, std::shared_ptr<when_any_container_
 /// - Other tasks may still be running after when_any returns.
 template <class... Ts>
 auto when_any(awaitable<Ts>... tasks)
-  -> awaitable<std::pair<std::size_t, std::variant<::xz::io::detail::when_any_value_t<Ts>...>>> {
+  -> awaitable<std::pair<std::size_t, std::variant<::xz::io::detail::when_value_t<Ts>...>>> {
   static_assert(sizeof...(Ts) > 0, "when_any requires at least one task");
 
   auto ex = co_await this_coro::executor;
@@ -138,7 +137,7 @@ auto when_any(awaitable<Ts>... tasks)
   detail::when_any_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
-  co_await ::xz::io::detail::await_when_any(st);
+  co_await ::xz::io::detail::await_when(st);
 
   std::exception_ptr ep{};
   std::size_t index{};
@@ -177,7 +176,7 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
     co_spawn(ex, detail::when_any_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);
   }
 
-  co_await ::xz::io::detail::await_when_any(st);
+  co_await ::xz::io::detail::await_when(st);
 
   std::exception_ptr ep{};
   std::size_t index{};

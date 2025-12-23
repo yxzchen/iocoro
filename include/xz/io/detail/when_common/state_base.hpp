@@ -13,23 +13,25 @@
 namespace xz::io::detail {
 
 template <class T>
-struct when_all_value {
+struct when_value {
   using type = std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>;
 };
 
 template <class T>
-using when_all_value_t = typename when_all_value<T>::type;
+using when_value_t = typename when_value<T>::type;
 
-// Shared state base for when_all (variadic + container).
+// Shared state base for when_all/when_any.
+// - when_all: remaining = n (number of all tasks)
+// - when_any: remaining = 1 (only one completion needed)
 template <class Derived>
-struct when_all_state_base {
+struct when_state_base {
   executor ex{};
   std::mutex m;
   std::atomic<std::size_t> remaining{0};
   std::coroutine_handle<> waiter{};
   std::exception_ptr first_ep{};
 
-  when_all_state_base(executor ex_, std::size_t n) : ex(ex_) {
+  explicit when_state_base(executor ex_, std::size_t n) : ex(ex_) {
     remaining.store(n, std::memory_order_relaxed);
   }
 
@@ -40,11 +42,7 @@ struct when_all_state_base {
     }
   }
 
-  void arrive() noexcept {
-    if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-      complete();
-    }
-  }
+  bool try_complete() noexcept { return (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1); }
 
   void complete() noexcept {
     std::coroutine_handle<> w{};
@@ -63,8 +61,8 @@ struct when_all_state_base {
 };
 
 template <class State>
-struct when_all_awaiter {
-  explicit when_all_awaiter(std::shared_ptr<State> s) : st(s) {}
+struct when_awaiter {
+  explicit when_awaiter(std::shared_ptr<State> s) : st(s) {}
 
   std::shared_ptr<State> st;
 
@@ -72,7 +70,7 @@ struct when_all_awaiter {
 
   bool await_suspend(std::coroutine_handle<> h) {
     std::scoped_lock lk{st->m};
-    XZ_ENSURE(!st->waiter, "when_all: multiple awaiters are not supported");
+    XZ_ENSURE(!st->waiter, "when_all/when_any: multiple awaiters are not supported");
     if (st->remaining.load(std::memory_order_relaxed) == 0) {
       return false;  // already completed; resume immediately
     }
@@ -84,8 +82,8 @@ struct when_all_awaiter {
 };
 
 template <class State>
-auto await_when_all(std::shared_ptr<State> st) -> ::xz::io::awaitable<void> {
-  co_await when_all_awaiter<State>{std::move(st)};
+auto await_when(std::shared_ptr<State> st) -> ::xz::io::awaitable<void> {
+  co_await when_awaiter<State>{std::move(st)};
 }
 
 }  // namespace xz::io::detail
