@@ -33,12 +33,13 @@ class socket_impl_base {
  public:
   /// Socket resource lifecycle state (fd-level).
   ///
-  /// This state machine is intentionally minimal and protocol-agnostic:
-  /// - It tracks ownership/opening/closing of the native handle (fd).
-  /// - It does NOT attempt to model protocol semantics such as connecting/connected,
-  ///   shutdown state, etc. Those belong in higher-level implementations
-  ///   (e.g. stream_socket_impl / tcp_socket_impl), which can build richer state machines.
-  enum class state : std::uint8_t { closed, opening, open, closing };
+  /// Design intent (per project rule):
+  /// - Lifecycle operations (open / close / assign / release / cancel) are fully mutex-serialized.
+  /// - I/O operations are handled in higher layers with a lightweight path.
+  ///
+  /// Note: this state is intentionally minimal and protocol-agnostic. Protocol semantics
+  /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
+  enum class state : std::uint8_t { closed, open, closing };
 
   socket_impl_base() noexcept = default;
   explicit socket_impl_base(executor ex) noexcept : ex_(ex) {}
@@ -52,7 +53,10 @@ class socket_impl_base {
 
   auto get_executor() const noexcept -> executor { return ex_; }
 
-  auto get_state() const noexcept -> state { return state_.load(std::memory_order_acquire); }
+  auto get_state() const noexcept -> state {
+    std::scoped_lock lk{mtx_};
+    return state_;
+  }
   auto is_closing() const noexcept -> bool { return get_state() == state::closing; }
 
   /// Native handle. Returns -1 if not open.
@@ -66,19 +70,13 @@ class socket_impl_base {
   /// - error::busy if already open
   /// - std::error_code(errno, generic_category()) for sys failures
   auto open(int domain, int type, int protocol) noexcept -> std::error_code {
-    {
-      std::scoped_lock lk{mtx_};
-      if (state_.load(std::memory_order_relaxed) != state::closed || native_handle() >= 0) {
-        return error::busy;
-      }
-      state_.store(state::opening, std::memory_order_release);
+    std::scoped_lock lk{mtx_};
+    if (state_ != state::closed || native_handle() >= 0) {
+      return error::busy;
     }
 
     int fd = ::socket(domain, type, protocol);
     if (fd < 0) {
-      // Roll back the transient state.
-      std::scoped_lock lk{mtx_};
-      state_.store(state::closed, std::memory_order_release);
       return std::error_code(errno, std::generic_category());
     }
 
@@ -86,22 +84,9 @@ class socket_impl_base {
     (void)set_cloexec(fd);
     (void)set_nonblocking(fd);
 
-    {
-      std::scoped_lock lk{mtx_};
-      // Someone may have called close()/assign() while we were opening.
-      if (state_.load(std::memory_order_relaxed) == state::opening) {
-        fd_.store(fd, std::memory_order_release);
-        state_.store(state::open, std::memory_order_release);
-        return {};
-      }
-      // If close() observed opening and transitioned to closing, roll it back now.
-      if (state_.load(std::memory_order_relaxed) == state::closing) {
-        state_.store(state::closed, std::memory_order_release);
-      }
-    }
-
-    (void)::close(fd);
-    return error::busy;
+    fd_.store(fd, std::memory_order_release);
+    state_ = state::open;
+    return {};
   }
 
   /// Adopt an existing native handle (e.g. accept()).
@@ -110,18 +95,16 @@ class socket_impl_base {
   auto assign(int fd) noexcept -> std::error_code {
     if (fd < 0) return error::invalid_argument;
 
+    std::scoped_lock lk{mtx_};
     // Close existing state first (idempotent).
-    close();
+    do_close_locked();
 
     // Best-effort flags.
     (void)set_cloexec(fd);
     (void)set_nonblocking(fd);
 
-    {
-      std::scoped_lock lk{mtx_};
-      fd_.store(fd, std::memory_order_release);
-      state_.store(state::open, std::memory_order_release);
-    }
+    fd_.store(fd, std::memory_order_release);
+    state_ = state::open;
     return {};
   }
 
@@ -150,31 +133,15 @@ class socket_impl_base {
 
   /// Cancel pending operations (best-effort).
   void cancel() noexcept {
-    cancel_impl(native_handle());
+    std::scoped_lock lk{mtx_};
+    auto const fd = native_handle();
+    do_cancel_locked(fd);
   }
 
   /// Close the socket (best-effort, idempotent).
   void close() noexcept {
-    int fd = -1;
-    {
-      std::scoped_lock lk{mtx_};
-      auto s = state_.load(std::memory_order_relaxed);
-      if (s == state::closed) {
-        fd_.store(-1, std::memory_order_release);
-        return;
-      }
-      state_.store(state::closing, std::memory_order_release);
-      fd = fd_.exchange(-1, std::memory_order_acq_rel);
-    }
-
-    // Cancel & deregister interest first (best-effort).
-    cancel_impl(fd);
-
-    if (fd >= 0) {
-      (void)::close(fd);
-    }
-
-    state_.store(state::closed, std::memory_order_release);
+    std::scoped_lock lk{mtx_};
+    do_close_locked();
   }
 
   /// Release ownership of the native handle without closing it.
@@ -182,14 +149,12 @@ class socket_impl_base {
   /// IMPORTANT: This deregisters the fd from the reactor, so any pending operations will be
   /// cancelled. The caller is responsible for managing the returned fd, including closing it.
   auto release() noexcept -> int {
-    int fd = -1;
-    {
-      std::scoped_lock lk{mtx_};
-      fd = fd_.exchange(-1, std::memory_order_acq_rel);
-      state_.store(state::closed, std::memory_order_release);
-      read_handle_ = {};
-      write_handle_ = {};
-    }
+    std::scoped_lock lk{mtx_};
+    auto const fd = fd_.exchange(-1, std::memory_order_acq_rel);
+    state_ = state::closed;
+    read_handle_ = {};
+    write_handle_ = {};
+
     if (ex_.impl_ != nullptr && fd >= 0) {
       ex_.impl_->deregister_fd(fd);
     }
@@ -223,14 +188,11 @@ class socket_impl_base {
   void set_native_handle(int fd) noexcept { fd_.store(fd, std::memory_order_release); }
 
  private:
-  void cancel_impl(int fd) noexcept {
+  void do_cancel_locked(int fd) noexcept {
     fd_event_handle rh{};
     fd_event_handle wh{};
-    {
-      std::scoped_lock lk{mtx_};
-      rh = std::exchange(read_handle_, {});
-      wh = std::exchange(write_handle_, {});
-    }
+    rh = std::exchange(read_handle_, {});
+    wh = std::exchange(write_handle_, {});
 
     // Best-effort: cancel the specific registrations (token-based).
     rh.cancel();
@@ -241,6 +203,25 @@ class socket_impl_base {
     if (ex_.impl_ != nullptr && fd >= 0) {
       ex_.impl_->deregister_fd(fd);
     }
+  }
+
+  void do_close_locked() noexcept {
+    if (state_ == state::closed) {
+      fd_.store(-1, std::memory_order_release);
+      return;
+    }
+    state_ = state::closing;
+
+    auto const fd = fd_.exchange(-1, std::memory_order_acq_rel);
+
+    // Cancel & deregister interest first (best-effort).
+    do_cancel_locked(fd);
+
+    if (fd >= 0) {
+      (void)::close(fd);
+    }
+
+    state_ = state::closed;
   }
 
   static auto set_nonblocking(int fd) noexcept -> bool {
@@ -258,8 +239,9 @@ class socket_impl_base {
   }
 
   executor ex_{};
+  // fd_ is written under mtx_ in lifecycle operations; native_handle() reads a snapshot.
   std::atomic<int> fd_{-1};
-  std::atomic<state> state_{state::closed};
+  state state_{state::closed};
 
   mutable std::mutex mtx_{};
   fd_event_handle read_handle_{};
