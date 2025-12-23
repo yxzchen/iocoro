@@ -31,6 +31,11 @@ class tcp_socket : public basic_socket<tcp_socket_impl> {
   explicit tcp_socket(executor ex);
   explicit tcp_socket(io_context& ctx);
 
+  tcp_socket(tcp_socket const&) = delete;
+  auto operator=(tcp_socket const&) -> tcp_socket& = delete;
+  tcp_socket(tcp_socket&&) = default;
+  auto operator=(tcp_socket&&) -> tcp_socket& = default;
+
   auto async_connect(use_awaitable_t, endpoint const& ep) -> awaitable<std::error_code>;
 
   auto async_read_some(use_awaitable_t, void* data, std::size_t size)
