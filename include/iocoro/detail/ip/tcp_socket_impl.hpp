@@ -5,7 +5,6 @@
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
-#include <iocoro/use_awaitable.hpp>
 
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
 #include <iocoro/ip/endpoint.hpp>
@@ -58,22 +57,18 @@ class tcp_socket_impl {
     return stream_.get_option(opt);
   }
 
-  auto async_connect(use_awaitable_t t, iocoro::ip::endpoint const& ep)
-    -> awaitable<std::error_code> {
-    (void)t;
-    return stream_.async_connect(use_awaitable, ep.data(), ep.size());
+  auto async_connect(iocoro::ip::endpoint const& ep) -> awaitable<std::error_code> {
+    return stream_.async_connect(ep.data(), ep.size());
   }
 
-  auto async_read_some(use_awaitable_t t, std::span<std::byte> buffer)
+  auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>> {
-    (void)t;
-    return stream_.async_read_some(use_awaitable, buffer);
+    return stream_.async_read_some(buffer);
   }
 
-  auto async_write_some(use_awaitable_t t, std::span<std::byte const> buffer)
+  auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>> {
-    (void)t;
-    return stream_.async_write_some(use_awaitable, buffer);
+    return stream_.async_write_some(buffer);
   }
 
  private:

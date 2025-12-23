@@ -4,7 +4,6 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
-#include <iocoro/use_awaitable.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
@@ -55,19 +54,18 @@ class stream_socket_impl {
   }
 
   /// Connect to a native endpoint.
-  auto async_connect(use_awaitable_t, sockaddr const* /*addr*/, socklen_t /*len*/)
-    -> awaitable<std::error_code> {
+  auto async_connect(sockaddr const* /*addr*/, socklen_t /*len*/) -> awaitable<std::error_code> {
     co_return error::not_implemented;
   }
 
   /// Read at most `size` bytes into `data`.
-  auto async_read_some(use_awaitable_t, std::span<std::byte> /*buffer*/)
+  auto async_read_some(std::span<std::byte> /*buffer*/)
     -> awaitable<expected<std::size_t, std::error_code>> {
     co_return unexpected<std::error_code>(error::not_implemented);
   }
 
   /// Write at most `size` bytes from `data`.
-  auto async_write_some(use_awaitable_t, std::span<std::byte const> /*buffer*/)
+  auto async_write_some(std::span<std::byte const> /*buffer*/)
     -> awaitable<expected<std::size_t, std::error_code>> {
     co_return unexpected<std::error_code>(error::not_implemented);
   }

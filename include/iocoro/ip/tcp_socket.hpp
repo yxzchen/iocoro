@@ -7,7 +7,6 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
-#include <iocoro/use_awaitable.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -21,7 +20,7 @@ using tcp_socket_impl = ::iocoro::detail::ip::tcp_socket_impl;
 /// Public TCP socket type (RAII + coroutine async interface).
 ///
 /// First-stage contract:
-/// - Only `use_awaitable` based async APIs are provided.
+/// - Only coroutine-based async APIs are provided (no completion tokens).
 /// - Implementations are stubs for now (compilation-only).
 /// - Future: methods will perform real non-blocking I/O backed by io_context_impl.
 class tcp_socket : public basic_socket<tcp_socket_impl> {
@@ -42,12 +41,12 @@ class tcp_socket : public basic_socket<tcp_socket_impl> {
   tcp_socket(tcp_socket&&) = default;
   auto operator=(tcp_socket&&) -> tcp_socket& = default;
 
-  auto async_connect(use_awaitable_t, endpoint const& ep) -> awaitable<std::error_code>;
+  auto async_connect(endpoint const& ep) -> awaitable<std::error_code>;
 
-  auto async_read_some(use_awaitable_t, std::span<std::byte> buffer)
+  auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
-  auto async_write_some(use_awaitable_t, std::span<std::byte const> buffer)
+  auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
   auto local_endpoint() const -> endpoint;
