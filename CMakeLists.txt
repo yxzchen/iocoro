@@ -1,44 +1,110 @@
 cmake_minimum_required(VERSION 3.15)
-project(ioxz VERSION 0.1.0 LANGUAGES CXX)
+project(iocoro VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+option(IOCORO_BUILD_TESTS "Build tests" ${PROJECT_IS_TOP_LEVEL})
+option(IOCORO_ENABLE_WARNINGS "Enable warning flags for iocoro tests/examples" ${PROJECT_IS_TOP_LEVEL})
+option(IOCORO_ENABLE_URING "Enable io_uring backend if liburing is available" ON)
+option(IOCORO_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 
-find_package(fmt REQUIRED)
-
-# Optional liburing for io_uring support
-find_path(LIBURING_INCLUDE_DIR liburing.h)
-find_library(LIBURING_LIBRARY uring)
-
-if(LIBURING_INCLUDE_DIR AND LIBURING_LIBRARY)
-    message(STATUS "liburing found - io_uring support enabled")
-    message(STATUS "  Include: ${LIBURING_INCLUDE_DIR}")
-    message(STATUS "  Library: ${LIBURING_LIBRARY}")
-    set(LIBURING_FOUND TRUE)
-else()
-    message(STATUS "liburing not found - using epoll only")
-    set(LIBURING_FOUND FALSE)
-endif()
-
-add_library(ioxz INTERFACE)
-target_include_directories(ioxz INTERFACE
+add_library(iocoro INTERFACE)
+add_library(iocoro::iocoro ALIAS iocoro)
+target_include_directories(iocoro INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_compile_features(ioxz INTERFACE cxx_std_20)
-target_link_libraries(ioxz INTERFACE pthread fmt::fmt)
+target_compile_features(iocoro INTERFACE cxx_std_20)
 
-if(LIBURING_FOUND)
-    target_include_directories(ioxz INTERFACE ${LIBURING_INCLUDE_DIR})
-    target_link_libraries(ioxz INTERFACE ${LIBURING_LIBRARY})
-    target_compile_definitions(ioxz INTERFACE IOXZ_HAS_URING)
+find_package(Threads REQUIRED)
+target_link_libraries(iocoro INTERFACE Threads::Threads)
+
+set(IOCORO_BUILT_WITH_URING 0)
+if(IOCORO_ENABLE_URING)
+    # Optional liburing for io_uring support.
+    #
+    # We intentionally link against our own imported target (liburing::liburing)
+    # so that installed/exported targets don't depend on pkg-config generated
+    # target names.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBURING QUIET liburing)
+    endif()
+
+    find_path(LIBURING_INCLUDE_DIR NAMES liburing.h HINTS ${LIBURING_INCLUDE_DIRS})
+    find_library(LIBURING_LIBRARY NAMES uring HINTS ${LIBURING_LIBRARY_DIRS})
+
+    if(LIBURING_INCLUDE_DIR AND LIBURING_LIBRARY)
+        message(STATUS "liburing found - io_uring support enabled")
+        message(STATUS "  Include: ${LIBURING_INCLUDE_DIR}")
+        message(STATUS "  Library: ${LIBURING_LIBRARY}")
+
+        if(NOT TARGET liburing::liburing)
+            add_library(liburing::liburing UNKNOWN IMPORTED)
+            set_target_properties(liburing::liburing PROPERTIES
+                IMPORTED_LOCATION "${LIBURING_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${LIBURING_INCLUDE_DIR}"
+            )
+        endif()
+
+        target_link_libraries(iocoro INTERFACE liburing::liburing)
+        target_compile_definitions(iocoro INTERFACE IOCORO_USE_URING)
+        set(IOCORO_BUILT_WITH_URING 1)
+    else()
+        message(STATUS "liburing not found - using epoll only")
+    endif()
+else()
+    message(STATUS "IOCORO_ENABLE_URING=OFF - forcing epoll backend")
 endif()
 
-option(IOXZ_BUILD_TESTS "Build tests" OFF)
+if(IOCORO_ENABLE_WARNINGS)
+    add_library(iocoro_warnings INTERFACE)
+    target_compile_options(iocoro_warnings INTERFACE
+        $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wpedantic -Wno-unused-parameter>
+    )
+endif()
 
-if(IOXZ_BUILD_TESTS)
+if(IOCORO_ENABLE_ASAN)
+    target_compile_options(iocoro INTERFACE
+        -g
+        -fno-omit-frame-pointer
+        -fsanitize=address
+    )
+    target_link_options(iocoro INTERFACE
+        -fsanitize=address
+    )
+    message(STATUS "iocoro: AddressSanitizer is ENABLED")
+endif()
+
+if(IOCORO_BUILD_TESTS)
     enable_testing()
     add_subdirectory(test)
 endif()
+
+install(TARGETS iocoro EXPORT iocoroTargets)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+install(EXPORT iocoroTargets
+    NAMESPACE iocoro::
+    FILE iocoroTargets.cmake
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/iocoro"
+)
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/iocoroConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/iocoroConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/iocoro"
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/iocoroConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/iocoroConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/iocoroConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/iocoro"
+)

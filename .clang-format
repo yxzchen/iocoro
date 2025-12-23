@@ -1,12 +1,10 @@
 Language: Cpp
 BasedOnStyle: Google
-ColumnLimit: 120
-
-DerivePointerAlignment: false
-
-PointerAlignment: Left
+ColumnLimit: 100
 
 SortIncludes: true
 IncludeBlocks: Preserve
 
-AllowShortFunctionsOnASingleLine: true
+ContinuationIndentWidth: 2
+
+InsertNewlineAtEOF: true
