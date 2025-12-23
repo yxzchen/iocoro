@@ -343,9 +343,9 @@ class stream_socket_impl {
     if (fd < 0) return error::not_open;
 
     int how = SHUT_RDWR;
-    if (what == shutdown_type::receive) {
+    if (what == shutdown_type::read) {
       how = SHUT_RD;
-    } else if (what == shutdown_type::send) {
+    } else if (what == shutdown_type::write) {
       how = SHUT_WR;
     } else {
       how = SHUT_RDWR;
@@ -361,9 +361,9 @@ class stream_socket_impl {
     // Update logical shutdown state only after syscall succeeds.
     {
       std::scoped_lock lk{mtx_};
-      if (what == shutdown_type::receive) {
+      if (what == shutdown_type::read) {
         shutdown_.read = true;
-      } else if (what == shutdown_type::send) {
+      } else if (what == shutdown_type::write) {
         shutdown_.write = true;
       } else {
         shutdown_.read = true;
