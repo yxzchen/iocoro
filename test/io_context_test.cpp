@@ -1,15 +1,15 @@
 #include <gtest/gtest.h>
 
-#include <xz/io/executor.hpp>
-#include <xz/io/io_context.hpp>
-#include <xz/io/src.hpp>
+#include <iocoro/executor.hpp>
+#include <iocoro/io_context.hpp>
+#include <iocoro/src.hpp>
 
 #include <atomic>
 
 namespace {
 
 TEST(io_context_basic_test, post_and_run_executes_all_posted_operations) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> n{0};
 
@@ -21,7 +21,7 @@ TEST(io_context_basic_test, post_and_run_executes_all_posted_operations) {
 }
 
 TEST(io_context_basic_test, run_one_does_not_drain_work_posted_during_execution) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> n{0};
 
@@ -38,7 +38,7 @@ TEST(io_context_basic_test, run_one_does_not_drain_work_posted_during_execution)
 }
 
 TEST(io_context_basic_test, stop_prevents_run_and_restart_allows_processing) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> n{0};
 

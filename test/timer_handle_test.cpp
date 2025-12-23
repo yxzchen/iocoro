@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <xz/io/executor.hpp>
-#include <xz/io/io_context.hpp>
-#include <xz/io/src.hpp>
-#include <xz/io/timer_handle.hpp>
+#include <iocoro/executor.hpp>
+#include <iocoro/io_context.hpp>
+#include <iocoro/src.hpp>
+#include <iocoro/timer_handle.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -15,7 +15,7 @@ using namespace std::chrono_literals;
 
 // Test timer_handle default construction
 TEST(timer_handle_basic, default_constructed_handle_is_empty) {
-  xz::io::timer_handle handle;
+  iocoro::timer_handle handle;
   EXPECT_FALSE(handle);
   EXPECT_FALSE(handle.pending());
   EXPECT_FALSE(handle.fired());
@@ -24,7 +24,7 @@ TEST(timer_handle_basic, default_constructed_handle_is_empty) {
 
 // Test timer_handle created from executor
 TEST(timer_handle_basic, handle_from_executor_is_valid) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   auto handle = ex.schedule_timer(100ms, [] {});
@@ -36,7 +36,7 @@ TEST(timer_handle_basic, handle_from_executor_is_valid) {
 
 // Test timer_handle copy semantics
 TEST(timer_handle_lifetime, handle_is_copyable) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   auto handle1 = ex.schedule_timer(100ms, [] {});
@@ -57,7 +57,7 @@ TEST(timer_handle_lifetime, handle_is_copyable) {
 
 // Test timer_handle survives after timer fires
 TEST(timer_handle_lifetime, handle_survives_after_timer_fires) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
@@ -78,7 +78,7 @@ TEST(timer_handle_lifetime, handle_survives_after_timer_fires) {
 
 // Test multiple handles to the same timer
 TEST(timer_handle_lifetime, multiple_handles_reference_same_timer) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> fire_count{0};
 
@@ -98,7 +98,7 @@ TEST(timer_handle_lifetime, multiple_handles_reference_same_timer) {
 
 // Test timer_handle destruction doesn't cancel timer
 TEST(timer_handle_lifetime, handle_destruction_does_not_cancel_timer) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
@@ -115,7 +115,7 @@ TEST(timer_handle_lifetime, handle_destruction_does_not_cancel_timer) {
 
 // Test cancel prevents execution
 TEST(timer_handle_cancel, cancel_prevents_timer_execution) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
@@ -131,7 +131,7 @@ TEST(timer_handle_cancel, cancel_prevents_timer_execution) {
 
 // Test cancel on already fired timer
 TEST(timer_handle_cancel, cancel_after_fire_is_noop) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
@@ -149,7 +149,7 @@ TEST(timer_handle_cancel, cancel_after_fire_is_noop) {
 
 // Test cancel on already cancelled timer
 TEST(timer_handle_cancel, double_cancel_is_safe) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   auto handle = ex.schedule_timer(100ms, [] {});
@@ -165,7 +165,7 @@ TEST(timer_handle_cancel, double_cancel_is_safe) {
 
 // Test that timer_entry is kept alive by handle even after context processes it
 TEST(timer_handle_lifetime, handle_keeps_entry_alive_after_processing) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
@@ -187,14 +187,14 @@ TEST(timer_handle_lifetime, handle_keeps_entry_alive_after_processing) {
 
 // Test timer_handle with short-lived context
 TEST(timer_handle_lifetime, handle_outlives_context_safely) {
-  std::shared_ptr<xz::io::timer_handle> handle_ptr;
+  std::shared_ptr<iocoro::timer_handle> handle_ptr;
   std::atomic<bool> fired{false};
 
   {
-    xz::io::io_context ctx;
+    iocoro::io_context ctx;
     auto ex = ctx.get_executor();
 
-    handle_ptr = std::make_shared<xz::io::timer_handle>(
+    handle_ptr = std::make_shared<iocoro::timer_handle>(
       ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); }));
 
     ctx.run_for(200ms);

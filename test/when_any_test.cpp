@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 
-#include <xz/io/co_sleep.hpp>
-#include <xz/io/co_spawn.hpp>
-#include <xz/io/io_context.hpp>
-#include <xz/io/src.hpp>
-#include <xz/io/this_coro.hpp>
-#include <xz/io/use_awaitable.hpp>
-#include <xz/io/when_any.hpp>
+#include <iocoro/co_sleep.hpp>
+#include <iocoro/co_spawn.hpp>
+#include <iocoro/io_context.hpp>
+#include <iocoro/src.hpp>
+#include <iocoro/this_coro.hpp>
+#include <iocoro/use_awaitable.hpp>
+#include <iocoro/when_any.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -21,32 +21,32 @@ namespace {
 TEST(when_any_test, variadic_returns_first_completed) {
   using namespace std::chrono_literals;
 
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   std::atomic<bool> done{false};
   std::pair<std::size_t, std::variant<std::monostate, int, std::string>> result{};
 
-  auto t0 = []() -> xz::io::awaitable<void> {
-    co_await xz::io::co_sleep(50ms);
+  auto t0 = []() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(50ms);
     co_return;
   };
-  auto t1 = []() -> xz::io::awaitable<int> {
-    co_await xz::io::co_sleep(10ms);
+  auto t1 = []() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(10ms);
     co_return 42;
   };
-  auto t2 = []() -> xz::io::awaitable<std::string> {
-    co_await xz::io::co_sleep(100ms);
+  auto t2 = []() -> iocoro::awaitable<std::string> {
+    co_await iocoro::co_sleep(100ms);
     co_return "hello";
   };
 
-  auto parent = [&]() -> xz::io::awaitable<void> {
-    result = co_await xz::io::when_any(t0(), t1(), t2());
+  auto parent = [&]() -> iocoro::awaitable<void> {
+    result = co_await iocoro::when_any(t0(), t1(), t2());
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
 
-  xz::io::co_spawn(ex, parent(), xz::io::detached);
+  iocoro::co_spawn(ex, parent(), iocoro::detached);
   (void)ctx.run();
 
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
@@ -58,24 +58,24 @@ TEST(when_any_test, variadic_returns_first_completed) {
 TEST(when_any_test, variadic_rethrows_exception_if_first) {
   using namespace std::chrono_literals;
 
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   std::atomic<bool> got_exception{false};
 
-  auto boom = []() -> xz::io::awaitable<int> {
-    (void)co_await xz::io::this_coro::executor;
+  auto boom = []() -> iocoro::awaitable<int> {
+    (void)co_await iocoro::this_coro::executor;
     throw std::runtime_error("boom");
   };
 
-  auto slow = []() -> xz::io::awaitable<std::string> {
-    co_await xz::io::co_sleep(100ms);
+  auto slow = []() -> iocoro::awaitable<std::string> {
+    co_await iocoro::co_sleep(100ms);
     co_return "slow";
   };
 
-  auto parent = [&]() -> xz::io::awaitable<void> {
+  auto parent = [&]() -> iocoro::awaitable<void> {
     try {
-      (void)co_await xz::io::when_any(boom(), slow());
+      (void)co_await iocoro::when_any(boom(), slow());
       ADD_FAILURE() << "expected exception";
     } catch (std::runtime_error const& e) {
       EXPECT_STREQ(e.what(), "boom");
@@ -84,7 +84,7 @@ TEST(when_any_test, variadic_rethrows_exception_if_first) {
     co_return;
   };
 
-  xz::io::co_spawn(ex, parent(), xz::io::detached);
+  iocoro::co_spawn(ex, parent(), iocoro::detached);
   (void)ctx.run_for(200ms);
 
   EXPECT_TRUE(got_exception.load(std::memory_order_relaxed));
@@ -93,33 +93,33 @@ TEST(when_any_test, variadic_rethrows_exception_if_first) {
 TEST(when_any_test, container_returns_first_completed_with_index) {
   using namespace std::chrono_literals;
 
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   std::atomic<bool> done{false};
   std::pair<std::size_t, int> result{};
 
-  std::vector<xz::io::awaitable<int>> tasks;
-  tasks.push_back([]() -> xz::io::awaitable<int> {
-    co_await xz::io::co_sleep(50ms);
+  std::vector<iocoro::awaitable<int>> tasks;
+  tasks.push_back([]() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(50ms);
     co_return 1;
   }());
-  tasks.push_back([]() -> xz::io::awaitable<int> {
-    co_await xz::io::co_sleep(10ms);
+  tasks.push_back([]() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(10ms);
     co_return 2;
   }());
-  tasks.push_back([]() -> xz::io::awaitable<int> {
-    co_await xz::io::co_sleep(100ms);
+  tasks.push_back([]() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(100ms);
     co_return 3;
   }());
 
-  auto parent = [&]() -> xz::io::awaitable<void> {
-    result = co_await xz::io::when_any(std::move(tasks));
+  auto parent = [&]() -> iocoro::awaitable<void> {
+    result = co_await iocoro::when_any(std::move(tasks));
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
 
-  xz::io::co_spawn(ex, parent(), xz::io::detached);
+  iocoro::co_spawn(ex, parent(), iocoro::detached);
   (void)ctx.run();
 
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
@@ -130,29 +130,29 @@ TEST(when_any_test, container_returns_first_completed_with_index) {
 TEST(when_any_test, container_void_returns_index) {
   using namespace std::chrono_literals;
 
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   std::atomic<bool> done{false};
   std::pair<std::size_t, std::monostate> result{};
 
-  std::vector<xz::io::awaitable<void>> tasks;
-  tasks.push_back([]() -> xz::io::awaitable<void> {
-    co_await xz::io::co_sleep(30ms);
+  std::vector<iocoro::awaitable<void>> tasks;
+  tasks.push_back([]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(30ms);
     co_return;
   }());
-  tasks.push_back([]() -> xz::io::awaitable<void> {
-    co_await xz::io::co_sleep(5ms);
+  tasks.push_back([]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(5ms);
     co_return;
   }());
 
-  auto parent = [&]() -> xz::io::awaitable<void> {
-    result = co_await xz::io::when_any(std::move(tasks));
+  auto parent = [&]() -> iocoro::awaitable<void> {
+    result = co_await iocoro::when_any(std::move(tasks));
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
 
-  xz::io::co_spawn(ex, parent(), xz::io::detached);
+  iocoro::co_spawn(ex, parent(), iocoro::detached);
   (void)ctx.run();
 
   EXPECT_TRUE(done.load(std::memory_order_relaxed));

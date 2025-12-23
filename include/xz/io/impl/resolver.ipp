@@ -1,2 +1,0 @@
-
-namespace xz::io::ip {}

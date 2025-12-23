@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <xz/io/executor.hpp>
-#include <xz/io/io_context.hpp>
-#include <xz/io/src.hpp>
-#include <xz/io/timer_handle.hpp>
-#include <xz/io/work_guard.hpp>
+#include <iocoro/executor.hpp>
+#include <iocoro/io_context.hpp>
+#include <iocoro/src.hpp>
+#include <iocoro/timer_handle.hpp>
+#include <iocoro/work_guard.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -16,27 +16,27 @@ using namespace std::chrono_literals;
 
 // Test executor creation and bool conversion
 TEST(executor_basic, default_executor_is_empty) {
-  xz::io::executor ex;
+  iocoro::executor ex;
   EXPECT_FALSE(ex);
 }
 
 TEST(executor_basic, context_provides_valid_executor) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   EXPECT_TRUE(ex);
 }
 
 // Test executor equality
 TEST(executor_basic, executors_from_same_context_are_equal) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex1 = ctx.get_executor();
   auto ex2 = ctx.get_executor();
   EXPECT_EQ(ex1, ex2);
 }
 
 TEST(executor_basic, executors_from_different_contexts_are_not_equal) {
-  xz::io::io_context ctx1;
-  xz::io::io_context ctx2;
+  iocoro::io_context ctx1;
+  iocoro::io_context ctx2;
   auto ex1 = ctx1.get_executor();
   auto ex2 = ctx2.get_executor();
   EXPECT_NE(ex1, ex2);
@@ -44,7 +44,7 @@ TEST(executor_basic, executors_from_different_contexts_are_not_equal) {
 
 // Test execute
 TEST(executor_operations, execute_posts_work) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> executed{false};
 
@@ -57,7 +57,7 @@ TEST(executor_operations, execute_posts_work) {
 
 // Test post
 TEST(executor_operations, post_queues_work) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> counter{0};
 
@@ -71,7 +71,7 @@ TEST(executor_operations, post_queues_work) {
 
 // Test dispatch
 TEST(executor_operations, dispatch_runs_inline_on_context_thread) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> ran_inline{false};
   std::atomic<bool> done{false};
@@ -89,7 +89,7 @@ TEST(executor_operations, dispatch_runs_inline_on_context_thread) {
 }
 
 TEST(executor_operations, dispatch_posts_from_different_thread) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> done{false};
 
@@ -109,7 +109,7 @@ TEST(executor_operations, dispatch_posts_from_different_thread) {
 
 // Test stopped
 TEST(executor_operations, stopped_reflects_context_state) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   EXPECT_FALSE(ex.stopped());
@@ -123,7 +123,7 @@ TEST(executor_operations, stopped_reflects_context_state) {
 
 // Test schedule_timer
 TEST(executor_timer, schedule_timer_creates_valid_handle) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   auto handle = ex.schedule_timer(100ms, [] {});
@@ -132,7 +132,7 @@ TEST(executor_timer, schedule_timer_creates_valid_handle) {
 }
 
 TEST(executor_timer, schedule_timer_executes_callback) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
@@ -144,7 +144,7 @@ TEST(executor_timer, schedule_timer_executes_callback) {
 }
 
 TEST(executor_timer, cancelled_timer_does_not_execute) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> fired{false};
 
@@ -161,12 +161,12 @@ TEST(executor_timer, cancelled_timer_does_not_execute) {
 
 // Test work_guard
 TEST(executor_work_guard, work_guard_keeps_context_alive) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> work_done{false};
   std::atomic<bool> stop_guard{false};
 
-  auto guard_ptr = std::make_shared<xz::io::work_guard<xz::io::executor>>(ex);
+  auto guard_ptr = std::make_shared<iocoro::work_guard<iocoro::executor>>(ex);
 
   std::thread t([&, guard_ptr] {
     std::this_thread::sleep_for(10ms);
@@ -184,21 +184,21 @@ TEST(executor_work_guard, work_guard_keeps_context_alive) {
 }
 
 TEST(executor_work_guard, work_guard_is_movable) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
-  xz::io::work_guard<xz::io::executor> guard1(ex);
-  xz::io::work_guard<xz::io::executor> guard2(std::move(guard1));
+  iocoro::work_guard<iocoro::executor> guard1(ex);
+  iocoro::work_guard<iocoro::executor> guard2(std::move(guard1));
 
   EXPECT_TRUE(guard2.get_executor());
 
-  xz::io::work_guard<xz::io::executor> guard3 = std::move(guard2);
+  iocoro::work_guard<iocoro::executor> guard3 = std::move(guard2);
   EXPECT_TRUE(guard3.get_executor());
 }
 
 // Test that executor can be copied and both copies refer to the same context
 TEST(executor_basic, executor_is_copyable) {
-  xz::io::io_context ctx;
+  iocoro::io_context ctx;
   auto ex1 = ctx.get_executor();
   auto ex2 = ex1;
 
