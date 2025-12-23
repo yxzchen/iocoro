@@ -39,6 +39,16 @@ void co_spawn(executor ex, F&& f, detached_t) {
   co_spawn(ex, detail::invoke_and_await(std::remove_cvref_t<F>(std::forward<F>(f))), detached);
 }
 
+/// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
+/// awaitable that can be awaited to obtain the result.
+template <typename F>
+  requires detail::awaitable_factory<std::remove_cvref_t<F>>
+auto co_spawn(executor ex, F&& f, use_awaitable_t)
+  -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
+  return co_spawn(ex, detail::invoke_and_await(std::remove_cvref_t<F>(std::forward<F>(f))),
+                  use_awaitable);
+}
+
 /// Start an awaitable on the given executor, returning an awaitable that can be awaited
 /// to obtain the result (exception is rethrown on await_resume()).
 template <typename T>
@@ -61,6 +71,17 @@ void co_spawn(executor ex, awaitable<T> a, F&& completion) {
            detail::completion_wrapper<T, completion_t>(ex, std::move(a),
                                                        completion_t(std::forward<F>(completion))),
            detached);
+}
+
+/// Start a callable that returns iocoro::awaitable<T> on the given executor, invoking a
+/// completion callback with either the result or an exception.
+template <typename Factory, typename Completion>
+  requires detail::awaitable_factory<std::remove_cvref_t<Factory>> &&
+           detail::completion_callback_for<std::remove_cvref_t<Completion>,
+                                           detail::awaitable_value_t<std::remove_cvref_t<Factory>>>
+void co_spawn(executor ex, Factory&& f, Completion&& completion) {
+  co_spawn(ex, detail::invoke_and_await(std::remove_cvref_t<Factory>(std::forward<Factory>(f))),
+           std::forward<Completion>(completion));
 }
 
 }  // namespace iocoro
