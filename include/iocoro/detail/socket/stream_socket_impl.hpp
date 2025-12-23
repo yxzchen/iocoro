@@ -111,15 +111,25 @@ class stream_socket_impl {
     std::uint64_t my_epoch = 0;
     {
       std::scoped_lock lk{mtx_};
+      if (connect_in_flight_) {
+        co_return error::busy;
+      }
       if (state_ == conn_state::connecting) {
         co_return error::busy;
       }
       if (state_ == conn_state::connected) {
         co_return error::already_connected;
       }
+      connect_in_flight_ = true;
       state_ = conn_state::connecting;
       my_epoch = epoch_;
     }
+
+    // Ensure the "connect owner" flag is always released by the owning coroutine.
+    auto connect_guard = finally([this] {
+      std::scoped_lock lk{mtx_};
+      connect_in_flight_ = false;
+    });
 
     // We intentionally keep syscall logic outside the mutex.
     auto ec = std::error_code{};
@@ -493,6 +503,7 @@ class stream_socket_impl {
   shutdown_state shutdown_{};
   bool read_in_flight_{false};
   bool write_in_flight_{false};
+  bool connect_in_flight_{false};
 };
 
 }  // namespace iocoro::detail::socket
