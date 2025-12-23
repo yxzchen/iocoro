@@ -47,9 +47,9 @@ auto when_all_run_one(executor ex, std::shared_ptr<when_all_state<Ts...>> st, aw
 }
 
 template <class... Ts, std::size_t... Is>
-void when_all_start_variadic(executor ex,
-                            std::shared_ptr<when_all_state<Ts...>> st,
-                            std::tuple<awaitable<Ts>...> tasks,
+void when_all_start_variadic([[maybe_unused]] executor ex,
+                            [[maybe_unused]] std::shared_ptr<when_all_state<Ts...>> st,
+                            [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                             std::index_sequence<Is...>) {
   (co_spawn(ex, when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
                   ex, st, std::move(std::get<Is>(tasks))),
@@ -58,7 +58,7 @@ void when_all_start_variadic(executor ex,
 }
 
 template <class... Ts, std::size_t... Is>
-auto when_all_collect_variadic(typename when_all_state<Ts...>::values_tuple values,
+auto when_all_collect_variadic([[maybe_unused]] typename when_all_state<Ts...>::values_tuple values,
                                std::index_sequence<Is...>)
   -> std::tuple<when_all_value_t<Ts>...> {
   return std::tuple<when_all_value_t<Ts>...>{
