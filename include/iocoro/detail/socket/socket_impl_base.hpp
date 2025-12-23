@@ -223,12 +223,6 @@ class socket_impl_base {
       std::scoped_lock lk{mtx_};
       rh = std::exchange(read_handle_, {});
       wh = std::exchange(write_handle_, {});
-
-      // If we're opening and someone cancels/closes, move into closing to prevent
-      // open() from committing the fd.
-      if (state_.load(std::memory_order_relaxed) == state::opening) {
-        state_.store(state::closing, std::memory_order_release);
-      }
     }
 
     // Best-effort: cancel the specific registrations (token-based).
