@@ -8,7 +8,7 @@
 #include <iocoro/io/concepts.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
-#include <iocoro/use_awaitable.hpp>
+#include <iocoro/completion_token.hpp>
 
 #include <atomic>
 #include <chrono>

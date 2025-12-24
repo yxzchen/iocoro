@@ -6,7 +6,7 @@
 #include <iocoro/io_context.hpp>
 #include <iocoro/src.hpp>
 #include <iocoro/this_coro.hpp>
-#include <iocoro/use_awaitable.hpp>
+#include <iocoro/completion_token.hpp>
 
 #include "test_util.hpp"
 

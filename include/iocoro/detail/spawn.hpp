@@ -2,11 +2,10 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detached.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/use_awaitable.hpp>
 
 #include <atomic>
 #include <concepts>

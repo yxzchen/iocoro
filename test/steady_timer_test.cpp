@@ -7,7 +7,7 @@
 #include <iocoro/src.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/timer_handle.hpp>
-#include <iocoro/use_awaitable.hpp>
+#include <iocoro/completion_token.hpp>
 
 #include "test_util.hpp"
 

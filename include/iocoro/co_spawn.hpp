@@ -1,9 +1,8 @@
 #pragma once
 
-#include <iocoro/detached.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/detail/spawn.hpp>
 #include <iocoro/executor.hpp>
-#include <iocoro/use_awaitable.hpp>
 
 namespace iocoro {
 
