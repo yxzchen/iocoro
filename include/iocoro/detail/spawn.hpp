@@ -44,6 +44,14 @@ using awaitable_value_t = typename awaitable_traits_t<std::invoke_result_t<F&>>:
 template <typename F>
 concept awaitable_factory = std::invocable<F&> && requires { typename awaitable_value_t<F>; };
 
+template <typename T>
+using spawn_expected = ::iocoro::expected<T, std::exception_ptr>;
+
+template <typename F, typename T>
+concept completion_callback_for =
+  std::invocable<F&, spawn_expected<T>> && (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
+  (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
+
 /// Wrap a callable that returns iocoro::awaitable<T> into an awaitable<T> whose coroutine
 /// frame *owns* the callable.
 ///
@@ -59,14 +67,6 @@ auto invoke_and_await(Fn fn) -> ::iocoro::awaitable<awaitable_value_t<Fn>> {
     co_return co_await fn();
   }
 }
-
-template <typename T>
-using spawn_expected = ::iocoro::expected<T, std::exception_ptr>;
-
-template <typename F, typename T>
-concept completion_callback_for =
-  std::invocable<F&, spawn_expected<T>> && (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
-  (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
 
 template <typename T>
 auto bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {

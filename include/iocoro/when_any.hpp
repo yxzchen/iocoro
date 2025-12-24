@@ -20,19 +20,11 @@ namespace iocoro {
 
 namespace detail {
 
-// Bind executor to an awaitable
-template <typename T>
-auto when_any_bind_executor(executor ex, awaitable<T>&& a) -> awaitable<T> {
-  auto h = a.release();
-  h.promise().set_executor(ex);
-  return awaitable<T>{h};
-}
-
 // Runner coroutine for variadic when_any
 template <std::size_t I, class T, class... Ts>
 auto when_any_run_one(executor ex, std::shared_ptr<when_any_variadic_state<Ts...>> st,
                       awaitable<T> a) -> awaitable<void> {
-  auto bound = when_any_bind_executor<T>(ex, std::move(a));
+  auto bound = bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {
       co_await std::move(bound);
@@ -90,7 +82,7 @@ auto when_any_collect_variadic(std::size_t index,
 template <class T>
 auto when_any_container_run_one(executor ex, std::shared_ptr<when_any_container_state<T>> st,
                                 std::size_t i, awaitable<T> a) -> awaitable<void> {
-  auto bound = when_any_bind_executor<T>(ex, std::move(a));
+  auto bound = bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {
       co_await std::move(bound);
