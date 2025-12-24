@@ -56,10 +56,11 @@ inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> std
 
 inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len)
   -> awaitable<std::error_code> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  if (!is_open()) {
     co_return error::not_open;
   }
+
+  auto const fd = base_.native_handle();
 
   std::uint64_t my_epoch = 0;
   {
