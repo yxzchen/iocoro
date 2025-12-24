@@ -7,7 +7,7 @@
 #include <iocoro/shutdown.hpp>
 
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
-#include <iocoro/ip/endpoint.hpp>
+#include <iocoro/ip/tcp/endpoint.hpp>
 
 #include <cstddef>
 #include <span>
@@ -45,7 +45,7 @@ class tcp_socket_impl {
   void cancel_write() noexcept { stream_.cancel_write(); }
   void close() noexcept { stream_.close(); }
 
-  auto local_endpoint() const -> expected<iocoro::ip::endpoint, std::error_code> {
+  auto local_endpoint() const -> expected<iocoro::ip::tcp::endpoint, std::error_code> {
     auto const fd = stream_.native_handle();
     if (fd < 0) return unexpected(error::not_open);
 
@@ -54,10 +54,10 @@ class tcp_socket_impl {
     if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
       return unexpected(std::error_code(errno, std::generic_category()));
     }
-    return iocoro::ip::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+    return iocoro::ip::tcp::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
 
-  auto remote_endpoint() const -> expected<iocoro::ip::endpoint, std::error_code> {
+  auto remote_endpoint() const -> expected<iocoro::ip::tcp::endpoint, std::error_code> {
     auto const fd = stream_.native_handle();
     if (fd < 0) return unexpected(error::not_open);
     if (!stream_.is_connected()) return unexpected(error::not_connected);
@@ -68,7 +68,7 @@ class tcp_socket_impl {
       if (errno == ENOTCONN) return unexpected(error::not_connected);
       return unexpected(std::error_code(errno, std::generic_category()));
     }
-    return iocoro::ip::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+    return iocoro::ip::tcp::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
 
   auto shutdown(shutdown_type what) -> std::error_code { return stream_.shutdown(what); }
@@ -85,7 +85,7 @@ class tcp_socket_impl {
     return stream_.get_option(opt);
   }
 
-  auto async_connect(iocoro::ip::endpoint const& ep) -> awaitable<std::error_code> {
+  auto async_connect(iocoro::ip::tcp::endpoint const& ep) -> awaitable<std::error_code> {
     // For TCP sockets, it's reasonable to open on-demand based on the endpoint family.
     // This matches typical user expectations: construct socket with executor,
     // then connect without an explicit open().

@@ -3,7 +3,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/basic_socket.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/ip/endpoint.hpp>
+#include <iocoro/ip/tcp/endpoint.hpp>
 #include <iocoro/shutdown.hpp>
 
 #include <cstddef>
@@ -41,7 +41,7 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
   tcp_socket(tcp_socket&&) = default;
   auto operator=(tcp_socket&&) -> tcp_socket& = default;
 
-  auto async_connect(endpoint const& ep) -> awaitable<std::error_code>;
+  auto async_connect(tcp::endpoint const& ep) -> awaitable<std::error_code>;
 
   auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
@@ -49,8 +49,8 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
   auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
-  auto local_endpoint() const -> expected<endpoint, std::error_code>;
-  auto remote_endpoint() const -> expected<endpoint, std::error_code>;
+  auto local_endpoint() const -> expected<tcp::endpoint, std::error_code>;
+  auto remote_endpoint() const -> expected<tcp::endpoint, std::error_code>;
 
   auto shutdown(shutdown_type what) -> std::error_code;
 
@@ -67,3 +67,5 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
 };
 
 }  // namespace iocoro::ip
+
+

@@ -6,7 +6,7 @@
 #include <iocoro/io/async_read_until.hpp>
 #include <iocoro/io/async_write.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/ip/endpoint.hpp>
+#include <iocoro/ip/tcp/endpoint.hpp>
 #include <iocoro/src.hpp>
 
 #include "test_util.hpp"
@@ -574,7 +574,7 @@ TEST(stream_socket_impl_test, redis_ping_ipv4) {
     GTEST_SKIP() << "open(AF_INET, SOCK_STREAM) failed: " << ec.message();
   }
 
-  auto ep_r = iocoro::ip::endpoint::from_string("127.0.0.1:6379");
+  auto ep_r = iocoro::ip::tcp::endpoint::from_string("127.0.0.1:6379");
   ASSERT_TRUE(ep_r.has_value()) << ep_r.error().message();
   auto const ep = *ep_r;
 
@@ -612,7 +612,7 @@ TEST(stream_socket_impl_test, redis_ping_ipv6) {
     GTEST_SKIP() << "open(AF_INET6, SOCK_STREAM) failed: " << ec.message();
   }
 
-  auto ep_r = iocoro::ip::endpoint::from_string("[::1]:6379");
+  auto ep_r = iocoro::ip::tcp::endpoint::from_string("[::1]:6379");
   ASSERT_TRUE(ep_r.has_value()) << ep_r.error().message();
   auto const ep = *ep_r;
 
