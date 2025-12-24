@@ -57,6 +57,8 @@ class tcp_socket : public basic_socket<tcp_socket_impl> {
   auto is_connected() const noexcept -> bool;
 
   using base_type::cancel;
+  using base_type::cancel_read;
+  using base_type::cancel_write;
   using base_type::close;
   using base_type::get_option;
   using base_type::is_open;

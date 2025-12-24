@@ -36,21 +36,39 @@ class basic_socket {
   auto native_handle() const noexcept -> int { return impl_ ? impl_->native_handle() : -1; }
 
   void cancel() noexcept {
-    if (impl_) impl_->cancel();
+    if (impl_) {
+      impl_->cancel();
+    }
+  }
+  void cancel_read() noexcept {
+    if (impl_) {
+      impl_->cancel_read();
+    }
+  }
+  void cancel_write() noexcept {
+    if (impl_) {
+      impl_->cancel_write();
+    }
   }
   void close() noexcept {
-    if (impl_) impl_->close();
+    if (impl_) {
+      impl_->close();
+    }
   }
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {
-    if (!impl_) return error::not_open;
+    if (!impl_) {
+      return error::not_open;
+    }
     return impl_->set_option(opt);
   }
 
   template <class Option>
   auto get_option(Option& opt) -> std::error_code {
-    if (!impl_) return error::not_open;
+    if (!impl_) {
+      return error::not_open;
+    }
     return impl_->get_option(opt);
   }
 

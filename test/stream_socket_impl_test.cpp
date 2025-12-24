@@ -104,6 +104,25 @@ static auto should_skip_net_error(std::error_code ec) -> bool {
          ec == std::errc::host_unreachable || ec == std::errc::address_not_available;
 }
 
+static void fill_send_buffer_nonblocking(int fd) {
+  if (fd < 0) return;
+
+  // Try to reduce the send buffer to make EAGAIN easier to trigger in tests.
+  // Best-effort: kernels often clamp this value.
+  int sndbuf = 1024;
+  (void)::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+
+  std::array<std::byte, 4096> tmp{};
+  for (int i = 0; i < 1'000'000; ++i) {
+    auto n = ::write(fd, tmp.data(), tmp.size());
+    if (n > 0) continue;
+    if (n < 0 && errno == EINTR) continue;
+    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+    // Any other error: stop trying; the test will handle it via later operations.
+    return;
+  }
+}
+
 TEST(stream_socket_impl_test, not_open_errors) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
@@ -300,7 +319,7 @@ TEST(stream_socket_impl_test, concurrent_read_reports_busy) {
       auto r2 = co_await s.async_read_some(b2);
       if (!r2) second_ec = r2.error();
 
-      s.cancel();  // clean up the first read
+      s.cancel_read();  // clean up the first read (read-only cancellation)
       try {
         co_await std::move(first_read);
       } catch (...) {
@@ -312,6 +331,142 @@ TEST(stream_socket_impl_test, concurrent_read_reports_busy) {
 
   EXPECT_FALSE(connect_ec) << connect_ec.message();
   EXPECT_EQ(second_ec, iocoro::error::busy);
+
+  (void)accepted_f.get();
+  accept_thread.join();
+}
+
+TEST(stream_socket_impl_test, cancel_read_does_not_cancel_write_wait) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::uint16_t port = 0;
+  auto listen_fd = make_listen_socket_ipv4(port);
+  if (!listen_fd) {
+    GTEST_SKIP() << "failed to create/bind/listen on 127.0.0.1";
+  }
+
+  std::promise<unique_fd> accepted_p;
+  auto accepted_f = accepted_p.get_future();
+  std::thread accept_thread([lfd = listen_fd.fd, p = std::move(accepted_p)]() mutable {
+    for (int i = 0; i < 1000; ++i) {
+      sockaddr_in peer{};
+      socklen_t len = sizeof(peer);
+      int cfd = ::accept(lfd, reinterpret_cast<sockaddr*>(&peer), &len);
+      if (cfd >= 0) {
+        // Best-effort: make sure peer doesn't accidentally unblock the client's send buffer.
+        if (int flags = ::fcntl(cfd, F_GETFL, 0); flags >= 0) {
+          (void)::fcntl(cfd, F_SETFL, flags | O_NONBLOCK);
+        }
+        p.set_value(unique_fd{cfd});
+        return;
+      }
+      if (errno == EINTR) continue;
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        continue;
+      }
+      break;
+    }
+    p.set_value(unique_fd{});
+  });
+
+  stream_socket_impl s{ex};
+  auto ec = s.open(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  ASSERT_FALSE(ec) << ec.message();
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port);
+  (void)::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+  // Run the cancellation scenario with a timeout to avoid hangs on flaky environments.
+  auto [connect_ec, read_ec, write_ec, write_completed_after_read_cancel] =
+    iocoro::sync_wait_for(
+      ctx, 500ms,
+      [&]() -> iocoro::awaitable<std::tuple<std::error_code, std::error_code, std::error_code, bool>> {
+        using result_t = std::tuple<std::error_code, std::error_code, std::error_code, bool>;
+
+        auto connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        if (connect_ec) {
+          co_return result_t{connect_ec, std::error_code{}, std::error_code{}, false};
+        }
+
+        auto const fd = s.native_handle();
+        fill_send_buffer_nonblocking(fd);
+
+        std::atomic<bool> read_done{false};
+        std::atomic<bool> write_done{false};
+        std::atomic<bool> write_started{false};
+        std::atomic<bool> read_started{false};
+
+        std::error_code read_ec{};
+        std::error_code write_ec{};
+
+        std::array<std::byte, 1> rbuf{};
+        std::string payload = "x";
+
+        auto write_task = iocoro::co_spawn(
+          ex,
+          [&]() -> iocoro::awaitable<void> {
+            write_started.store(true, std::memory_order_release);
+            auto wr = co_await s.async_write_some(as_bytes(payload));
+            if (!wr) write_ec = wr.error();
+            write_done.store(true, std::memory_order_release);
+          },
+          iocoro::use_awaitable);
+
+        auto read_task = iocoro::co_spawn(
+          ex,
+          [&]() -> iocoro::awaitable<void> {
+            read_started.store(true, std::memory_order_release);
+            auto rr = co_await s.async_read_some(rbuf);
+            if (!rr) read_ec = rr.error();
+            read_done.store(true, std::memory_order_release);
+          },
+          iocoro::use_awaitable);
+
+        // Wait until both coroutines have at least started.
+        for (int i = 0; i < 50 &&
+                        (!write_started.load(std::memory_order_acquire) ||
+                         !read_started.load(std::memory_order_acquire));
+             ++i) {
+          (void)co_await iocoro::co_sleep(1ms);
+        }
+        (void)co_await iocoro::co_sleep(5ms);  // give them time to reach readiness waits
+
+        // Cancel ONLY the read side and ensure write doesn't complete as a side-effect.
+        s.cancel_read();
+
+        for (int i = 0; i < 200 && !read_done.load(std::memory_order_acquire); ++i) {
+          (void)co_await iocoro::co_sleep(1ms);
+        }
+
+        bool const write_completed_after_read_cancel = write_done.load(std::memory_order_acquire);
+
+        // Cleanup: cancel write side so the write task does not hang.
+        s.cancel_write();
+
+        for (int i = 0; i < 200 && !write_done.load(std::memory_order_acquire); ++i) {
+          (void)co_await iocoro::co_sleep(1ms);
+        }
+
+        try {
+          co_await std::move(read_task);
+        } catch (...) {
+        }
+        try {
+          co_await std::move(write_task);
+        } catch (...) {
+        }
+
+        co_return result_t{connect_ec, read_ec, write_ec, write_completed_after_read_cancel};
+      }());
+
+  EXPECT_FALSE(connect_ec) << connect_ec.message();
+  EXPECT_EQ(read_ec, iocoro::error::operation_aborted);
+  EXPECT_EQ(write_ec, iocoro::error::operation_aborted);
+  EXPECT_FALSE(write_completed_after_read_cancel);
 
   (void)accepted_f.get();
   accept_thread.join();
