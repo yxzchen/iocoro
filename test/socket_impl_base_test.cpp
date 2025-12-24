@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
+#include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/socket_option.hpp>
-#include <iocoro/impl.hpp>
 
 #include <system_error>
 

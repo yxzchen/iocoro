@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/executor.hpp>
-#include <iocoro/io_context.hpp>
 #include <iocoro/impl.hpp>
+#include <iocoro/io_context.hpp>
 #include <iocoro/timer_handle.hpp>
 
 #include <atomic>

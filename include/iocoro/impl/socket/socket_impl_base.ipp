@@ -222,5 +222,3 @@ inline auto socket_impl_base::set_cloexec(int fd) noexcept -> bool {
 }
 
 }  // namespace iocoro::detail::socket
-
-
