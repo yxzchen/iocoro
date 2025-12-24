@@ -1,3 +1,4 @@
+#include <iocoro/detail/ip/tcp_socket_impl.hpp>
 #include <iocoro/ip/tcp_socket.hpp>
 
 #include <iocoro/error.hpp>
