@@ -112,5 +112,3 @@ auto sync_wait_for(io_context& ctx, std::chrono::duration<Rep, Period> timeout, 
 }
 
 }  // namespace iocoro
-
-

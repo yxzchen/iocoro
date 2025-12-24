@@ -15,19 +15,19 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <tuple>
-#include <utility>
 #include <future>
-#include <thread>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <tuple>
+#include <utility>
 
 #include <arpa/inet.h>
-#include <cerrno>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <cerrno>
 
 namespace {
 
@@ -142,7 +142,8 @@ TEST(stream_socket_impl_test, not_open_errors) {
       dummy.sin_port = htons(1);
       dummy.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-      auto connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&dummy), sizeof(dummy));
+      auto connect_ec =
+        co_await s.async_connect(reinterpret_cast<sockaddr*>(&dummy), sizeof(dummy));
 
       std::error_code read_ec{};
       std::error_code write_ec{};
@@ -173,8 +174,8 @@ TEST(stream_socket_impl_test, not_connected_errors_after_open) {
   std::array<std::byte, 8> tmp{};
   std::string payload = "x";
 
-  auto [read_ec, write_ec] = iocoro::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<std::pair<std::error_code, std::error_code>> {
+  auto [read_ec, write_ec] =
+    iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::pair<std::error_code, std::error_code>> {
       std::error_code read_ec{};
       std::error_code write_ec{};
 
@@ -382,11 +383,9 @@ TEST(stream_socket_impl_test, shutdown_read_and_write_edges) {
   std::string payload = "x";
 
   auto [connect_ec, shut_r_ec, shut_w_ec, read_n, write_ec] = iocoro::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<std::tuple<std::error_code,
-                                               std::error_code,
-                                               std::error_code,
-                                               std::size_t,
-                                               std::error_code>> {
+    ctx,
+    [&]() -> iocoro::awaitable<std::tuple<std::error_code, std::error_code, std::error_code,
+                                          std::size_t, std::error_code>> {
       using result_t =
         std::tuple<std::error_code, std::error_code, std::error_code, std::size_t, std::error_code>;
 
@@ -413,8 +412,7 @@ TEST(stream_socket_impl_test, shutdown_read_and_write_edges) {
       auto shut_w_ec = s.shutdown(iocoro::shutdown_type::write);
 
       auto rr = co_await s.async_read_some(buf);
-      if (!rr)
-        co_return result_t{connect_ec, shut_r_ec, shut_w_ec, std::size_t{123}, rr.error()};
+      if (!rr) co_return result_t{connect_ec, shut_r_ec, shut_w_ec, std::size_t{123}, rr.error()};
       auto const read_n = *rr;  // should be 0 due to read shutdown
 
       std::error_code write_ec{};

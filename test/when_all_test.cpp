@@ -25,8 +25,8 @@ TEST(when_all_test, variadic_returns_tuple_and_preserves_order_and_monostate) {
   auto t1 = []() -> iocoro::awaitable<int> { co_return 123; };
   auto t2 = []() -> iocoro::awaitable<void> { co_return; };
 
-  auto result =
-    iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::tuple<std::monostate, int, std::monostate>> {
+  auto result = iocoro::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::tuple<std::monostate, int, std::monostate>> {
       co_return co_await iocoro::when_all(t0(), t1(), t2());
     }());
 
@@ -35,9 +35,8 @@ TEST(when_all_test, variadic_returns_tuple_and_preserves_order_and_monostate) {
 
 TEST(when_all_test, variadic_empty_returns_empty_tuple) {
   iocoro::io_context ctx;
-  auto result = iocoro::sync_wait(ctx, []() -> iocoro::awaitable<std::tuple<>> {
-    co_return co_await iocoro::when_all();
-  }());
+  auto result = iocoro::sync_wait(
+    ctx, []() -> iocoro::awaitable<std::tuple<>> { co_return co_await iocoro::when_all(); }());
 
   EXPECT_EQ(std::tuple_size_v<decltype(result)>, 0u);
 }
