@@ -116,6 +116,34 @@ class endpoint {
     return endpoint{*a4, *port};
   }
 
+  /// Construct an endpoint from a native sockaddr.
+  ///
+  /// Preconditions:
+  /// - `addr` points to a valid socket address of length `len`.
+  /// - `len` must not exceed sizeof(sockaddr_storage).
+  ///
+  /// Returns:
+  /// - endpoint on success
+  /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
+  static auto from_native(sockaddr const* addr, socklen_t len)
+    -> expected<endpoint, std::error_code> {
+    if (addr == nullptr || len <= 0) {
+      return unexpected(error::invalid_argument);
+    }
+    if (len > sizeof(sockaddr_storage)) {
+      return unexpected(error::invalid_endpoint);
+    }
+    if (addr->sa_family != AF_INET && addr->sa_family != AF_INET6) {
+      return unexpected(error::unsupported_address_family);
+    }
+
+    endpoint ep{};
+    std::memset(&ep.storage_, 0, sizeof(ep.storage_));
+    std::memcpy(&ep.storage_, addr, static_cast<std::size_t>(len));
+    ep.len_ = len;
+    return ep;
+  }
+
   auto address() const noexcept -> iocoro::ip::address {
     if (family() == AF_INET) {
       auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);

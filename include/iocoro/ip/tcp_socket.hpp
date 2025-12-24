@@ -27,7 +27,7 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
  public:
   using base_type = basic_socket<::iocoro::detail::ip::tcp_socket_impl>;
 
-  tcp_socket() noexcept = default;
+  tcp_socket() = delete;
 
   explicit tcp_socket(executor ex);
   explicit tcp_socket(io_context& ctx);
@@ -49,8 +49,8 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
   auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
-  auto local_endpoint() const -> endpoint;
-  auto remote_endpoint() const -> endpoint;
+  auto local_endpoint() const -> expected<endpoint, std::error_code>;
+  auto remote_endpoint() const -> expected<endpoint, std::error_code>;
 
   auto shutdown(shutdown_type what) -> std::error_code;
 

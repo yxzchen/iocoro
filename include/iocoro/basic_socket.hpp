@@ -19,7 +19,7 @@ class basic_socket {
  public:
   using impl_type = Impl;
 
-  // No default constructor - sockets must be initialized with an executor
+  /// Sockets must be bound to an executor at construction time.
   basic_socket() = delete;
 
   explicit basic_socket(executor ex) : impl_(std::make_shared<Impl>(ex)) {}
@@ -27,8 +27,18 @@ class basic_socket {
 
   basic_socket(basic_socket const&) = delete;
   basic_socket& operator=(basic_socket const&) = delete;
-  basic_socket(basic_socket&&) noexcept = default;
-  basic_socket& operator=(basic_socket&&) noexcept = delete;
+
+  /// "Move" is intentionally implemented as shared-ownership transfer (copy the shared_ptr)
+  /// so the moved-from socket remains usable and retains a valid impl object.
+  ///
+  /// This keeps the invariant: impl_ is never null for any socket object.
+  basic_socket(basic_socket&& other) noexcept : impl_(other.impl_) {}
+  basic_socket& operator=(basic_socket&& other) noexcept {
+    if (this != &other) {
+      impl_ = other.impl_;
+    }
+    return *this;
+  }
 
   auto get_executor() const noexcept -> executor { return impl_->get_executor(); }
 

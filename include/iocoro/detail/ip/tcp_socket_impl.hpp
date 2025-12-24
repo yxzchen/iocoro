@@ -13,6 +13,9 @@
 #include <span>
 #include <system_error>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 namespace iocoro::detail::ip {
 
 /// TCP socket implementation (IP-specific adapter).
@@ -42,12 +45,35 @@ class tcp_socket_impl {
   void cancel_write() noexcept { stream_.cancel_write(); }
   void close() noexcept { stream_.close(); }
 
-  auto local_endpoint() const -> iocoro::ip::endpoint { return iocoro::ip::endpoint{}; }
-  auto remote_endpoint() const -> iocoro::ip::endpoint { return iocoro::ip::endpoint{}; }
+  auto local_endpoint() const -> expected<iocoro::ip::endpoint, std::error_code> {
+    auto const fd = stream_.native_handle();
+    if (fd < 0) return unexpected(error::not_open);
+
+    sockaddr_storage ss{};
+    socklen_t len = sizeof(ss);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
+      return unexpected(std::error_code(errno, std::generic_category()));
+    }
+    return iocoro::ip::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+  }
+
+  auto remote_endpoint() const -> expected<iocoro::ip::endpoint, std::error_code> {
+    auto const fd = stream_.native_handle();
+    if (fd < 0) return unexpected(error::not_open);
+    if (!stream_.is_connected()) return unexpected(error::not_connected);
+
+    sockaddr_storage ss{};
+    socklen_t len = sizeof(ss);
+    if (::getpeername(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
+      if (errno == ENOTCONN) return unexpected(error::not_connected);
+      return unexpected(std::error_code(errno, std::generic_category()));
+    }
+    return iocoro::ip::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+  }
 
   auto shutdown(shutdown_type what) -> std::error_code { return stream_.shutdown(what); }
 
-  auto is_connected() const noexcept -> bool { return false; }
+  auto is_connected() const noexcept -> bool { return stream_.is_connected(); }
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {
@@ -60,7 +86,14 @@ class tcp_socket_impl {
   }
 
   auto async_connect(iocoro::ip::endpoint const& ep) -> awaitable<std::error_code> {
-    return stream_.async_connect(ep.data(), ep.size());
+    // For TCP sockets, it's reasonable to open on-demand based on the endpoint family.
+    // This matches typical user expectations: construct socket with executor,
+    // then connect without an explicit open().
+    if (!stream_.is_open()) {
+      auto ec = stream_.open(ep.family(), SOCK_STREAM, IPPROTO_TCP);
+      if (ec) co_return ec;
+    }
+    co_return co_await stream_.async_connect(ep.data(), ep.size());
   }
 
   auto async_read_some(std::span<std::byte> buffer)
