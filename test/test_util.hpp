@@ -77,10 +77,20 @@ auto sync_wait(io_context& ctx, awaitable<T> a) -> T {
   detail::sync_wait_state<T> st{};
   co_spawn(ex, std::move(a), [&](expected<T, std::exception_ptr> r) mutable {
     detail::set_from_expected<T>(st, std::move(r));
-    ctx.stop();
   });
 
-  (void)ctx.run();
+  // Drive the event loop until completion. We intentionally do NOT call ctx.stop()
+  // from the completion callback: detached co_spawn posts coroutine destruction to
+  // the executor at final_suspend, and stopping the context early can prevent that
+  // destroy task from running (LSan/ASan leak).
+  while (!st.done) {
+    if (ctx.run_one() == 0) throw std::logic_error("sync_wait: no work before completion");
+  }
+
+  // Drain any remaining posted work (notably coroutine frame destruction).
+  while (ctx.run_one() != 0) {
+  }
+
   if (!st.done) throw std::logic_error("sync_wait: io_context stopped before completion");
   return detail::take_or_throw<T>(st);
 }
@@ -98,14 +108,27 @@ auto sync_wait_for(io_context& ctx, std::chrono::duration<Rep, Period> timeout, 
   detail::sync_wait_state<T> st{};
   co_spawn(ex, std::move(a), [&](expected<T, std::exception_ptr> r) mutable {
     detail::set_from_expected<T>(st, std::move(r));
-    ctx.stop();
   });
 
-  (void)ctx.run_for(std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+  using clock = std::chrono::steady_clock;
+  auto const deadline = clock::now() + timeout;
+
+  while (!st.done) {
+    auto const now = clock::now();
+    if (now >= deadline) break;
+
+    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+    if (remaining <= std::chrono::milliseconds{0}) remaining = std::chrono::milliseconds{1};
+
+    (void)ctx.run_for(remaining);
+  }
 
   if (!st.done) {
-    ctx.stop();
     throw sync_wait_timeout("sync_wait_for: timeout");
+  }
+
+  // Drain any remaining posted work (notably coroutine frame destruction).
+  while (ctx.run_one() != 0) {
   }
 
   return detail::take_or_throw<T>(st);
