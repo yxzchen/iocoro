@@ -19,7 +19,8 @@ class basic_socket {
  public:
   using impl_type = Impl;
 
-  basic_socket() noexcept = default;
+  // No default constructor - sockets must be initialized with an executor
+  basic_socket() = delete;
 
   explicit basic_socket(executor ex) : impl_(std::make_shared<Impl>(ex)) {}
   explicit basic_socket(io_context& ctx) : basic_socket(ctx.get_executor()) {}
@@ -27,53 +28,32 @@ class basic_socket {
   basic_socket(basic_socket const&) = delete;
   basic_socket& operator=(basic_socket const&) = delete;
   basic_socket(basic_socket&&) noexcept = default;
-  basic_socket& operator=(basic_socket&&) noexcept = default;
+  basic_socket& operator=(basic_socket&&) noexcept = delete;
 
-  auto get_executor() const noexcept -> executor {
-    return impl_ ? impl_->get_executor() : executor{};
-  }
-  auto is_open() const noexcept -> bool { return impl_ && impl_->is_open(); }
-  auto native_handle() const noexcept -> int { return impl_ ? impl_->native_handle() : -1; }
+  auto get_executor() const noexcept -> executor { return impl_->get_executor(); }
 
-  void cancel() noexcept {
-    if (impl_) {
-      impl_->cancel();
-    }
-  }
-  void cancel_read() noexcept {
-    if (impl_) {
-      impl_->cancel_read();
-    }
-  }
-  void cancel_write() noexcept {
-    if (impl_) {
-      impl_->cancel_write();
-    }
-  }
-  void close() noexcept {
-    if (impl_) {
-      impl_->close();
-    }
-  }
+  auto is_open() const noexcept -> bool { return impl_->is_open(); }
+
+  void cancel() noexcept { impl_->cancel(); }
+  void cancel_read() noexcept { impl_->cancel_read(); }
+  void cancel_write() noexcept { impl_->cancel_write(); }
+
+  void close() noexcept { impl_->close(); }
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {
-    if (!impl_) {
-      return error::not_open;
-    }
     return impl_->set_option(opt);
   }
 
   template <class Option>
   auto get_option(Option& opt) -> std::error_code {
-    if (!impl_) {
-      return error::not_open;
-    }
     return impl_->get_option(opt);
   }
 
+  auto native_handle() const noexcept -> int { return impl_->native_handle(); }
+
  protected:
-  std::shared_ptr<Impl> impl_{};
+  std::shared_ptr<Impl> impl_;
 };
 
 }  // namespace iocoro
