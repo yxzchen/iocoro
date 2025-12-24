@@ -36,6 +36,8 @@ class error_category_impl : public std::error_category {
         return "message size";
       case error::connection_reset:
         return "connection reset";
+      case error::timed_out:
+        return "timed out";
       default:
         return "unknown error";
     }

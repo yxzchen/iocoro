@@ -44,6 +44,9 @@ enum class error {
 
   /// Connection was reset by peer.
   connection_reset,
+
+  /// Operation timed out.
+  timed_out,
 };
 
 auto make_error_code(error e) -> std::error_code;
