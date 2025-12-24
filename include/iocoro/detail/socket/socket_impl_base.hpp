@@ -41,17 +41,6 @@ class socket_impl_base {
  public:
   using fd_event_handle = io_context_impl::fd_event_handle;
 
-  /// Socket resource lifecycle state (fd-level).
-  ///
-  /// Design intent:
-  /// - Lifecycle operations are mutex-serialized for internal state/handle bookkeeping.
-  /// - The mutex is NOT held across external/system boundaries (reactor calls, ::close, etc.).
-  /// - I/O operations are handled in higher layers with a lightweight path.
-  ///
-  /// Note: this state is intentionally minimal and protocol-agnostic. Protocol semantics
-  /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
-  enum class state : std::uint8_t { closed, opening, open };
-
   socket_impl_base() noexcept = default;
   explicit socket_impl_base(executor ex) noexcept : ex_(ex) {}
 
@@ -63,11 +52,6 @@ class socket_impl_base {
   ~socket_impl_base() { close(); }
 
   auto get_executor() const noexcept -> executor { return ex_; }
-
-  auto get_state() const noexcept -> state {
-    std::scoped_lock lk{mtx_};
-    return state_;
-  }
 
   /// Native handle snapshot. Returns -1 if not open.
   ///
@@ -181,6 +165,17 @@ class socket_impl_base {
   }
 
  private:
+  /// Socket resource lifecycle state (fd-level).
+  ///
+  /// Design intent:
+  /// - Lifecycle operations are mutex-serialized for internal state/handle bookkeeping.
+  /// - The mutex is NOT held across external/system boundaries (reactor calls, ::close, etc.).
+  /// - I/O operations are handled in higher layers with a lightweight path.
+  ///
+  /// Note: this state is intentionally minimal and protocol-agnostic. Protocol semantics
+  /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
+  enum class fd_state : std::uint8_t { closed, opening, open };
+
   struct wait_state {
     std::coroutine_handle<> h{};
     std::error_code ec{};
@@ -239,11 +234,13 @@ class socket_impl_base {
   static auto set_cloexec(int fd) noexcept -> bool;
 
   executor ex_{};
-  // fd_ is written under mtx_ in lifecycle operations; native_handle() reads a race-free snapshot.
-  std::atomic<int> fd_{-1};
-  state state_{state::closed};
 
   mutable std::mutex mtx_{};
+
+  // fd_ is written under mtx_ in lifecycle operations; native_handle() reads a race-free snapshot.
+  std::atomic<int> fd_{-1};
+  fd_state state_{fd_state::closed};
+
   fd_event_handle read_handle_{};
   fd_event_handle write_handle_{};
 };

@@ -8,17 +8,17 @@ namespace iocoro::detail::socket {
 inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> std::error_code {
   {
     std::scoped_lock lk{mtx_};
-    if (state_ != state::closed || native_handle() >= 0) {
+    if (state_ != fd_state::closed || native_handle() >= 0) {
       return error::busy;
     }
-    state_ = state::opening;
+    state_ = fd_state::opening;
   }
 
   int fd = ::socket(domain, type, protocol);
   if (fd < 0) {
     std::scoped_lock lk{mtx_};
-    if (state_ == state::opening) {
-      state_ = state::closed;
+    if (state_ == fd_state::opening) {
+      state_ = fd_state::closed;
     }
     return std::error_code(errno, std::generic_category());
   }
@@ -29,9 +29,9 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
 
   {
     std::scoped_lock lk{mtx_};
-    if (state_ == state::opening) {
+    if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
-      state_ = state::open;
+      state_ = fd_state::open;
       return {};
     }
     // Aborted by close()/assign() while opening.
@@ -52,12 +52,12 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
     std::scoped_lock lk{mtx_};
     // Mark as opening to block concurrent open/assign.
     // Clear current resources (if any); close happens outside the lock.
-    if (state_ == state::open) {
+    if (state_ == fd_state::open) {
       old_fd = fd_.exchange(-1, std::memory_order_acq_rel);
       rh = std::exchange(read_handle_, {});
       wh = std::exchange(write_handle_, {});
     }
-    state_ = state::opening;
+    state_ = fd_state::opening;
   }
 
   // Cancel/deregister/close old fd outside lock.
@@ -73,9 +73,9 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
 
   {
     std::scoped_lock lk{mtx_};
-    if (state_ == state::opening) {
+    if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
-      state_ = state::open;
+      state_ = fd_state::open;
       return {};
     }
   }
@@ -125,13 +125,13 @@ inline void socket_impl_base::close() noexcept {
   fd_event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
-    if (state_ == state::closed) {
+    if (state_ == fd_state::closed) {
       return;
     }
 
     // If opening, we only mark closed; the opener will close the fd it created.
-    if (state_ == state::opening) {
-      state_ = state::closed;
+    if (state_ == fd_state::opening) {
+      state_ = fd_state::closed;
       read_handle_ = {};
       write_handle_ = {};
       fd_.store(-1, std::memory_order_release);
@@ -139,7 +139,7 @@ inline void socket_impl_base::close() noexcept {
     }
 
     // open -> closed
-    state_ = state::closed;
+    state_ = fd_state::closed;
     fd = fd_.exchange(-1, std::memory_order_acq_rel);
     rh = std::exchange(read_handle_, {});
     wh = std::exchange(write_handle_, {});
@@ -159,7 +159,7 @@ inline auto socket_impl_base::release() noexcept -> int {
   {
     std::scoped_lock lk{mtx_};
     fd = fd_.exchange(-1, std::memory_order_acq_rel);
-    state_ = state::closed;
+    state_ = fd_state::closed;
     rh = std::exchange(read_handle_, {});
     wh = std::exchange(write_handle_, {});
   }
