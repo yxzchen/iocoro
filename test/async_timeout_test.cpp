@@ -81,7 +81,7 @@ TEST(async_timeout_test, async_read_some_timeout_returns_timed_out_and_cleans_up
 
   auto r = iocoro::sync_wait_for(
     ctx, 200ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_read_some_timeout(s, buf, 10ms);
+      return iocoro::io::async_read_some_timeout(s, buf, 10ms);
     }());
 
   ASSERT_FALSE(r);
@@ -98,7 +98,7 @@ TEST(async_timeout_test, async_read_timeout_returns_timed_out_and_cleans_up) {
 
   auto r = iocoro::sync_wait_for(
     ctx, 200ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_read_timeout(s, buf, 10ms);
+      return iocoro::io::async_read_timeout(s, buf, 10ms);
     }());
 
   ASSERT_FALSE(r);
@@ -115,7 +115,7 @@ TEST(async_timeout_test, async_write_some_timeout_returns_timed_out_and_cleans_u
 
   auto r = iocoro::sync_wait_for(
     ctx, 200ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_write_some_timeout(s, buf, 10ms);
+      return iocoro::io::async_write_some_timeout(s, buf, 10ms);
     }());
 
   ASSERT_FALSE(r);
@@ -132,7 +132,7 @@ TEST(async_timeout_test, async_write_timeout_returns_timed_out_and_cleans_up) {
 
   auto r = iocoro::sync_wait_for(
     ctx, 200ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_write_timeout(s, buf, 10ms);
+      return iocoro::io::async_write_timeout(s, buf, 10ms);
     }());
 
   ASSERT_FALSE(r);
@@ -151,7 +151,7 @@ TEST(async_timeout_test, external_cancel_is_propagated_not_mapped_to_timed_out) 
   auto r = iocoro::sync_wait_for(
     ctx, 200ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
       // Large timeout so it is not the reason for cancellation.
-      co_return co_await iocoro::io::async_read_some_timeout(s, buf, 1s);
+      return iocoro::io::async_read_some_timeout(s, buf, 1s);
     }());
 
   ASSERT_FALSE(r);

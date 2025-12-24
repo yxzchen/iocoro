@@ -40,7 +40,7 @@ TEST(when_any_test, variadic_returns_first_completed) {
   };
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
-    co_return co_await iocoro::when_any(t0(), t1(), t2());
+    return iocoro::when_any(t0(), t1(), t2());
   }());
 
   EXPECT_EQ(result.first, 1u);  // t1 completes first
@@ -99,7 +99,7 @@ TEST(when_any_test, container_returns_first_completed_with_index) {
   }());
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
-    co_return co_await iocoro::when_any(std::move(tasks));
+    return iocoro::when_any(std::move(tasks));
   }());
 
   EXPECT_EQ(result.first, 1u);  // Task at index 1 completes first
@@ -124,7 +124,7 @@ TEST(when_any_test, container_void_returns_index) {
   }());
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
-    co_return co_await iocoro::when_any(std::move(tasks));
+    return iocoro::when_any(std::move(tasks));
   }());
 
   EXPECT_EQ(result.first, 1u);  // Second task completes first

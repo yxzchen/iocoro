@@ -41,7 +41,10 @@ namespace iocoro::io {
 template <class T, class Rep, class Period, class OnTimeout>
   requires std::invocable<OnTimeout&>
 auto with_timeout(awaitable<expected<T, std::error_code>> op,
-                  std::chrono::duration<Rep, Period> timeout, OnTimeout&& on_timeout)
+                  // NOTE: pass by value because this is a coroutine; storing an `OnTimeout&&`
+                  // (forwarding ref) could capture a reference to a temporary lambda in the frame.
+                  // That reference may dangle when the coroutine resumes, causing UAF/segfault.
+                  std::chrono::duration<Rep, Period> timeout, OnTimeout on_timeout)
   -> awaitable<expected<T, std::error_code>> {
   if (timeout <= std::chrono::duration<Rep, Period>::zero()) {
     co_return unexpected(error::timed_out);
@@ -58,7 +61,7 @@ auto with_timeout(awaitable<expected<T, std::error_code>> op,
   // Spawn the timeout watcher and join it before returning so we don't leak cancellation work.
   auto watcher = co_spawn(
     ex,
-    [timer, &fired, on_timeout = std::forward<OnTimeout>(on_timeout)]() mutable -> awaitable<void> {
+    [timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
         fired.store(true, std::memory_order_release);
@@ -86,7 +89,7 @@ template <class T, class Rep, class Period, class Stream>
 auto with_timeout(Stream& s, awaitable<expected<T, std::error_code>> op,
                   std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<T, std::error_code>> {
-  co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
+  return with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
 }
 
 /// Convenience overload for read-side operations.
@@ -99,9 +102,9 @@ auto with_timeout_read(Stream& s, awaitable<expected<T, std::error_code>> op,
                        std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<T, std::error_code>> {
   if constexpr (detail::cancel_readable_stream<Stream>) {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_read(); });
+    return with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_read(); });
   } else {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
+    return with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
   }
 }
 
@@ -115,9 +118,9 @@ auto with_timeout_write(Stream& s, awaitable<expected<T, std::error_code>> op,
                         std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<T, std::error_code>> {
   if constexpr (detail::cancel_writable_stream<Stream>) {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_write(); });
+    return with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_write(); });
   } else {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
+    return with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
   }
 }
 

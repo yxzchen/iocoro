@@ -33,7 +33,7 @@ TEST(co_spawn_test, co_spawn_factory_use_awaitable_returns_value) {
   auto ex = ctx.get_executor();
 
   auto v = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<int> {
-    co_return co_await iocoro::co_spawn(
+    return iocoro::co_spawn(
       ex,
       [ex]() -> iocoro::awaitable<int> {
         auto cur = co_await iocoro::this_coro::executor;
@@ -97,7 +97,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_returns_value) {
   };
 
   auto v = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<int> {
-    co_return co_await iocoro::co_spawn(ex, child(), iocoro::use_awaitable);
+    return iocoro::co_spawn(ex, child(), iocoro::use_awaitable);
   }());
 
   EXPECT_EQ(v, 42);
@@ -138,7 +138,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_waits_for_timer_based_child) {
   };
 
   auto v = iocoro::sync_wait_for(ctx, 200ms, [&]() -> iocoro::awaitable<int> {
-    co_return co_await iocoro::co_spawn(ex, slow(), iocoro::use_awaitable);
+    return iocoro::co_spawn(ex, slow(), iocoro::use_awaitable);
   }());
 
   EXPECT_EQ(v, 7);

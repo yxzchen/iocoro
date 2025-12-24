@@ -26,7 +26,7 @@ template <detail::async_write_stream Stream, class Rep, class Period>
 auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
                               std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout_write(s, s.async_write_some(buf), timeout);
+  return with_timeout_write(s, s.async_write_some(buf), timeout);
 }
 
 /// Composed operation: write exactly `buf.size()` bytes.
@@ -69,7 +69,7 @@ template <detail::async_stream Stream, class Rep, class Period>
 auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
                          std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout_write(s, async_write(s, buf), timeout);
+  return with_timeout_write(s, async_write(s, buf), timeout);
 }
 
 }  // namespace iocoro::io

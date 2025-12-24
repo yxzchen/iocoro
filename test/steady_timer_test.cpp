@@ -25,7 +25,7 @@ TEST(steady_timer_test, steady_timer_async_wait_resumes_on_fire) {
   t.expires_after(10ms);
 
   auto task = [&]() -> iocoro::awaitable<std::error_code> {
-    co_return co_await t.async_wait(iocoro::use_awaitable);
+    return t.async_wait(iocoro::use_awaitable);
   };
 
   auto ec = iocoro::sync_wait_for(ctx, 200ms, task());
@@ -43,7 +43,7 @@ TEST(steady_timer_test, steady_timer_async_wait_resumes_on_cancel) {
   t.expires_after(200ms);
 
   auto task = [&]() -> iocoro::awaitable<std::error_code> {
-    co_return co_await t.async_wait(iocoro::use_awaitable);
+    return t.async_wait(iocoro::use_awaitable);
   };
 
   auto wait = iocoro::co_spawn(ex, task(), iocoro::use_awaitable);

@@ -44,7 +44,7 @@ TEST(async_read_until_test, finds_multibyte_delimiter_across_chunks_and_may_over
 
   auto r = iocoro::sync_wait(
     ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_read_until(s, out, "\r\n", 1024);
+      return iocoro::io::async_read_until(s, out, "\r\n", 1024);
     }());
 
   ASSERT_TRUE(r) << r.error().message();
@@ -62,7 +62,7 @@ TEST(async_read_until_test, completes_immediately_if_delimiter_already_present) 
 
   auto r = iocoro::sync_wait(
     ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_read_until(s, out, '\n', 1024);
+      return iocoro::io::async_read_until(s, out, '\n', 1024);
     }());
 
   ASSERT_TRUE(r) << r.error().message();
@@ -79,7 +79,7 @@ TEST(async_read_until_test, returns_message_size_if_not_found_within_max_size) {
 
   auto r = iocoro::sync_wait(
     ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_read_until(s, out, '\n', 4);
+      return iocoro::io::async_read_until(s, out, '\n', 4);
     }());
 
   ASSERT_FALSE(r);
@@ -95,7 +95,7 @@ TEST(async_read_until_test, returns_eof_if_stream_ends_before_delimiter) {
 
   auto r = iocoro::sync_wait(
     ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      co_return co_await iocoro::io::async_read_until(s, out, '\n', 1024);
+      return iocoro::io::async_read_until(s, out, '\n', 1024);
     }());
 
   ASSERT_FALSE(r);

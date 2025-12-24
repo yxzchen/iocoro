@@ -26,7 +26,7 @@ template <detail::async_read_stream Stream, class Rep, class Period>
 auto async_read_some_timeout(Stream& s, std::span<std::byte> buf,
                              std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout_read(s, s.async_read_some(buf), timeout);
+  return with_timeout_read(s, s.async_read_some(buf), timeout);
 }
 
 /// Composed operation: read exactly `buf.size()` bytes.
@@ -70,7 +70,7 @@ template <detail::async_stream Stream, class Rep, class Period>
 auto async_read_timeout(Stream& s, std::span<std::byte> buf,
                         std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout_read(s, async_read(s, buf), timeout);
+  return with_timeout_read(s, async_read(s, buf), timeout);
 }
 
 /// Reads until EOF or buffer is full.
