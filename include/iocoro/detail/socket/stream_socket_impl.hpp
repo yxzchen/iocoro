@@ -65,13 +65,22 @@ class stream_socket_impl {
 
   /// Adopt an existing native handle (e.g. accept()).
   ///
-  /// NOTE (internal/testing): helper for adapters/tests; not a public API surface.
-  auto assign(int fd) noexcept -> std::error_code { return base_.assign(fd); }
-
-  /// Release ownership of the native handle without closing it.
+  /// INTENDED USE (acceptor pattern only):
+  /// - This method is specifically designed for use by `acceptor` classes (e.g., `tcp::acceptor`)
+  ///   to transfer ownership of an accepted connection fd to a new socket object.
+  /// - The accepted fd represents an already-established connection (e.g., from `::accept()`).
   ///
-  /// NOTE (internal/testing): helper for adapters/tests; not a public API surface.
-  auto release() noexcept -> int { return base_.release(); }
+  /// PRECONDITIONS (CRITICAL - UNDEFINED BEHAVIOR IF VIOLATED):
+  /// - The target `stream_socket_impl` object MUST be default-constructed (empty state).
+  /// - Calling `assign()` on a socket that has been used (via `open()`, previous `assign()`,
+  ///   or any I/O operations) results in UNDEFINED BEHAVIOR.
+  /// - The provided `fd` must be a valid, open file descriptor representing a connected stream
+  ///   socket.
+  ///
+  /// POSTCONDITIONS (on success):
+  /// - The socket takes ownership of `fd` and is ready for I/O operations.
+  /// - The fd is set to non-blocking mode (best-effort).
+  auto assign(int fd) noexcept -> std::error_code { return base_.assign(fd); }
 
   auto is_open() const noexcept -> bool { return base_.is_open(); }
   auto is_connected() const noexcept -> bool {
@@ -151,6 +160,16 @@ class stream_socket_impl {
   template <class Option>
   auto get_option(Option& opt) -> std::error_code {
     return base_.get_option(opt);
+  }
+
+  /// Bind to a native endpoint.
+  auto bind(sockaddr const* addr, socklen_t len) -> std::error_code {
+    auto const fd = base_.native_handle();
+    if (fd < 0) return error::not_open;
+    if (::bind(fd, addr, len) != 0) {
+      return std::error_code(errno, std::generic_category());
+    }
+    return {};
   }
 
   /// Connect to a native endpoint.
