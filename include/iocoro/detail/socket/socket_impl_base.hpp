@@ -10,6 +10,7 @@
 #include <atomic>
 #include <coroutine>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <system_error>
 
@@ -19,8 +20,6 @@
 #include <cerrno>
 
 namespace iocoro::detail::socket {
-
-using fd_event_handle = io_context_impl::fd_event_handle;
 
 /// Base class for socket-like implementations.
 ///
@@ -34,7 +33,15 @@ using fd_event_handle = io_context_impl::fd_event_handle;
 /// - Starting async operations (read/write/connect/...) must either be internally serialized
 ///   or return `error::busy` when conflicting ops are in-flight.
 class socket_impl_base {
+ private:
+  enum class fd_wait_kind : std::uint8_t { read, write };
+
+  template <fd_wait_kind Kind>
+  struct fd_awaiter;
+
  public:
+  using fd_event_handle = io_context_impl::fd_event_handle;
+
   /// Socket resource lifecycle state (fd-level).
   ///
   /// Design intent:
@@ -324,70 +331,15 @@ class socket_impl_base {
     write_handle_ = h;
   }
 
-  auto wait_read_ready() -> awaitable<std::error_code> {
-    auto const fd = native_handle();
-    if (fd < 0) co_return error::not_open;
+  /// Wait until the native fd becomes readable (read readiness).
+  ///
+  /// Note: Returns a custom awaiter to avoid creating an extra coroutine frame.
+  auto wait_read_ready() -> fd_awaiter<fd_wait_kind::read>;
 
-    auto ex = get_executor();
-    if (!ex) co_return error::not_open;
-
-    // Create a shared state for completion.
-    auto st = std::make_shared<wait_state>();
-
-    struct awaiter {
-      socket_impl_base* self;
-      int fd;
-      executor ex;
-      std::shared_ptr<wait_state> st;
-
-      awaiter(socket_impl_base* self_, int fd_, executor ex_, std::shared_ptr<wait_state> st_)
-          : self(self_), fd(fd_), ex(ex_), st(st_) {}
-
-      bool await_ready() const noexcept { return false; }
-      bool await_suspend(std::coroutine_handle<> h) {
-        st->h = h;
-        auto op =
-          std::make_unique<fd_wait_operation>(fd_wait_operation::kind::read, fd, self, ex, st);
-        op->start(std::move(op));
-        return true;
-      }
-      auto await_resume() noexcept -> std::error_code { return st->ec; }
-    };
-
-    co_return co_await awaiter{this, fd, ex, st};
-  }
-
-  auto wait_write_ready() -> awaitable<std::error_code> {
-    auto const fd = native_handle();
-    if (fd < 0) co_return error::not_open;
-
-    auto ex = get_executor();
-    if (!ex) co_return error::not_open;
-
-    auto st = std::make_shared<wait_state>();
-
-    struct awaiter {
-      socket_impl_base* self;
-      int fd;
-      executor ex;
-      std::shared_ptr<wait_state> st;
-
-      awaiter(socket_impl_base* self_, int fd_, executor ex_, std::shared_ptr<wait_state> st_)
-          : self(self_), fd(fd_), ex(ex_), st(st_) {}
-
-      bool await_ready() const noexcept { return false; }
-      bool await_suspend(std::coroutine_handle<> h) {
-        st->h = h;
-        auto op =
-          std::make_unique<fd_wait_operation>(fd_wait_operation::kind::write, fd, self, ex, st);
-        op->start(std::move(op));
-        return true;
-      }
-      auto await_resume() noexcept -> std::error_code { return st->ec; }
-    };
-
-    co_return co_await awaiter{this, fd, ex, st};
-  }
+  /// Wait until the native fd becomes writable (write readiness).
+  ///
+  /// Note: Returns a custom awaiter to avoid creating an extra coroutine frame.
+  auto wait_write_ready() -> fd_awaiter<fd_wait_kind::write>;
 
  private:
   struct wait_state {
@@ -398,9 +350,7 @@ class socket_impl_base {
 
   class fd_wait_operation final : public iocoro::detail::operation_base {
    public:
-    enum class kind { read, write };
-
-    fd_wait_operation(kind k, int fd, socket_impl_base* base, executor ex,
+    fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base, executor ex,
                       std::shared_ptr<wait_state> st) noexcept
         : operation_base(ex), kind_(k), fd_(fd), base_(base), ex_(ex), st_(std::move(st)) {}
 
@@ -413,7 +363,7 @@ class socket_impl_base {
       // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
       // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
       // "single waiter per direction" invariant for correctness.
-      if (kind_ == kind::read) {
+      if (kind_ == fd_wait_kind::read) {
         auto h = impl_->register_fd_read(fd_, std::move(self));
         if (base_ != nullptr) {
           base_->set_read_handle(h);
@@ -435,11 +385,38 @@ class socket_impl_base {
       ex_.post([s = st_] { s->h.resume(); });
     }
 
-    kind kind_;
+    fd_wait_kind kind_;
     int fd_;
     socket_impl_base* base_ = nullptr;
     executor ex_{};
     std::shared_ptr<wait_state> st_{};
+  };
+
+  template <fd_wait_kind Kind>
+  struct fd_awaiter {
+    socket_impl_base* self;
+    int fd;
+    executor ex;
+    std::shared_ptr<wait_state> st;
+
+    fd_awaiter(socket_impl_base* self_, int fd_, executor ex_,
+               std::shared_ptr<wait_state> st_) noexcept
+        : self(self_), fd(fd_), ex(ex_), st(st_) {}
+
+    bool await_ready() const noexcept { return fd < 0 || !ex; }
+
+    bool await_suspend(std::coroutine_handle<> h) {
+      st->h = h;
+      auto op = std::make_unique<fd_wait_operation>(Kind, fd, self, ex, st);
+      op->start(std::move(op));
+      return true;
+    }
+
+    auto await_resume() noexcept -> std::error_code {
+      if (fd < 0) return error::not_open;
+      if (!ex) return error::not_open;
+      return st->ec;
+    }
   };
 
   // No locked helpers that call external/system boundaries; we keep those outside locks.
@@ -467,5 +444,13 @@ class socket_impl_base {
   fd_event_handle read_handle_{};
   fd_event_handle write_handle_{};
 };
+
+inline auto socket_impl_base::wait_read_ready() -> fd_awaiter<fd_wait_kind::read> {
+  return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+}
+
+inline auto socket_impl_base::wait_write_ready() -> fd_awaiter<fd_wait_kind::write> {
+  return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+}
 
 }  // namespace iocoro::detail::socket
