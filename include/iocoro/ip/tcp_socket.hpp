@@ -1,9 +1,9 @@
 #pragma once
 
-#include <iocoro/basic_socket.hpp>
-#include <iocoro/ip/endpoint.hpp>
 #include <iocoro/awaitable.hpp>
+#include <iocoro/basic_socket.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/ip/endpoint.hpp>
 #include <iocoro/shutdown.hpp>
 
 #include <cstddef>
@@ -17,17 +17,15 @@ class tcp_socket_impl;
 
 namespace iocoro::ip {
 
-using tcp_socket_impl = ::iocoro::detail::ip::tcp_socket_impl;
-
 /// Public TCP socket type (RAII + coroutine async interface).
 ///
 /// First-stage contract:
 /// - Only coroutine-based async APIs are provided (no completion tokens).
 /// - Implementations are stubs for now (compilation-only).
 /// - Future: methods will perform real non-blocking I/O backed by io_context_impl.
-class tcp_socket : public basic_socket<tcp_socket_impl> {
+class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
  public:
-  using base_type = basic_socket<tcp_socket_impl>;
+  using base_type = basic_socket<::iocoro::detail::ip::tcp_socket_impl>;
 
   tcp_socket() noexcept = default;
 
