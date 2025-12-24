@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iocoro/awaitable.hpp>
-#include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
@@ -9,7 +7,6 @@
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <atomic>
-#include <coroutine>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -209,7 +206,7 @@ class stream_socket_impl {
     }
 
     // Wait for writability, then check SO_ERROR.
-    auto wait_ec = co_await wait_write_ready();
+    auto wait_ec = co_await base_.wait_write_ready();
     if (wait_ec) {
       std::scoped_lock lk{mtx_};
       state_ = conn_state::closed;
@@ -296,7 +293,7 @@ class stream_socket_impl {
         continue;
       }
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        auto ec = co_await wait_read_ready();
+        auto ec = co_await base_.wait_read_ready();
         if (ec) {
           co_return unexpected(ec);
         }
@@ -355,7 +352,7 @@ class stream_socket_impl {
         continue;
       }
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        auto ec = co_await wait_write_ready();
+        auto ec = co_await base_.wait_write_ready();
         if (ec) {
           co_return unexpected(ec);
         }
@@ -430,124 +427,6 @@ class stream_socket_impl {
   template <class F>
   static auto finally(F f) noexcept -> final_action<F> {
     return final_action<F>(std::move(f));
-  }
-
-  struct wait_state {
-    std::coroutine_handle<> h{};
-    std::error_code ec{};
-    std::atomic<bool> done{false};
-  };
-
-  class fd_wait_operation final : public iocoro::detail::operation_base {
-   public:
-    enum class kind { read, write };
-
-    fd_wait_operation(kind k, int fd, socket_impl_base* base, executor ex,
-                      std::shared_ptr<wait_state> st) noexcept
-        : operation_base(ex), kind_(k), fd_(fd), base_(base), ex_(ex), st_(std::move(st)) {}
-
-    void execute() override { complete(std::error_code{}); }
-    void abort(std::error_code ec) override { complete(ec); }
-
-   private:
-    void do_start(std::unique_ptr<iocoro::detail::operation_base> self) override {
-      // Register and publish handle for cancellation.
-      // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
-      // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
-      // "single waiter per direction" invariant for correctness.
-      if (kind_ == kind::read) {
-        auto h = impl_->register_fd_read(fd_, std::move(self));
-        if (base_ != nullptr) {
-          base_->set_read_handle(h);
-        }
-      } else {
-        auto h = impl_->register_fd_write(fd_, std::move(self));
-        if (base_ != nullptr) {
-          base_->set_write_handle(h);
-        }
-      }
-    }
-
-    void complete(std::error_code ec) {
-      // Guard against double completion (execute + abort, or repeated signals).
-      if (st_->done.exchange(true, std::memory_order_acq_rel)) {
-        return;
-      }
-      st_->ec = ec;
-      ex_.post([s = st_] { s->h.resume(); });
-    }
-
-    kind kind_;
-    int fd_;
-    socket_impl_base* base_ = nullptr;
-    executor ex_{};
-    std::shared_ptr<wait_state> st_{};
-  };
-
-  auto wait_read_ready() -> awaitable<std::error_code> {
-    auto const fd = base_.native_handle();
-    if (fd < 0) co_return error::not_open;
-
-    auto ex = base_.get_executor();
-    if (!ex) co_return error::not_open;
-
-    // Create a shared state for completion.
-    auto st = std::make_shared<wait_state>();
-
-    struct awaiter {
-      stream_socket_impl* self;
-      int fd;
-      executor ex;
-      std::shared_ptr<wait_state> st;
-
-      awaiter(stream_socket_impl* self_, int fd_, executor ex_, std::shared_ptr<wait_state> st_)
-          : self(self_), fd(fd_), ex(ex_), st(st_) {}
-
-      bool await_ready() const noexcept { return false; }
-      bool await_suspend(std::coroutine_handle<> h) {
-        st->h = h;
-        auto op = std::make_unique<fd_wait_operation>(fd_wait_operation::kind::read, fd,
-                                                      &self->base_, ex, st);
-        // Register immediately so cancel/close can't race ahead of registration.
-        op->start(std::move(op));
-        return true;
-      }
-      auto await_resume() noexcept -> std::error_code { return st->ec; }
-    };
-
-    co_return co_await awaiter{this, fd, ex, st};
-  }
-
-  auto wait_write_ready() -> awaitable<std::error_code> {
-    auto const fd = base_.native_handle();
-    if (fd < 0) co_return error::not_open;
-
-    auto ex = base_.get_executor();
-    if (!ex) co_return error::not_open;
-
-    auto st = std::make_shared<wait_state>();
-
-    struct awaiter {
-      stream_socket_impl* self;
-      int fd;
-      executor ex;
-      std::shared_ptr<wait_state> st;
-
-      awaiter(stream_socket_impl* self_, int fd_, executor ex_, std::shared_ptr<wait_state> st_)
-          : self(self_), fd(fd_), ex(ex_), st(st_) {}
-
-      bool await_ready() const noexcept { return false; }
-      bool await_suspend(std::coroutine_handle<> h) {
-        st->h = h;
-        auto op = std::make_unique<fd_wait_operation>(fd_wait_operation::kind::write, fd,
-                                                      &self->base_, ex, st);
-        op->start(std::move(op));
-        return true;
-      }
-      auto await_resume() noexcept -> std::error_code { return st->ec; }
-    };
-
-    co_return co_await awaiter{this, fd, ex, st};
   }
 
   socket_impl_base base_{};
