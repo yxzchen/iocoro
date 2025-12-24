@@ -8,11 +8,14 @@
 #include <iocoro/ip/endpoint.hpp>
 #include <iocoro/src.hpp>
 
+#include "test_util.hpp"
+
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <utility>
 #include <future>
 #include <thread>
@@ -95,12 +98,6 @@ static auto as_bytes(std::string const& s) -> std::span<std::byte const> {
   return {reinterpret_cast<std::byte const*>(s.data()), s.size()};
 }
 
-struct ping_state {
-  std::atomic<bool> done{false};
-  std::error_code ec{};
-  std::string reply{};
-};
-
 static auto read_until_crlf(stream_socket_impl& s)
   -> iocoro::awaitable<iocoro::expected<std::string, std::error_code>> {
   std::string out;
@@ -135,32 +132,31 @@ TEST(stream_socket_impl_test, not_open_errors) {
 
   stream_socket_impl s{ex};
 
-  std::error_code connect_ec{};
-  std::error_code read_ec{};
-  std::error_code write_ec{};
-
   std::array<std::byte, 8> tmp{};
   std::string payload = "x";
 
-  iocoro::co_spawn(
-    ex,
-    [&]() -> iocoro::awaitable<void> {
+  auto [connect_ec, read_ec, write_ec] = iocoro::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::tuple<std::error_code, std::error_code, std::error_code>> {
       sockaddr_in dummy{};
       dummy.sin_family = AF_INET;
       dummy.sin_port = htons(1);
       dummy.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-      connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&dummy), sizeof(dummy));
+      auto connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&dummy), sizeof(dummy));
+
+      std::error_code read_ec{};
+      std::error_code write_ec{};
 
       auto rr = co_await s.async_read_some(tmp);
       if (!rr) read_ec = rr.error();
 
       auto wr = co_await s.async_write_some(as_bytes(payload));
       if (!wr) write_ec = wr.error();
-    },
-    iocoro::detached);
 
-  (void)ctx.run();
+      co_return std::tuple<std::error_code, std::error_code, std::error_code>{connect_ec, read_ec,
+                                                                              write_ec};
+    }());
+
   EXPECT_EQ(connect_ec, iocoro::error::not_open);
   EXPECT_EQ(read_ec, iocoro::error::not_open);
   EXPECT_EQ(write_ec, iocoro::error::not_open);
@@ -177,20 +173,20 @@ TEST(stream_socket_impl_test, not_connected_errors_after_open) {
   std::array<std::byte, 8> tmp{};
   std::string payload = "x";
 
-  std::error_code read_ec{};
-  std::error_code write_ec{};
+  auto [read_ec, write_ec] = iocoro::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::pair<std::error_code, std::error_code>> {
+      std::error_code read_ec{};
+      std::error_code write_ec{};
 
-  iocoro::co_spawn(
-    ex,
-    [&]() -> iocoro::awaitable<void> {
       auto rr = co_await s.async_read_some(tmp);
       if (!rr) read_ec = rr.error();
+
       auto wr = co_await s.async_write_some(as_bytes(payload));
       if (!wr) write_ec = wr.error();
-    },
-    iocoro::detached);
 
-  (void)ctx.run();
+      co_return std::pair<std::error_code, std::error_code>{read_ec, write_ec};
+    }());
+
   EXPECT_EQ(read_ec, iocoro::error::not_connected);
   EXPECT_EQ(write_ec, iocoro::error::not_connected);
 }
@@ -239,15 +235,13 @@ TEST(stream_socket_impl_test, connect_twice_reports_already_connected) {
   std::error_code ec1{};
   std::error_code ec2{};
 
-  iocoro::co_spawn(
-    ex,
-    [&]() -> iocoro::awaitable<void> {
-      ec1 = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-      ec2 = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-    },
-    iocoro::detached);
+  std::tie(ec1, ec2) =
+    iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::pair<std::error_code, std::error_code>> {
+      auto ec1 = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+      auto ec2 = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+      co_return std::pair<std::error_code, std::error_code>{ec1, ec2};
+    }());
 
-  (void)ctx.run();
   EXPECT_FALSE(ec1) << ec1.message();
   EXPECT_EQ(ec2, iocoro::error::already_connected);
 
@@ -297,28 +291,25 @@ TEST(stream_socket_impl_test, concurrent_read_reports_busy) {
   (void)::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
   std::atomic<bool> started_first{false};
-  std::error_code connect_ec{};
-  std::error_code second_ec{};
 
   std::array<std::byte, 1> b1{};
   std::array<std::byte, 1> b2{};
 
-  iocoro::co_spawn(
-    ex,
-    [&]() -> iocoro::awaitable<void> {
-      connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+  auto [connect_ec, second_ec] = iocoro::sync_wait_for(
+    ctx, 200ms, [&]() -> iocoro::awaitable<std::pair<std::error_code, std::error_code>> {
+      auto connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
       if (connect_ec) {
-        co_return;
+        co_return std::pair<std::error_code, std::error_code>{connect_ec, std::error_code{}};
       }
 
       // First read: should block (no data sent).
-      iocoro::co_spawn(
+      auto first_read = iocoro::co_spawn(
         ex,
         [&]() -> iocoro::awaitable<void> {
           started_first.store(true, std::memory_order_release);
           (void)co_await s.async_read_some(b1);
         },
-        iocoro::detached);
+        iocoro::use_awaitable);
 
       // Wait until the first read has started (yielding to the executor).
       for (int i = 0; i < 50 && !started_first.load(std::memory_order_acquire); ++i) {
@@ -326,13 +317,20 @@ TEST(stream_socket_impl_test, concurrent_read_reports_busy) {
       }
       (void)co_await iocoro::co_sleep(5ms);  // give it a chance to reach the readiness wait
 
+      std::error_code second_ec{};
       auto r2 = co_await s.async_read_some(b2);
       if (!r2) second_ec = r2.error();
-      s.cancel();  // clean up the first read
-    },
-    iocoro::detached);
 
-  (void)ctx.run_for(200ms);
+      s.cancel();  // clean up the first read
+      try {
+        co_await std::move(first_read);
+      } catch (...) {
+        // ignore cancellation errors
+      }
+
+      co_return std::pair<std::error_code, std::error_code>{connect_ec, second_ec};
+    }());
+
   EXPECT_FALSE(connect_ec) << connect_ec.message();
   EXPECT_EQ(second_ec, iocoro::error::busy);
 
@@ -380,53 +378,52 @@ TEST(stream_socket_impl_test, shutdown_read_and_write_edges) {
   addr.sin_port = htons(port);
   (void)::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
-  std::error_code connect_ec{};
-  std::error_code shut_r_ec{};
-  std::error_code shut_w_ec{};
-  std::size_t read_n = 123;
-  std::error_code write_ec{};
-
   std::array<std::byte, 1> buf{};
   std::string payload = "x";
 
-  iocoro::co_spawn(
-    ex,
-    [&]() -> iocoro::awaitable<void> {
-      connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+  auto [connect_ec, shut_r_ec, shut_w_ec, read_n, write_ec] = iocoro::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::tuple<std::error_code,
+                                               std::error_code,
+                                               std::error_code,
+                                               std::size_t,
+                                               std::error_code>> {
+      using result_t =
+        std::tuple<std::error_code, std::error_code, std::error_code, std::size_t, std::error_code>;
+
+      auto connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
       if (connect_ec) {
-        co_return;
+        co_return result_t{connect_ec, std::error_code{}, std::error_code{}, std::size_t{123},
+                           std::error_code{}};
       }
 
       // Empty buffers succeed with 0.
       auto r0 = co_await s.async_read_some(std::span<std::byte>{});
-      if (!r0) {
-        write_ec = r0.error();
-        co_return;
-      }
+      if (!r0)
+        co_return result_t{connect_ec, std::error_code{}, std::error_code{}, std::size_t{123},
+                           r0.error()};
       EXPECT_EQ(*r0, 0U);
+
       auto w0 = co_await s.async_write_some(std::span<std::byte const>{});
-      if (!w0) {
-        write_ec = w0.error();
-        co_return;
-      }
+      if (!w0)
+        co_return result_t{connect_ec, std::error_code{}, std::error_code{}, std::size_t{123},
+                           w0.error()};
       EXPECT_EQ(*w0, 0U);
 
-      shut_r_ec = s.shutdown(iocoro::shutdown_type::read);
-      shut_w_ec = s.shutdown(iocoro::shutdown_type::write);
+      auto shut_r_ec = s.shutdown(iocoro::shutdown_type::read);
+      auto shut_w_ec = s.shutdown(iocoro::shutdown_type::write);
 
       auto rr = co_await s.async_read_some(buf);
-      if (!rr) {
-        write_ec = rr.error();
-        co_return;
-      }
-      read_n = *rr;  // should be 0 due to read shutdown
+      if (!rr)
+        co_return result_t{connect_ec, shut_r_ec, shut_w_ec, std::size_t{123}, rr.error()};
+      auto const read_n = *rr;  // should be 0 due to read shutdown
 
+      std::error_code write_ec{};
       auto wr = co_await s.async_write_some(as_bytes(payload));
       if (!wr) write_ec = wr.error();
-    },
-    iocoro::detached);
 
-  (void)ctx.run();
+      co_return result_t{connect_ec, shut_r_ec, shut_w_ec, read_n, write_ec};
+    }());
+
   EXPECT_FALSE(connect_ec) << connect_ec.message();
   EXPECT_FALSE(shut_r_ec) << shut_r_ec.message();
   EXPECT_FALSE(shut_w_ec) << shut_w_ec.message();
@@ -450,45 +447,27 @@ TEST(stream_socket_impl_test, redis_ping_ipv4) {
   auto ep_r = iocoro::ip::endpoint::from_string("127.0.0.1:6379");
   ASSERT_TRUE(ep_r.has_value()) << ep_r.error().message();
   auto const ep = *ep_r;
-  auto st = std::make_shared<ping_state>();
 
-  iocoro::co_spawn(
-    ex,
-    [sock, st, ep]() -> iocoro::awaitable<void> {
-      st->ec = co_await sock->async_connect(ep.data(), ep.size());
-      if (st->ec) {
-        st->done.store(true, std::memory_order_relaxed);
-        co_return;
-      }
+  auto rr = iocoro::sync_wait_for(
+    ctx, 1s, [sock, ep]() -> iocoro::awaitable<iocoro::expected<std::string, std::error_code>> {
+      auto ec = co_await sock->async_connect(ep.data(), ep.size());
+      if (ec) co_return iocoro::unexpected(ec);
 
       std::string cmd = "*1\r\n$4\r\nPING\r\n";
       auto wr = co_await iocoro::io::async_write(*sock, as_bytes(cmd));
-      if (!wr) {
-        st->ec = wr.error();
-        st->done.store(true, std::memory_order_relaxed);
-        co_return;
-      }
+      if (!wr) co_return iocoro::unexpected(wr.error());
 
       auto rr = co_await read_until_crlf(*sock);
-      if (!rr) {
-        st->ec = rr.error();
-        st->done.store(true, std::memory_order_relaxed);
-        co_return;
-      }
-      st->reply = std::move(*rr);
-      st->done.store(true, std::memory_order_relaxed);
-    },
-    iocoro::detached);
+      if (!rr) co_return iocoro::unexpected(rr.error());
+      co_return std::move(*rr);
+    }());
 
-  (void)ctx.run_for(1s);
-  ASSERT_TRUE(st->done.load(std::memory_order_relaxed)) << "timeout waiting for redis ping";
-
-  if (st->ec && should_skip_net_error(st->ec)) {
-    GTEST_SKIP() << "redis not reachable on 127.0.0.1:6379: " << st->ec.message();
+  if (!rr && should_skip_net_error(rr.error())) {
+    GTEST_SKIP() << "redis not reachable on 127.0.0.1:6379: " << rr.error().message();
   }
-  ASSERT_FALSE(st->ec) << st->ec.message();
-  ASSERT_GE(st->reply.size(), 5U);
-  EXPECT_TRUE(st->reply.rfind("+PONG", 0) == 0) << st->reply;
+  ASSERT_TRUE(rr) << rr.error().message();
+  ASSERT_GE(rr->size(), 5U);
+  EXPECT_TRUE(rr->rfind("+PONG", 0) == 0) << *rr;
 }
 
 TEST(stream_socket_impl_test, redis_ping_ipv6) {
@@ -504,45 +483,27 @@ TEST(stream_socket_impl_test, redis_ping_ipv6) {
   auto ep_r = iocoro::ip::endpoint::from_string("[::1]:6379");
   ASSERT_TRUE(ep_r.has_value()) << ep_r.error().message();
   auto const ep = *ep_r;
-  auto st = std::make_shared<ping_state>();
 
-  iocoro::co_spawn(
-    ex,
-    [sock, st, ep]() -> iocoro::awaitable<void> {
-      st->ec = co_await sock->async_connect(ep.data(), ep.size());
-      if (st->ec) {
-        st->done.store(true, std::memory_order_relaxed);
-        co_return;
-      }
+  auto rr = iocoro::sync_wait_for(
+    ctx, 1s, [sock, ep]() -> iocoro::awaitable<iocoro::expected<std::string, std::error_code>> {
+      auto ec = co_await sock->async_connect(ep.data(), ep.size());
+      if (ec) co_return iocoro::unexpected(ec);
 
       std::string cmd = "*1\r\n$4\r\nPING\r\n";
       auto wr = co_await iocoro::io::async_write(*sock, as_bytes(cmd));
-      if (!wr) {
-        st->ec = wr.error();
-        st->done.store(true, std::memory_order_relaxed);
-        co_return;
-      }
+      if (!wr) co_return iocoro::unexpected(wr.error());
 
       auto rr = co_await read_until_crlf(*sock);
-      if (!rr) {
-        st->ec = rr.error();
-        st->done.store(true, std::memory_order_relaxed);
-        co_return;
-      }
-      st->reply = std::move(*rr);
-      st->done.store(true, std::memory_order_relaxed);
-    },
-    iocoro::detached);
+      if (!rr) co_return iocoro::unexpected(rr.error());
+      co_return std::move(*rr);
+    }());
 
-  (void)ctx.run_for(1s);
-  ASSERT_TRUE(st->done.load(std::memory_order_relaxed)) << "timeout waiting for redis ping";
-
-  if (st->ec && should_skip_net_error(st->ec)) {
-    GTEST_SKIP() << "redis not reachable on [::1]:6379: " << st->ec.message();
+  if (!rr && should_skip_net_error(rr.error())) {
+    GTEST_SKIP() << "redis not reachable on [::1]:6379: " << rr.error().message();
   }
-  ASSERT_FALSE(st->ec) << st->ec.message();
-  ASSERT_GE(st->reply.size(), 5U);
-  EXPECT_TRUE(st->reply.rfind("+PONG", 0) == 0) << st->reply;
+  ASSERT_TRUE(rr) << rr.error().message();
+  ASSERT_GE(rr->size(), 5U);
+  EXPECT_TRUE(rr->rfind("+PONG", 0) == 0) << *rr;
 }
 
 }  // namespace

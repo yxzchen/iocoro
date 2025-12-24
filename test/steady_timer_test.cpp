@@ -9,7 +9,8 @@
 #include <iocoro/timer_handle.hpp>
 #include <iocoro/use_awaitable.hpp>
 
-#include <atomic>
+#include "test_util.hpp"
+
 #include <chrono>
 
 namespace {
@@ -19,24 +20,17 @@ TEST(timer_test, steady_timer_async_wait_resumes_on_fire) {
 
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
-  std::atomic<bool> done{false};
-  std::atomic<bool> aborted{false};
 
   iocoro::steady_timer t{ex};
   t.expires_after(10ms);
 
-  auto task = [&]() -> iocoro::awaitable<void> {
-    auto ec = co_await t.async_wait(iocoro::use_awaitable);
-    aborted.store(ec == iocoro::error::operation_aborted, std::memory_order_relaxed);
-    done.store(true, std::memory_order_relaxed);
-    co_return;
+  auto task = [&]() -> iocoro::awaitable<std::error_code> {
+    co_return co_await t.async_wait(iocoro::use_awaitable);
   };
 
-  iocoro::co_spawn(ctx.get_executor(), task(), iocoro::detached);
-
-  (void)ctx.run_for(200ms);
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
-  EXPECT_FALSE(aborted.load(std::memory_order_relaxed));
+  auto ec = iocoro::sync_wait_for(ctx, 200ms, task());
+  EXPECT_FALSE(ec) << ec.message();
+  EXPECT_NE(ec, iocoro::error::operation_aborted);
 }
 
 TEST(timer_test, steady_timer_async_wait_resumes_on_cancel) {
@@ -44,28 +38,22 @@ TEST(timer_test, steady_timer_async_wait_resumes_on_cancel) {
 
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
-  std::atomic<bool> done{false};
-  std::atomic<bool> aborted{false};
 
   iocoro::steady_timer t{ex};
   t.expires_after(200ms);
 
-  auto task = [&]() -> iocoro::awaitable<void> {
-    auto ec = co_await t.async_wait(iocoro::use_awaitable);
-    aborted.store(ec == iocoro::error::operation_aborted, std::memory_order_relaxed);
-    done.store(true, std::memory_order_relaxed);
-    co_return;
+  auto task = [&]() -> iocoro::awaitable<std::error_code> {
+    co_return co_await t.async_wait(iocoro::use_awaitable);
   };
 
-  iocoro::co_spawn(ctx.get_executor(), task(), iocoro::detached);
+  auto wait = iocoro::co_spawn(ex, task(), iocoro::use_awaitable);
 
   // Let the coroutine start and suspend on async_wait, then cancel it.
   (void)ctx.run_one();
   (void)t.cancel();
 
-  (void)ctx.run_for(50ms);
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
-  EXPECT_TRUE(aborted.load(std::memory_order_relaxed));
+  auto ec = iocoro::sync_wait_for(ctx, 50ms, std::move(wait));
+  EXPECT_EQ(ec, iocoro::error::operation_aborted);
 }
 
 }  // namespace

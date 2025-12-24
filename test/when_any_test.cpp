@@ -8,7 +8,8 @@
 #include <iocoro/use_awaitable.hpp>
 #include <iocoro/when_any.hpp>
 
-#include <atomic>
+#include "test_util.hpp"
+
 #include <chrono>
 #include <string>
 #include <tuple>
@@ -22,10 +23,8 @@ TEST(when_any_test, variadic_returns_first_completed) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
-  std::atomic<bool> done{false};
-  std::pair<std::size_t, std::variant<std::monostate, int, std::string>> result{};
+  using result_t = std::pair<std::size_t, std::variant<std::monostate, int, std::string>>;
 
   auto t0 = []() -> iocoro::awaitable<void> {
     co_await iocoro::co_sleep(50ms);
@@ -40,16 +39,10 @@ TEST(when_any_test, variadic_returns_first_completed) {
     co_return "hello";
   };
 
-  auto parent = [&]() -> iocoro::awaitable<void> {
-    result = co_await iocoro::when_any(t0(), t1(), t2());
-    done.store(true, std::memory_order_relaxed);
-    co_return;
-  };
+  auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
+    co_return co_await iocoro::when_any(t0(), t1(), t2());
+  }());
 
-  iocoro::co_spawn(ex, parent(), iocoro::detached);
-  (void)ctx.run();
-
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
   EXPECT_EQ(result.first, 1u);  // t1 completes first
   EXPECT_TRUE(std::holds_alternative<int>(result.second));
   EXPECT_EQ(std::get<int>(result.second), 42);
@@ -59,9 +52,6 @@ TEST(when_any_test, variadic_rethrows_exception_if_first) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-
-  std::atomic<bool> got_exception{false};
 
   auto boom = []() -> iocoro::awaitable<int> {
     (void)co_await iocoro::this_coro::executor;
@@ -73,31 +63,26 @@ TEST(when_any_test, variadic_rethrows_exception_if_first) {
     co_return "slow";
   };
 
-  auto parent = [&]() -> iocoro::awaitable<void> {
+  auto got_exception = iocoro::sync_wait_for(ctx, 200ms, [&]() -> iocoro::awaitable<bool> {
     try {
       (void)co_await iocoro::when_any(boom(), slow());
       ADD_FAILURE() << "expected exception";
     } catch (std::runtime_error const& e) {
       EXPECT_STREQ(e.what(), "boom");
-      got_exception.store(true, std::memory_order_relaxed);
+      co_return true;
     }
-    co_return;
-  };
+    co_return false;
+  }());
 
-  iocoro::co_spawn(ex, parent(), iocoro::detached);
-  (void)ctx.run_for(200ms);
-
-  EXPECT_TRUE(got_exception.load(std::memory_order_relaxed));
+  EXPECT_TRUE(got_exception);
 }
 
 TEST(when_any_test, container_returns_first_completed_with_index) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
-  std::atomic<bool> done{false};
-  std::pair<std::size_t, int> result{};
+  using result_t = std::pair<std::size_t, int>;
 
   std::vector<iocoro::awaitable<int>> tasks;
   tasks.push_back([]() -> iocoro::awaitable<int> {
@@ -113,16 +98,10 @@ TEST(when_any_test, container_returns_first_completed_with_index) {
     co_return 3;
   }());
 
-  auto parent = [&]() -> iocoro::awaitable<void> {
-    result = co_await iocoro::when_any(std::move(tasks));
-    done.store(true, std::memory_order_relaxed);
-    co_return;
-  };
+  auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
+    co_return co_await iocoro::when_any(std::move(tasks));
+  }());
 
-  iocoro::co_spawn(ex, parent(), iocoro::detached);
-  (void)ctx.run();
-
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
   EXPECT_EQ(result.first, 1u);  // Task at index 1 completes first
   EXPECT_EQ(result.second, 2);
 }
@@ -131,10 +110,8 @@ TEST(when_any_test, container_void_returns_index) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
-  std::atomic<bool> done{false};
-  std::pair<std::size_t, std::monostate> result{};
+  using result_t = std::pair<std::size_t, std::monostate>;
 
   std::vector<iocoro::awaitable<void>> tasks;
   tasks.push_back([]() -> iocoro::awaitable<void> {
@@ -146,16 +123,10 @@ TEST(when_any_test, container_void_returns_index) {
     co_return;
   }());
 
-  auto parent = [&]() -> iocoro::awaitable<void> {
-    result = co_await iocoro::when_any(std::move(tasks));
-    done.store(true, std::memory_order_relaxed);
-    co_return;
-  };
+  auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
+    co_return co_await iocoro::when_any(std::move(tasks));
+  }());
 
-  iocoro::co_spawn(ex, parent(), iocoro::detached);
-  (void)ctx.run();
-
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
   EXPECT_EQ(result.first, 1u);  // Second task completes first
 }
 
