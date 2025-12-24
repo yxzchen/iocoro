@@ -27,8 +27,7 @@ TEST(timer_test, steady_timer_async_wait_resumes_on_fire) {
 
   auto task = [&]() -> iocoro::awaitable<void> {
     auto ec = co_await t.async_wait(iocoro::use_awaitable);
-    aborted.store(ec == iocoro::make_error_code(iocoro::error::operation_aborted),
-                  std::memory_order_relaxed);
+    aborted.store(ec == iocoro::error::operation_aborted, std::memory_order_relaxed);
     done.store(true, std::memory_order_relaxed);
     co_return;
   };
@@ -53,8 +52,7 @@ TEST(timer_test, steady_timer_async_wait_resumes_on_cancel) {
 
   auto task = [&]() -> iocoro::awaitable<void> {
     auto ec = co_await t.async_wait(iocoro::use_awaitable);
-    aborted.store(ec == iocoro::make_error_code(iocoro::error::operation_aborted),
-                  std::memory_order_relaxed);
+    aborted.store(ec == iocoro::error::operation_aborted, std::memory_order_relaxed);
     done.store(true, std::memory_order_relaxed);
     co_return;
   };

@@ -76,7 +76,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
     search_from = new_size > (delim.size() - 1) ? new_size - (delim.size() - 1) : 0U;
   }
 
-  co_return unexpected(std::make_error_code(std::errc::message_size));
+  co_return unexpected(std::errc::message_size);
 }
 
 /// Convenience overload for single-character delimiters.
