@@ -187,23 +187,49 @@ class socket_impl_base {
     return {};
   }
 
-  /// Cancel pending operations (best-effort).
+  /// Cancel any in-flight read or write operations.
   void cancel() noexcept {
-    int fd = -1;
     fd_event_handle rh{};
     fd_event_handle wh{};
     {
       std::scoped_lock lk{mtx_};
-      fd = native_handle();
       rh = std::exchange(read_handle_, {});
       wh = std::exchange(write_handle_, {});
     }
 
     rh.cancel();
     wh.cancel();
-    if (ex_.impl_ != nullptr && fd >= 0) {
-      ex_.impl_->deregister_fd(fd);
+
+    /// The fd_event_handle::cancel() method will handle deregistration from the IO loop
+    /// if no other operations remain, so explicit deregistration here is unnecessary.
+  }
+
+  /// Cancel pending read-side operations (best-effort).
+  ///
+  /// Semantics:
+  /// - Cancels the currently stored read-side registration handle (if any).
+  /// - Does NOT affect write-side operations.
+  void cancel_read() noexcept {
+    fd_event_handle rh{};
+    {
+      std::scoped_lock lk{mtx_};
+      rh = std::exchange(read_handle_, {});
     }
+    rh.cancel();
+  }
+
+  /// Cancel pending write-side operations (best-effort).
+  ///
+  /// Semantics:
+  /// - Cancels the currently stored write-side registration handle (if any).
+  /// - Does NOT affect read-side operations.
+  void cancel_write() noexcept {
+    fd_event_handle wh{};
+    {
+      std::scoped_lock lk{mtx_};
+      wh = std::exchange(write_handle_, {});
+    }
+    wh.cancel();
   }
 
   /// Close the socket (best-effort, idempotent).

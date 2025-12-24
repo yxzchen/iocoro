@@ -92,9 +92,40 @@ class stream_socket_impl {
   void cancel() noexcept {
     {
       std::scoped_lock lk{mtx_};
-      ++epoch_;
+      ++read_epoch_;
+      ++write_epoch_;
+      ++connect_epoch_;
     }
     base_.cancel();
+  }
+
+  /// Cancel pending read-side operations (best-effort).
+  ///
+  /// Semantics:
+  /// - Aborts the currently-registered "read readiness" waiter (if any).
+  /// - Does NOT affect write-side operations.
+  void cancel_read() noexcept {
+    {
+      std::scoped_lock lk{mtx_};
+      ++read_epoch_;
+    }
+    base_.cancel_read();
+  }
+
+  /// Cancel pending write-side operations (best-effort).
+  ///
+  /// Semantics:
+  /// - Aborts the currently-registered "write readiness" waiter (if any).
+  /// - Does NOT affect read-side operations.
+  ///
+  /// Note: connect() readiness waits are implemented via writability. Therefore, cancel_write()
+  /// may also abort an in-flight async_connect() if it is currently waiting for writability.
+  void cancel_write() noexcept {
+    {
+      std::scoped_lock lk{mtx_};
+      ++write_epoch_;
+    }
+    base_.cancel_write();
   }
 
   /// Close the stream socket (best-effort, idempotent).
@@ -105,7 +136,9 @@ class stream_socket_impl {
   void close() noexcept {
     {
       std::scoped_lock lk{mtx_};
-      ++epoch_;
+      ++read_epoch_;
+      ++write_epoch_;
+      ++connect_epoch_;
       state_ = conn_state::closed;
       shutdown_ = {};
       // NOTE: do not touch read_in_flight_/write_in_flight_ here; their owner is the coroutine.
@@ -144,7 +177,7 @@ class stream_socket_impl {
       }
       connect_in_flight_ = true;
       state_ = conn_state::connecting;
-      my_epoch = epoch_;
+      my_epoch = connect_epoch_;
     }
 
     // Ensure the "connect owner" flag is always released by the owning coroutine.
@@ -186,7 +219,7 @@ class stream_socket_impl {
     {
       // If cancel()/close() happened while we were waiting, treat as aborted.
       std::scoped_lock lk{mtx_};
-      if (epoch_ != my_epoch) {
+      if (connect_epoch_ != my_epoch) {
         state_ = conn_state::closed;
         co_return error::operation_aborted;
       }
@@ -209,7 +242,7 @@ class stream_socket_impl {
 
     {
       std::scoped_lock lk{mtx_};
-      if (epoch_ != my_epoch) {
+      if (connect_epoch_ != my_epoch) {
         state_ = conn_state::closed;
         co_return error::operation_aborted;
       }
@@ -239,7 +272,7 @@ class stream_socket_impl {
         co_return unexpected(error::busy);
       }
       read_in_flight_ = true;
-      my_epoch = epoch_;
+      my_epoch = read_epoch_;
     }
 
     auto guard = finally([this] {
@@ -269,7 +302,7 @@ class stream_socket_impl {
         }
         {
           std::scoped_lock lk{mtx_};
-          if (epoch_ != my_epoch) {
+          if (read_epoch_ != my_epoch) {
             co_return unexpected(error::operation_aborted);
           }
         }
@@ -300,7 +333,7 @@ class stream_socket_impl {
         co_return unexpected(error::busy);
       }
       write_in_flight_ = true;
-      my_epoch = epoch_;
+      my_epoch = write_epoch_;
     }
 
     auto guard = finally([this] {
@@ -328,7 +361,7 @@ class stream_socket_impl {
         }
         {
           std::scoped_lock lk{mtx_};
-          if (epoch_ != my_epoch) {
+          if (write_epoch_ != my_epoch) {
             co_return unexpected(error::operation_aborted);
           }
         }
@@ -521,7 +554,9 @@ class stream_socket_impl {
 
   mutable std::mutex mtx_{};
   conn_state state_{conn_state::closed};
-  std::uint64_t epoch_{0};
+  std::uint64_t read_epoch_{0};
+  std::uint64_t write_epoch_{0};
+  std::uint64_t connect_epoch_{0};
   shutdown_state shutdown_{};
   bool read_in_flight_{false};
   bool write_in_flight_{false};

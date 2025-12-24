@@ -38,6 +38,8 @@ class tcp_socket_impl {
   auto is_open() const noexcept -> bool { return stream_.is_open(); }
 
   void cancel() noexcept { stream_.cancel(); }
+  void cancel_read() noexcept { stream_.cancel_read(); }
+  void cancel_write() noexcept { stream_.cancel_write(); }
   void close() noexcept { stream_.close(); }
 
   auto local_endpoint() const -> iocoro::ip::endpoint { return iocoro::ip::endpoint{}; }
