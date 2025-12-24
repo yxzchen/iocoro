@@ -79,17 +79,7 @@ auto sync_wait(io_context& ctx, awaitable<T> a) -> T {
     detail::set_from_expected<T>(st, std::move(r));
   });
 
-  // Drive the event loop until completion. We intentionally do NOT call ctx.stop()
-  // from the completion callback: detached co_spawn posts coroutine destruction to
-  // the executor at final_suspend, and stopping the context early can prevent that
-  // destroy task from running (LSan/ASan leak).
-  while (!st.done) {
-    if (ctx.run_one() == 0) throw std::logic_error("sync_wait: no work before completion");
-  }
-
-  // Drain any remaining posted work (notably coroutine frame destruction).
-  while (ctx.run_one() != 0) {
-  }
+  ctx.run();
 
   if (!st.done) throw std::logic_error("sync_wait: io_context stopped before completion");
   return detail::take_or_throw<T>(st);
