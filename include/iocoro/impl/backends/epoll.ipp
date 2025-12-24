@@ -175,7 +175,16 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     if (is_error) {
-      auto const ec = error::connection_reset;
+      std::error_code ec;
+
+      if (ev & static_cast<std::uint32_t>(EPOLLRDHUP)) {
+        ec = error::eof;
+      } else if (ev & static_cast<std::uint32_t>(EPOLLHUP)) {
+        ec = error::eof;
+      } else {
+        ec = error::connection_reset;
+      }
+
       if (read_op) {
         read_op->abort(ec);
         ++count;
