@@ -12,7 +12,7 @@ namespace iocoro {
 ///
 /// Notes:
 /// - This is intentionally thin and does not define protocol operations.
-/// - Protocol-specific sockets (e.g. ip::tcp_socket) can wrap an implementation type
+/// - Protocol-specific sockets (e.g. ip::tcp::socket) can wrap an implementation type
 ///   and forward operations.
 template <class Impl>
 class basic_socket {

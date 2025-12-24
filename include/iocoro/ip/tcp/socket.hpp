@@ -11,11 +11,11 @@
 #include <span>
 #include <system_error>
 
-namespace iocoro::detail::ip {
-class tcp_socket_impl;
+namespace iocoro::detail::ip::tcp {
+class socket_impl;
 }
 
-namespace iocoro::ip {
+namespace iocoro::ip::tcp {
 
 /// Public TCP socket type (RAII + coroutine async interface).
 ///
@@ -23,25 +23,25 @@ namespace iocoro::ip {
 /// - Only coroutine-based async APIs are provided (no completion tokens).
 /// - Implementations are stubs for now (compilation-only).
 /// - Future: methods will perform real non-blocking I/O backed by io_context_impl.
-class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
+class socket : public basic_socket<::iocoro::detail::ip::tcp::socket_impl> {
  public:
-  using base_type = basic_socket<::iocoro::detail::ip::tcp_socket_impl>;
+  using base_type = basic_socket<::iocoro::detail::ip::tcp::socket_impl>;
 
-  tcp_socket() = delete;
+  socket() = delete;
 
-  explicit tcp_socket(executor ex);
-  explicit tcp_socket(io_context& ctx);
+  explicit socket(executor ex);
+  explicit socket(io_context& ctx);
 
-  tcp_socket(tcp_socket const&) = delete;
-  auto operator=(tcp_socket const&) -> tcp_socket& = delete;
+  socket(socket const&) = delete;
+  auto operator=(socket const&) -> socket& = delete;
 
   /// Move assignment.
   /// Note: if the moved-from socket had pending operations, they may continue to run
   /// against the moved-from object's impl instance (impl is shared_ptr-based).
-  tcp_socket(tcp_socket&&) = default;
-  auto operator=(tcp_socket&&) -> tcp_socket& = default;
+  socket(socket&&) = default;
+  auto operator=(socket&&) -> socket& = default;
 
-  auto async_connect(tcp::endpoint const& ep) -> awaitable<std::error_code>;
+  auto async_connect(endpoint const& ep) -> awaitable<std::error_code>;
 
   auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
@@ -49,8 +49,8 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
   auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
-  auto local_endpoint() const -> expected<tcp::endpoint, std::error_code>;
-  auto remote_endpoint() const -> expected<tcp::endpoint, std::error_code>;
+  auto local_endpoint() const -> expected<endpoint, std::error_code>;
+  auto remote_endpoint() const -> expected<endpoint, std::error_code>;
 
   auto shutdown(shutdown_type what) -> std::error_code;
 
@@ -66,4 +66,4 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
   using base_type::set_option;
 };
 
-}  // namespace iocoro::ip
+}  // namespace iocoro::ip::tcp

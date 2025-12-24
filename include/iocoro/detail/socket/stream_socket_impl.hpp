@@ -54,7 +54,7 @@ class stream_socket_impl {
   ///
   /// NOTE (internal/testing):
   /// - This is NOT part of the public, user-facing networking API.
-  /// - End users should prefer higher-level protocol types (e.g. `ip::tcp_socket`).
+  /// - End users should prefer higher-level protocol types (e.g. `ip::tcp::socket`).
   auto open(int domain, int type, int protocol) noexcept -> std::error_code {
     return base_.open(domain, type, protocol);
   }

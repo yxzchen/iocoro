@@ -16,7 +16,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-namespace iocoro::detail::ip {
+namespace iocoro::detail::ip::tcp {
 
 /// TCP socket implementation (IP-specific adapter).
 ///
@@ -24,17 +24,17 @@ namespace iocoro::detail::ip {
 /// - Uses composition (NOT inheritance): holds a `socket::stream_socket_impl`.
 /// - This avoids exposing unrelated stream interfaces when we add other stream protocols
 ///   (e.g. Unix domain sockets) that also reuse `stream_socket_impl`.
-class tcp_socket_impl {
+class socket_impl {
  public:
-  tcp_socket_impl() noexcept = default;
-  explicit tcp_socket_impl(executor ex) noexcept : stream_(ex) {}
+  socket_impl() noexcept = default;
+  explicit socket_impl(executor ex) noexcept : stream_(ex) {}
 
-  tcp_socket_impl(tcp_socket_impl const&) = delete;
-  auto operator=(tcp_socket_impl const&) -> tcp_socket_impl& = delete;
-  tcp_socket_impl(tcp_socket_impl&&) = delete;
-  auto operator=(tcp_socket_impl&&) -> tcp_socket_impl& = delete;
+  socket_impl(socket_impl const&) = delete;
+  auto operator=(socket_impl const&) -> socket_impl& = delete;
+  socket_impl(socket_impl&&) = delete;
+  auto operator=(socket_impl&&) -> socket_impl& = delete;
 
-  ~tcp_socket_impl() = default;
+  ~socket_impl() = default;
 
   auto get_executor() const noexcept -> executor { return stream_.get_executor(); }
   auto native_handle() const noexcept -> int { return stream_.native_handle(); }
@@ -110,4 +110,4 @@ class tcp_socket_impl {
   socket::stream_socket_impl stream_{};
 };
 
-}  // namespace iocoro::detail::ip
+}  // namespace iocoro::detail::ip::tcp
