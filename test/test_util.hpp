@@ -100,26 +100,13 @@ auto sync_wait_for(io_context& ctx, std::chrono::duration<Rep, Period> timeout, 
     detail::set_from_expected<T>(st, std::move(r));
   });
 
-  using clock = std::chrono::steady_clock;
-  auto const deadline = clock::now() + timeout;
-
-  while (!st.done) {
-    auto const now = clock::now();
-    if (now >= deadline) break;
-
-    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
-    if (remaining <= std::chrono::milliseconds{0}) remaining = std::chrono::milliseconds{1};
-
-    (void)ctx.run_for(remaining);
-  }
+  ctx.run_for(std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
 
   if (!st.done) {
     throw sync_wait_timeout("sync_wait_for: timeout");
   }
 
-  // Drain any remaining posted work (notably coroutine frame destruction).
-  while (ctx.run_one() != 0) {
-  }
+  ctx.run();
 
   return detail::take_or_throw<T>(st);
 }
