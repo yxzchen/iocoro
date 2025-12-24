@@ -238,7 +238,10 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
   }
 
   for (;;) {
-    auto n = ::write(fd, buffer.data(), buffer.size());
+    // Note: On Linux, writing to a socket whose peer has closed the connection
+    // may raise SIGPIPE and terminate the process when using ::write().
+    // Therefore, this implementation uses ::send(..., MSG_NOSIGNAL) instead.
+    auto n = ::send(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
     if (n >= 0) {
       // Note: write returning 0 is uncommon; treat it as a successful 0-byte write.
       co_return n;
