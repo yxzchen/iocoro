@@ -99,7 +99,7 @@ auto completion_wrapper(executor ex, awaitable<T> a, Completion completion) -> a
   } catch (...) {
     auto ep = std::current_exception();
     try {
-      completion(spawn_expected<T>{unexpected<std::exception_ptr>(ep)});
+      completion(spawn_expected<T>{unexpected(ep)});
     } catch (...) {
       // Completion callback exceptions are swallowed (detached semantics).
     }
