@@ -15,7 +15,7 @@
 
 namespace {
 
-TEST(timer_test, steady_timer_async_wait_resumes_on_fire) {
+TEST(stead_timer_test, steady_timer_async_wait_resumes_on_fire) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
@@ -33,7 +33,7 @@ TEST(timer_test, steady_timer_async_wait_resumes_on_fire) {
   EXPECT_NE(ec, iocoro::error::operation_aborted);
 }
 
-TEST(timer_test, steady_timer_async_wait_resumes_on_cancel) {
+TEST(stead_timer_test, steady_timer_async_wait_resumes_on_cancel) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
