@@ -181,9 +181,11 @@ class endpoint {
   }
 
   /// Accessors for native interop.
-  auto data() const noexcept -> sockaddr const*;
-  auto size() const noexcept -> socklen_t;
-  auto family() const noexcept -> int;
+  auto data() const noexcept -> sockaddr const* {
+    return reinterpret_cast<sockaddr const*>(&storage_);
+  }
+  auto size() const noexcept -> socklen_t { return len_; }
+  auto family() const noexcept -> int { return static_cast<int>(storage_.ss_family); }
 
   friend auto operator==(endpoint const& a, endpoint const& b) noexcept -> bool {
     if (a.len_ != b.len_) return false;
@@ -228,15 +230,5 @@ class endpoint {
   sockaddr_storage storage_{};
   socklen_t len_{0};
 };
-
-inline auto endpoint::data() const noexcept -> sockaddr const* {
-  return reinterpret_cast<sockaddr const*>(&storage_);
-}
-
-inline auto endpoint::size() const noexcept -> socklen_t { return len_; }
-
-inline auto endpoint::family() const noexcept -> int {
-  return static_cast<int>(storage_.ss_family);
-}
 
 }  // namespace iocoro::ip
