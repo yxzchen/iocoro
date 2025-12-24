@@ -31,7 +31,7 @@ auto async_write(Stream& s, std::span<std::byte const> buf)
 
     auto const n = *r;
     if (n == 0) {
-      co_return unexpected<std::error_code>(error::broken_pipe);
+      co_return unexpected(error::broken_pipe);
     }
 
     buf = buf.subspan(n);

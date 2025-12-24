@@ -32,7 +32,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
                       std::size_t max_size = 64 * 1024)
   -> awaitable<expected<std::size_t, std::error_code>> {
   if (delim.empty()) {
-    co_return unexpected<std::error_code>(error::invalid_argument);
+    co_return unexpected(error::invalid_argument);
   }
 
   // Fast path: delimiter already present.
@@ -60,7 +60,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
 
     auto const n = *r;
     if (n == 0) {  // EOF
-      co_return unexpected<std::error_code>(error::eof);
+      co_return unexpected(error::eof);
     }
 
     out.append(reinterpret_cast<char const*>(tmp.data()), n);
@@ -76,7 +76,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
     search_from = new_size > (delim.size() - 1) ? new_size - (delim.size() - 1) : 0U;
   }
 
-  co_return unexpected<std::error_code>(std::make_error_code(std::errc::message_size));
+  co_return unexpected(std::make_error_code(std::errc::message_size));
 }
 
 /// Convenience overload for single-character delimiters.

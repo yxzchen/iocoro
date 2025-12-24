@@ -31,7 +31,7 @@ auto async_read(Stream& s, std::span<std::byte> buf)
 
     auto const n = *r;
     if (n == 0) {  // EOF
-      co_return unexpected<std::error_code>(error::eof);
+      co_return unexpected(error::eof);
     }
 
     total += n;

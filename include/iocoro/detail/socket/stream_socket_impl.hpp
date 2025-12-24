@@ -223,20 +223,20 @@ class stream_socket_impl {
     -> awaitable<expected<std::size_t, std::error_code>> {
     auto const fd = base_.native_handle();
     if (fd < 0) {
-      co_return unexpected<std::error_code>(error::not_open);
+      co_return unexpected(error::not_open);
     }
 
     std::uint64_t my_epoch = 0;
     {
       std::scoped_lock lk{mtx_};
       if (state_ != conn_state::connected) {
-        co_return unexpected<std::error_code>(error::not_connected);
+        co_return unexpected(error::not_connected);
       }
       if (shutdown_.read) {
         co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(0));
       }
       if (read_in_flight_) {
-        co_return unexpected<std::error_code>(error::busy);
+        co_return unexpected(error::busy);
       }
       read_in_flight_ = true;
       my_epoch = epoch_;
@@ -265,17 +265,17 @@ class stream_socket_impl {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         auto ec = co_await wait_read_ready();
         if (ec) {
-          co_return unexpected<std::error_code>(ec);
+          co_return unexpected(ec);
         }
         {
           std::scoped_lock lk{mtx_};
           if (epoch_ != my_epoch) {
-            co_return unexpected<std::error_code>(error::operation_aborted);
+            co_return unexpected(error::operation_aborted);
           }
         }
         continue;
       }
-      co_return unexpected<std::error_code>(std::error_code(errno, std::generic_category()));
+      co_return unexpected(std::error_code(errno, std::generic_category()));
     }
   }
 
@@ -284,20 +284,20 @@ class stream_socket_impl {
     -> awaitable<expected<std::size_t, std::error_code>> {
     auto const fd = base_.native_handle();
     if (fd < 0) {
-      co_return unexpected<std::error_code>(error::not_open);
+      co_return unexpected(error::not_open);
     }
 
     std::uint64_t my_epoch = 0;
     {
       std::scoped_lock lk{mtx_};
       if (state_ != conn_state::connected) {
-        co_return unexpected<std::error_code>(error::not_connected);
+        co_return unexpected(error::not_connected);
       }
       if (shutdown_.write) {
-        co_return unexpected<std::error_code>(error::broken_pipe);
+        co_return unexpected(error::broken_pipe);
       }
       if (write_in_flight_) {
-        co_return unexpected<std::error_code>(error::busy);
+        co_return unexpected(error::busy);
       }
       write_in_flight_ = true;
       my_epoch = epoch_;
@@ -324,17 +324,17 @@ class stream_socket_impl {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         auto ec = co_await wait_write_ready();
         if (ec) {
-          co_return unexpected<std::error_code>(ec);
+          co_return unexpected(ec);
         }
         {
           std::scoped_lock lk{mtx_};
           if (epoch_ != my_epoch) {
-            co_return unexpected<std::error_code>(error::operation_aborted);
+            co_return unexpected(error::operation_aborted);
           }
         }
         continue;
       }
-      co_return unexpected<std::error_code>(std::error_code(errno, std::generic_category()));
+      co_return unexpected(std::error_code(errno, std::generic_category()));
     }
   }
 

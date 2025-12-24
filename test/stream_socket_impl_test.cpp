@@ -43,7 +43,7 @@ static auto read_until_crlf(stream_socket_impl& s)
   while (out.find("\r\n") == std::string::npos) {
     auto r = co_await s.async_read_some(tmp);
     if (!r) {
-      co_return iocoro::unexpected<std::error_code>(r.error());
+      co_return iocoro::unexpected(r.error());
     }
     auto n = *r;
     if (n == 0) {
@@ -51,7 +51,7 @@ static auto read_until_crlf(stream_socket_impl& s)
     }
     out.append(reinterpret_cast<char const*>(tmp.data()), n);
     if (out.size() > 4096) {
-      co_return iocoro::unexpected<std::error_code>(iocoro::error::invalid_argument);
+      co_return iocoro::unexpected(iocoro::error::invalid_argument);
     }
   }
   co_return out;

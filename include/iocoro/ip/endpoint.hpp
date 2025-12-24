@@ -22,14 +22,14 @@ namespace detail {
 
 inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error_code> {
   if (p.empty()) {
-    return unexpected<std::error_code>(error::invalid_argument);
+    return unexpected(error::invalid_argument);
   }
   unsigned value = 0;
   auto* first = p.data();
   auto* last = p.data() + p.size();
   auto r = std::from_chars(first, last, value);
   if (r.ec != std::errc{} || r.ptr != last || value > 65535u) {
-    return unexpected<std::error_code>(error::invalid_argument);
+    return unexpected(error::invalid_argument);
   }
   return static_cast<std::uint16_t>(value);
 }
@@ -66,27 +66,27 @@ class endpoint {
   /// Returns invalid_argument on parse failure.
   static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
     if (s.empty()) {
-      return unexpected<std::error_code>(error::invalid_argument);
+      return unexpected(error::invalid_argument);
     }
 
     // Bracketed IPv6: [addr]:port
     if (s.front() == '[') {
       auto const close = s.find(']');
       if (close == std::string_view::npos || close + 2 > s.size() || s[close + 1] != ':') {
-        return unexpected<std::error_code>(error::invalid_argument);
+        return unexpected(error::invalid_argument);
       }
       auto host = s.substr(1, close - 1);
       auto port_str = s.substr(close + 2);
 
       auto port = detail::parse_port(port_str);
       if (!port) {
-        return unexpected<std::error_code>(port.error());
+        return unexpected(port.error());
       }
 
       // Force IPv6 parsing for bracketed form.
       auto a6 = address_v6::from_string(host);
       if (!a6) {
-        return unexpected<std::error_code>(a6.error());
+        return unexpected(a6.error());
       }
       return endpoint{*a6, *port};
     }
@@ -94,24 +94,24 @@ class endpoint {
     // IPv4: host:port (reject raw IPv6 without brackets).
     auto const pos = s.rfind(':');
     if (pos == std::string_view::npos) {
-      return unexpected<std::error_code>(error::invalid_argument);
+      return unexpected(error::invalid_argument);
     }
     auto host = s.substr(0, pos);
     auto port_str = s.substr(pos + 1);
 
     // If host contains ':' here, it's an unbracketed IPv6; reject.
     if (host.find(':') != std::string_view::npos) {
-      return unexpected<std::error_code>(error::invalid_argument);
+      return unexpected(error::invalid_argument);
     }
 
     auto port = detail::parse_port(port_str);
     if (!port) {
-      return unexpected<std::error_code>(port.error());
+      return unexpected(port.error());
     }
 
     auto a4 = address_v4::from_string(host);
     if (!a4) {
-      return unexpected<std::error_code>(a4.error());
+      return unexpected(a4.error());
     }
     return endpoint{*a4, *port};
   }

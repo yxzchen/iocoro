@@ -79,10 +79,10 @@ class address_v4 {
     // inet_pton expects a null-terminated string.
     char buf[46]{};  // max textual IP length + null (IPv6 max is 45)
     if (!detail::to_cstr(s, buf)) {
-      return unexpected<std::error_code>(error::invalid_argument);
+      return unexpected(error::invalid_argument);
     }
     if (::inet_pton(AF_INET, buf, &addr) != 1) {
-      return unexpected<std::error_code>(error::invalid_argument);
+      return unexpected(error::invalid_argument);
     }
     bytes_type b{};
     std::memcpy(b.data(), &addr.s_addr, 4);
@@ -151,23 +151,23 @@ class address_v6 {
       ip_part = s.substr(0, pos);
       auto scope_part = s.substr(pos + 1);
       if (scope_part.empty()) {
-        return unexpected<std::error_code>(error::invalid_argument);
+        return unexpected(error::invalid_argument);
       }
       auto* first = scope_part.data();
       auto* last = scope_part.data() + scope_part.size();
       auto r = std::from_chars(first, last, scope);
       if (r.ec != std::errc{} || r.ptr != last) {
-        return unexpected<std::error_code>(error::invalid_argument);
+        return unexpected(error::invalid_argument);
       }
     }
 
     auto addr = in6_addr{};
     char buf[46]{};  // max textual IPv6 length + null (without %scope)
     if (!detail::to_cstr(ip_part, buf)) {
-      return unexpected<std::error_code>(error::invalid_argument);
+      return unexpected(error::invalid_argument);
     }
     if (::inet_pton(AF_INET6, buf, &addr) != 1) {
-      return unexpected<std::error_code>(error::invalid_argument);
+      return unexpected(error::invalid_argument);
     }
 
     bytes_type b{};

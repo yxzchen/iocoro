@@ -18,7 +18,7 @@ inline auto tcp_socket::async_connect(endpoint const& ep) -> awaitable<std::erro
 inline auto tcp_socket::async_read_some(std::span<std::byte> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
   if (!impl_) {
-    co_return unexpected<std::error_code>(error::not_open);
+    co_return unexpected(error::not_open);
   }
   co_return co_await impl_->async_read_some(buffer);
 }
@@ -26,7 +26,7 @@ inline auto tcp_socket::async_read_some(std::span<std::byte> buffer)
 inline auto tcp_socket::async_write_some(std::span<std::byte const> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
   if (!impl_) {
-    co_return unexpected<std::error_code>(error::not_open);
+    co_return unexpected(error::not_open);
   }
   co_return co_await impl_->async_write_some(buffer);
 }
