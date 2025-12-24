@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/co_spawn.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/src.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/timer_handle.hpp>
-#include <iocoro/completion_token.hpp>
 
 #include "test_util.hpp"
 

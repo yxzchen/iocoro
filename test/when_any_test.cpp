@@ -2,10 +2,10 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/src.hpp>
 #include <iocoro/this_coro.hpp>
-#include <iocoro/completion_token.hpp>
 #include <iocoro/when_any.hpp>
 
 #include "test_util.hpp"
@@ -39,9 +39,8 @@ TEST(when_any_test, variadic_returns_first_completed) {
     co_return "hello";
   };
 
-  auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
-    return iocoro::when_any(t0(), t1(), t2());
-  }());
+  auto result = iocoro::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<result_t> { return iocoro::when_any(t0(), t1(), t2()); }());
 
   EXPECT_EQ(result.first, 1u);  // t1 completes first
   EXPECT_TRUE(std::holds_alternative<int>(result.second));
@@ -98,9 +97,8 @@ TEST(when_any_test, container_returns_first_completed_with_index) {
     co_return 3;
   }());
 
-  auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
-    return iocoro::when_any(std::move(tasks));
-  }());
+  auto result = iocoro::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<result_t> { return iocoro::when_any(std::move(tasks)); }());
 
   EXPECT_EQ(result.first, 1u);  // Task at index 1 completes first
   EXPECT_EQ(result.second, 2);
@@ -123,9 +121,8 @@ TEST(when_any_test, container_void_returns_index) {
     co_return;
   }());
 
-  auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<result_t> {
-    return iocoro::when_any(std::move(tasks));
-  }());
+  auto result = iocoro::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<result_t> { return iocoro::when_any(std::move(tasks)); }());
 
   EXPECT_EQ(result.first, 1u);  // Second task completes first
 }

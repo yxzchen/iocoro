@@ -10,5 +10,3 @@ namespace iocoro::ip::udp {
 using endpoint = ::iocoro::ip::endpoint;
 
 }  // namespace iocoro::ip::udp
-
-

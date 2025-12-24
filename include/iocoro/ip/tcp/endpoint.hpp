@@ -10,5 +10,3 @@ namespace iocoro::ip::tcp {
 using endpoint = ::iocoro::ip::endpoint;
 
 }  // namespace iocoro::ip::tcp
-
-

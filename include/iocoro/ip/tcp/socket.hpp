@@ -67,5 +67,3 @@ class tcp_socket : public basic_socket<::iocoro::detail::ip::tcp_socket_impl> {
 };
 
 }  // namespace iocoro::ip
-
-

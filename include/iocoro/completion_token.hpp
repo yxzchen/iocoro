@@ -11,5 +11,3 @@ struct use_awaitable_t {};
 inline constexpr use_awaitable_t use_awaitable{};
 
 }  // namespace iocoro
-
-
