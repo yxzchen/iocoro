@@ -334,12 +334,16 @@ class socket_impl_base {
   /// Wait until the native fd becomes readable (read readiness).
   ///
   /// Note: Returns a custom awaiter to avoid creating an extra coroutine frame.
-  auto wait_read_ready() -> fd_awaiter<fd_wait_kind::read>;
+  auto wait_read_ready() -> fd_awaiter<fd_wait_kind::read> {
+    return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+  }
 
   /// Wait until the native fd becomes writable (write readiness).
   ///
   /// Note: Returns a custom awaiter to avoid creating an extra coroutine frame.
-  auto wait_write_ready() -> fd_awaiter<fd_wait_kind::write>;
+  auto wait_write_ready() -> fd_awaiter<fd_wait_kind::write> {
+    return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+  }
 
  private:
   struct wait_state {
@@ -444,13 +448,5 @@ class socket_impl_base {
   fd_event_handle read_handle_{};
   fd_event_handle write_handle_{};
 };
-
-inline auto socket_impl_base::wait_read_ready() -> fd_awaiter<fd_wait_kind::read> {
-  return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
-}
-
-inline auto socket_impl_base::wait_write_ready() -> fd_awaiter<fd_wait_kind::write> {
-  return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
-}
 
 }  // namespace iocoro::detail::socket
