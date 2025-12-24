@@ -8,7 +8,7 @@
 #include <iocoro/impl/ip/tcp/acceptor.ipp>
 #include <iocoro/impl/ip/tcp/socket.ipp>
 #include <iocoro/impl/ip/udp/socket.ipp>
-#include <iocoro/impl/socket_impl_base.ipp>
+#include <iocoro/impl/socket/socket_impl_base.ipp>
 #include <iocoro/impl/steady_timer.ipp>
-#include <iocoro/impl/stream_socket_impl.ipp>
+#include <iocoro/impl/socket/stream_socket_impl.ipp>
 #include <iocoro/impl/timer_handle.ipp>
