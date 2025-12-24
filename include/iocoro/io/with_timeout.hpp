@@ -122,5 +122,3 @@ auto with_timeout_write(Stream& s, awaitable<expected<T, std::error_code>> op,
 }
 
 }  // namespace iocoro::io
-
-

@@ -38,9 +38,7 @@ struct slow_cancellable_stream {
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
     in_read.store(true, std::memory_order_release);
-    auto guard = [&]() {
-      in_read.store(false, std::memory_order_release);
-    };
+    auto guard = [&]() { in_read.store(false, std::memory_order_release); };
 
     // Wait until cancelled (yields to executor).
     for (int i = 0; i < 200; ++i) {
@@ -59,9 +57,7 @@ struct slow_cancellable_stream {
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
     in_write.store(true, std::memory_order_release);
-    auto guard = [&]() {
-      in_write.store(false, std::memory_order_release);
-    };
+    auto guard = [&]() { in_write.store(false, std::memory_order_release); };
 
     // Wait until cancelled (yields to executor).
     for (int i = 0; i < 200; ++i) {
@@ -163,5 +159,3 @@ TEST(async_timeout_test, external_cancel_is_propagated_not_mapped_to_timed_out) 
 }
 
 }  // namespace
-
-

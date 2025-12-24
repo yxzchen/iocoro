@@ -381,87 +381,86 @@ TEST(stream_socket_impl_test, cancel_read_does_not_cancel_write_wait) {
   (void)::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
   // Run the cancellation scenario with a timeout to avoid hangs on flaky environments.
-  auto [connect_ec, read_ec, write_ec, write_completed_after_read_cancel] =
-    iocoro::sync_wait_for(
-      ctx, 500ms,
-      [&]() -> iocoro::awaitable<std::tuple<std::error_code, std::error_code, std::error_code, bool>> {
-        using result_t = std::tuple<std::error_code, std::error_code, std::error_code, bool>;
+  auto [connect_ec, read_ec, write_ec, write_completed_after_read_cancel] = iocoro::sync_wait_for(
+    ctx, 500ms,
+    [&]()
+      -> iocoro::awaitable<std::tuple<std::error_code, std::error_code, std::error_code, bool>> {
+      using result_t = std::tuple<std::error_code, std::error_code, std::error_code, bool>;
 
-        auto connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-        if (connect_ec) {
-          co_return result_t{connect_ec, std::error_code{}, std::error_code{}, false};
-        }
+      auto connect_ec = co_await s.async_connect(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+      if (connect_ec) {
+        co_return result_t{connect_ec, std::error_code{}, std::error_code{}, false};
+      }
 
-        auto const fd = s.native_handle();
-        fill_send_buffer_nonblocking(fd);
+      auto const fd = s.native_handle();
+      fill_send_buffer_nonblocking(fd);
 
-        std::atomic<bool> read_done{false};
-        std::atomic<bool> write_done{false};
-        std::atomic<bool> write_started{false};
-        std::atomic<bool> read_started{false};
+      std::atomic<bool> read_done{false};
+      std::atomic<bool> write_done{false};
+      std::atomic<bool> write_started{false};
+      std::atomic<bool> read_started{false};
 
-        std::error_code read_ec{};
-        std::error_code write_ec{};
+      std::error_code read_ec{};
+      std::error_code write_ec{};
 
-        std::array<std::byte, 1> rbuf{};
-        std::string payload = "x";
+      std::array<std::byte, 1> rbuf{};
+      std::string payload = "x";
 
-        auto write_task = iocoro::co_spawn(
-          ex,
-          [&]() -> iocoro::awaitable<void> {
-            write_started.store(true, std::memory_order_release);
-            auto wr = co_await s.async_write_some(as_bytes(payload));
-            if (!wr) write_ec = wr.error();
-            write_done.store(true, std::memory_order_release);
-          },
-          iocoro::use_awaitable);
+      auto write_task = iocoro::co_spawn(
+        ex,
+        [&]() -> iocoro::awaitable<void> {
+          write_started.store(true, std::memory_order_release);
+          auto wr = co_await s.async_write_some(as_bytes(payload));
+          if (!wr) write_ec = wr.error();
+          write_done.store(true, std::memory_order_release);
+        },
+        iocoro::use_awaitable);
 
-        auto read_task = iocoro::co_spawn(
-          ex,
-          [&]() -> iocoro::awaitable<void> {
-            read_started.store(true, std::memory_order_release);
-            auto rr = co_await s.async_read_some(rbuf);
-            if (!rr) read_ec = rr.error();
-            read_done.store(true, std::memory_order_release);
-          },
-          iocoro::use_awaitable);
+      auto read_task = iocoro::co_spawn(
+        ex,
+        [&]() -> iocoro::awaitable<void> {
+          read_started.store(true, std::memory_order_release);
+          auto rr = co_await s.async_read_some(rbuf);
+          if (!rr) read_ec = rr.error();
+          read_done.store(true, std::memory_order_release);
+        },
+        iocoro::use_awaitable);
 
-        // Wait until both coroutines have at least started.
-        for (int i = 0; i < 50 &&
-                        (!write_started.load(std::memory_order_acquire) ||
-                         !read_started.load(std::memory_order_acquire));
-             ++i) {
-          (void)co_await iocoro::co_sleep(1ms);
-        }
-        (void)co_await iocoro::co_sleep(5ms);  // give them time to reach readiness waits
+      // Wait until both coroutines have at least started.
+      for (int i = 0; i < 50 && (!write_started.load(std::memory_order_acquire) ||
+                                 !read_started.load(std::memory_order_acquire));
+           ++i) {
+        (void)co_await iocoro::co_sleep(1ms);
+      }
+      (void)co_await iocoro::co_sleep(5ms);  // give them time to reach readiness waits
 
-        // Cancel ONLY the read side and ensure write doesn't complete as a side-effect.
-        s.cancel_read();
+      // Cancel ONLY the read side and ensure write doesn't complete as a side-effect.
+      s.cancel_read();
 
-        for (int i = 0; i < 200 && !read_done.load(std::memory_order_acquire); ++i) {
-          (void)co_await iocoro::co_sleep(1ms);
-        }
+      for (int i = 0; i < 200 && !read_done.load(std::memory_order_acquire); ++i) {
+        (void)co_await iocoro::co_sleep(1ms);
+      }
 
-        bool const write_completed_after_read_cancel = write_done.load(std::memory_order_acquire);
+      bool const write_completed_after_read_cancel = write_done.load(std::memory_order_acquire);
 
-        // Cleanup: cancel write side so the write task does not hang.
-        s.cancel_write();
+      // Cleanup: cancel write side so the write task does not hang.
+      s.cancel_write();
 
-        for (int i = 0; i < 200 && !write_done.load(std::memory_order_acquire); ++i) {
-          (void)co_await iocoro::co_sleep(1ms);
-        }
+      for (int i = 0; i < 200 && !write_done.load(std::memory_order_acquire); ++i) {
+        (void)co_await iocoro::co_sleep(1ms);
+      }
 
-        try {
-          co_await std::move(read_task);
-        } catch (...) {
-        }
-        try {
-          co_await std::move(write_task);
-        } catch (...) {
-        }
+      try {
+        co_await std::move(read_task);
+      } catch (...) {
+      }
+      try {
+        co_await std::move(write_task);
+      } catch (...) {
+      }
 
-        co_return result_t{connect_ec, read_ec, write_ec, write_completed_after_read_cancel};
-      }());
+      co_return result_t{connect_ec, read_ec, write_ec, write_completed_after_read_cancel};
+    }());
 
   EXPECT_FALSE(connect_ec) << connect_ec.message();
   EXPECT_EQ(read_ec, iocoro::error::operation_aborted);
