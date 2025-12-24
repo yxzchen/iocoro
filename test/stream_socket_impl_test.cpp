@@ -3,6 +3,7 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
+#include <iocoro/io/async_read_until.hpp>
 #include <iocoro/io/async_write.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/ip/endpoint.hpp>
@@ -96,29 +97,6 @@ static auto make_listen_socket_ipv4(std::uint16_t& port_out) -> unique_fd {
 
 static auto as_bytes(std::string const& s) -> std::span<std::byte const> {
   return {reinterpret_cast<std::byte const*>(s.data()), s.size()};
-}
-
-static auto read_until_crlf(stream_socket_impl& s)
-  -> iocoro::awaitable<iocoro::expected<std::string, std::error_code>> {
-  std::string out;
-  out.reserve(64);
-
-  std::array<std::byte, 256> tmp{};
-  while (out.find("\r\n") == std::string::npos) {
-    auto r = co_await s.async_read_some(tmp);
-    if (!r) {
-      co_return iocoro::unexpected(r.error());
-    }
-    auto n = *r;
-    if (n == 0) {
-      break;
-    }
-    out.append(reinterpret_cast<char const*>(tmp.data()), n);
-    if (out.size() > 4096) {
-      co_return iocoro::unexpected(iocoro::error::invalid_argument);
-    }
-  }
-  co_return out;
 }
 
 static auto should_skip_net_error(std::error_code ec) -> bool {
@@ -455,9 +433,11 @@ TEST(stream_socket_impl_test, redis_ping_ipv4) {
       auto wr = co_await iocoro::io::async_write(*sock, as_bytes(cmd));
       if (!wr) co_return iocoro::unexpected(wr.error());
 
-      auto rr = co_await read_until_crlf(*sock);
-      if (!rr) co_return iocoro::unexpected(rr.error());
-      co_return std::move(*rr);
+      std::string out;
+      out.reserve(64);
+      auto n = co_await iocoro::io::async_read_until(*sock, out, "\r\n", 4096);
+      if (!n) co_return iocoro::unexpected(n.error());
+      co_return out.substr(0, *n);
     }());
 
   if (!rr && should_skip_net_error(rr.error())) {
@@ -491,9 +471,11 @@ TEST(stream_socket_impl_test, redis_ping_ipv6) {
       auto wr = co_await iocoro::io::async_write(*sock, as_bytes(cmd));
       if (!wr) co_return iocoro::unexpected(wr.error());
 
-      auto rr = co_await read_until_crlf(*sock);
-      if (!rr) co_return iocoro::unexpected(rr.error());
-      co_return std::move(*rr);
+      std::string out;
+      out.reserve(64);
+      auto n = co_await iocoro::io::async_read_until(*sock, out, "\r\n", 4096);
+      if (!n) co_return iocoro::unexpected(n.error());
+      co_return out.substr(0, *n);
     }());
 
   if (!rr && should_skip_net_error(rr.error())) {
