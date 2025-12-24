@@ -417,7 +417,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
 
     if (is_error) {
       auto const ec = (res < 0) ? std::error_code{-res, std::generic_category()}
-                                : std::make_error_code(std::errc::connection_reset);
+                                : error::connection_reset;
       if (read_op) {
         read_op->abort(ec);
         ++count;

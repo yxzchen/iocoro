@@ -110,7 +110,7 @@ TEST(async_read_until_test, returns_message_size_if_not_found_within_max_size) {
 
   (void)ctx.run();
   ASSERT_TRUE(ec);
-  EXPECT_EQ(ec, std::errc::message_size);
+  EXPECT_EQ(ec, iocoro::error::message_size);
   EXPECT_EQ(out, "abcd");
 }
 

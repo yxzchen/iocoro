@@ -175,7 +175,7 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     if (is_error) {
-      auto const ec = std::make_error_code(std::errc::connection_reset);
+      auto const ec = error::connection_reset;
       if (read_op) {
         read_op->abort(ec);
         ++count;

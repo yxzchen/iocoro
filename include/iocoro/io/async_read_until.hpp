@@ -23,7 +23,7 @@ namespace iocoro::io {
 /// - If `out` already contains `delim`, completes immediately without reading.
 /// - If EOF is reached before `delim` is found, returns `error::eof`.
 /// - If `out` would grow beyond `max_size` without finding `delim`, returns
-/// `std::errc::message_size`.
+/// `error::message_size`.
 ///
 /// Note: the underlying `async_read_some` may read past the delimiter; in that case, `out`
 /// will contain extra bytes after the returned count.
@@ -76,7 +76,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
     search_from = new_size > (delim.size() - 1) ? new_size - (delim.size() - 1) : 0U;
   }
 
-  co_return unexpected(std::errc::message_size);
+  co_return unexpected(error::message_size);
 }
 
 /// Convenience overload for single-character delimiters.

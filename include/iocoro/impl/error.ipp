@@ -32,6 +32,10 @@ class error_category_impl : public std::error_category {
         return "invalid endpoint";
       case error::unsupported_address_family:
         return "unsupported address family";
+      case error::message_size:
+        return "message size";
+      case error::connection_reset:
+        return "connection reset";
       default:
         return "unknown error";
     }

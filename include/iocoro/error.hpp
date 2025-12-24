@@ -38,6 +38,12 @@ enum class error {
 
   /// Address family is not supported by this object/backend.
   unsupported_address_family,
+
+  /// Operation failed because a message/buffer would exceed the allowed maximum size.
+  message_size,
+
+  /// Connection was reset by peer.
+  connection_reset,
 };
 
 auto make_error_code(error e) -> std::error_code;
