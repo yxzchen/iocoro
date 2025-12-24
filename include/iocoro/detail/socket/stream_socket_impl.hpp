@@ -6,20 +6,15 @@
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <system_error>
 #include <utility>
 
 // Native socket address types (POSIX).
 #include <sys/socket.h>
-#include <unistd.h>
-#include <cerrno>
 
 namespace iocoro::detail::socket {
 

@@ -1,5 +1,9 @@
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
 
+#include <sys/socket.h>
+#include <unistd.h>
+#include <cerrno>
+
 namespace iocoro::detail::socket {
 
 inline void stream_socket_impl::cancel() noexcept {
