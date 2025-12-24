@@ -97,5 +97,3 @@ TEST(socket_impl_base_test, set_get_option_basic) {
 }
 
 }  // namespace
-
-

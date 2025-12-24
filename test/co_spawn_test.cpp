@@ -68,8 +68,7 @@ TEST(co_spawn_test, co_spawn_factory_completion_callback_receives_value) {
   std::atomic<int> value{0};
 
   iocoro::co_spawn(
-    ex,
-    []() -> iocoro::awaitable<int> { co_return 7; },
+    ex, []() -> iocoro::awaitable<int> { co_return 7; },
     [&](iocoro::expected<int, std::exception_ptr> r) {
       EXPECT_TRUE(r.has_value());
       value.store(*r, std::memory_order_relaxed);

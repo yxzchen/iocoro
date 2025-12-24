@@ -3,8 +3,8 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/expected.hpp>
 
-#include <cstddef>
 #include <concepts>
+#include <cstddef>
 #include <span>
 #include <system_error>
 
@@ -50,22 +50,18 @@ namespace iocoro::io {
 ///   where partial reads/writes or zero-length transfers may have
 ///   different meanings.
 template <class Stream>
-concept async_read_stream =
-  requires(Stream& s, std::span<std::byte> rbuf) {
-    requires std::same_as<decltype(s.async_read_some(rbuf)),
-                          awaitable<expected<std::size_t, std::error_code>>>;
-  };
+concept async_read_stream = requires(Stream& s, std::span<std::byte> rbuf) {
+  requires std::same_as<decltype(s.async_read_some(rbuf)),
+                        awaitable<expected<std::size_t, std::error_code>>>;
+};
 
 template <class Stream>
-concept async_write_stream =
-  requires(Stream& s, std::span<std::byte const> wbuf) {
-    requires std::same_as<decltype(s.async_write_some(wbuf)),
-                          awaitable<expected<std::size_t, std::error_code>>>;
-  };
+concept async_write_stream = requires(Stream& s, std::span<std::byte const> wbuf) {
+  requires std::same_as<decltype(s.async_write_some(wbuf)),
+                        awaitable<expected<std::size_t, std::error_code>>>;
+};
 
 template <class Stream>
 concept async_stream = async_read_stream<Stream> && async_write_stream<Stream>;
 
 }  // namespace iocoro::io
-
-

@@ -171,5 +171,3 @@ TEST(stream_socket_impl_test, redis_ping_ipv6) {
 }
 
 }  // namespace
-
-

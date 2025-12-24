@@ -41,10 +41,16 @@ auto async_read(Stream& s, std::span<std::byte> buf)
   co_return expected<std::size_t, std::error_code>(wanted);
 }
 
-/// Composed operation: read until EOF or the buffer is full.
+/// Reads until EOF or buffer is full.
 ///
-/// - Returns the number of bytes read.
-/// - EOF (read_some yielding 0) is treated as a successful completion.
+/// Semantics:
+/// - Repeatedly reads into `buf` until:
+///   - async_read_some returns 0 (EOF), or
+///   - `buf` is completely filled.
+/// - Returns the number of bytes written to `buf`.
+/// - If EOF is encountered after some bytes were read, returns success with that count.
+/// - If an error occurs before any bytes are read, returns that error.
+/// - If an error occurs after some bytes are read, returns that error (no partial success).
 template <async_stream Stream>
 auto async_read_until_eof(Stream& s, std::span<std::byte> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
@@ -69,5 +75,3 @@ auto async_read_until_eof(Stream& s, std::span<std::byte> buf)
 }
 
 }  // namespace iocoro::io
-
-

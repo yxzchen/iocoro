@@ -41,5 +41,3 @@ auto async_write(Stream& s, std::span<std::byte const> buf)
 }
 
 }  // namespace iocoro::io
-
-
