@@ -233,7 +233,7 @@ class stream_socket_impl {
         co_return unexpected(error::not_connected);
       }
       if (shutdown_.read) {
-        co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(0));
+        co_return 0;
       }
       if (read_in_flight_) {
         co_return unexpected(error::busy);
@@ -248,16 +248,16 @@ class stream_socket_impl {
     });
 
     if (buffer.empty()) {
-      co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(0));
+      co_return 0;
     }
 
     for (;;) {
       auto n = ::read(fd, buffer.data(), buffer.size());
       if (n > 0) {
-        co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(n));
+        co_return n;
       }
       if (n == 0) {
-        co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(0));  // EOF
+        co_return 0;  // EOF
       }
       if (errno == EINTR) {
         continue;
@@ -309,14 +309,14 @@ class stream_socket_impl {
     });
 
     if (buffer.empty()) {
-      co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(0));
+      co_return 0;
     }
 
     for (;;) {
       auto n = ::write(fd, buffer.data(), buffer.size());
       if (n >= 0) {
         // Note: write returning 0 is uncommon; treat it as a successful 0-byte write.
-        co_return expected<std::size_t, std::error_code>(static_cast<std::size_t>(n));
+        co_return n;
       }
       if (errno == EINTR) {
         continue;

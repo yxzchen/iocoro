@@ -37,7 +37,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
 
   // Fast path: delimiter already present.
   if (auto const pos = out.find(delim); pos != std::string::npos) {
-    co_return expected<std::size_t, std::error_code>(pos + delim.size());
+    co_return pos + delim.size();
   }
 
   // Only the last (delim.size() - 1) bytes can form a delimiter crossing a boundary.
@@ -68,7 +68,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
     // Search only the newly affected suffix.
     auto const pos = out.find(delim, search_from);
     if (pos != std::string::npos) {
-      co_return expected<std::size_t, std::error_code>(pos + delim.size());
+      co_return pos + delim.size();
     }
 
     // Next search only needs to start where a delimiter could overlap the boundary.

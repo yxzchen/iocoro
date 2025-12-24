@@ -38,7 +38,7 @@ auto async_read(Stream& s, std::span<std::byte> buf)
     buf = buf.subspan(n);
   }
 
-  co_return expected<std::size_t, std::error_code>(wanted);
+  co_return wanted;
 }
 
 /// Reads until EOF or buffer is full.
@@ -71,7 +71,7 @@ auto async_read_until_eof(Stream& s, std::span<std::byte> buf)
     buf = buf.subspan(n);
   }
 
-  co_return expected<std::size_t, std::error_code>(total);
+  co_return total;
 }
 
 }  // namespace iocoro::io
