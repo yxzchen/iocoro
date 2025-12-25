@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
@@ -14,6 +15,7 @@
 #include <system_error>
 
 // Native socket APIs.
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -174,6 +176,14 @@ class acceptor_impl {
       int fd = ::accept4(listen_fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
       int fd = ::accept(listen_fd, nullptr, nullptr);
+      if (fd >= 0) {
+        // Ensure accepted sockets are non-blocking and close-on-exec on non-Linux platforms.
+        // If we can't enforce non-blocking, treat it as an error to avoid surprising blocking IO.
+        if (!set_cloexec(fd) || !set_nonblocking(fd)) {
+          auto ec = std::error_code(errno, std::generic_category());
+          (void)::close(fd);
+          co_return unexpected(ec);
+        }
 #endif
 
       if (fd >= 0) {
@@ -218,6 +228,20 @@ class acceptor_impl {
   }
 
  private:
+  static auto set_nonblocking(int fd) noexcept -> bool {
+    int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags < 0) return false;
+    if ((flags & O_NONBLOCK) != 0) return true;
+    return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+  }
+
+  static auto set_cloexec(int fd) noexcept -> bool {
+    int flags = ::fcntl(fd, F_GETFD, 0);
+    if (flags < 0) return false;
+    if ((flags & FD_CLOEXEC) != 0) return true;
+    return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+  }
+
   struct accept_turn_state {
     std::coroutine_handle<> h{};
   };
@@ -242,14 +266,13 @@ class acceptor_impl {
   auto try_acquire_turn(std::shared_ptr<accept_turn_state> const& st) noexcept -> bool {
     std::scoped_lock lk{mtx_};
     cleanup_expired_queue_front();
-    if (accept_queue_.empty()) return false;
+    IOCORO_ENSURE(!accept_queue_.empty(),
+                  "acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
     if (accept_active_) return false;
 
     auto front = accept_queue_.front().lock();
-    if (!front) {
-      // Cleaned by cleanup_expired_queue_front().
-      return false;
-    }
+    IOCORO_ENSURE(static_cast<bool>(front),
+                  "acceptor_impl: accept_queue_ front expired after cleanup");
     if (front.get() != st.get()) return false;
     accept_active_ = true;
     return true;
@@ -267,33 +290,27 @@ class acceptor_impl {
     {
       std::scoped_lock lk{mtx_};
 
-      // Remove ourselves from the queue (defensive: handle unexpected ordering).
+      // Remove ourselves from the queue (FIFO invariant: active turn is always at front).
       cleanup_expired_queue_front();
-      if (!accept_queue_.empty()) {
-        auto front = accept_queue_.front().lock();
-        if (front && front.get() == st.get()) {
-          accept_queue_.pop_front();
-        } else {
-          for (auto it = accept_queue_.begin(); it != accept_queue_.end(); ++it) {
-            auto p = it->lock();
-            if (p && p.get() == st.get()) {
-              accept_queue_.erase(it);
-              break;
-            }
-          }
-        }
-      }
+      IOCORO_ENSURE(!accept_queue_.empty(),
+                    "acceptor_impl: completing turn but accept_queue_ is empty");
+      auto front = accept_queue_.front().lock();
+      IOCORO_ENSURE(static_cast<bool>(front),
+                    "acceptor_impl: accept_queue_ front expired while completing turn");
+      IOCORO_ENSURE(front.get() == st.get(),
+                    "acceptor_impl: FIFO invariant broken; completing state is not queue front");
+      accept_queue_.pop_front();
 
       accept_active_ = false;
       cleanup_expired_queue_front();
 
       if (!accept_queue_.empty()) {
         auto next = accept_queue_.front().lock();
-        if (next) {
-          accept_active_ = true;
-          next_h = next->h;
-          ex = base_.get_executor();
-        }
+        IOCORO_ENSURE(static_cast<bool>(next),
+                      "acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
+        accept_active_ = true;
+        next_h = next->h;
+        ex = base_.get_executor();
       }
     }
 

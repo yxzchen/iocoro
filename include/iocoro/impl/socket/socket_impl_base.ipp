@@ -5,6 +5,24 @@
 
 namespace iocoro::detail::socket {
 
+namespace {
+
+inline auto set_nonblocking(int fd) noexcept -> bool {
+  int flags = ::fcntl(fd, F_GETFL, 0);
+  if (flags < 0) return false;
+  if ((flags & O_NONBLOCK) != 0) return true;
+  return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+
+inline auto set_cloexec(int fd) noexcept -> bool {
+  int flags = ::fcntl(fd, F_GETFD, 0);
+  if (flags < 0) return false;
+  if ((flags & FD_CLOEXEC) != 0) return true;
+  return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+}
+
+}  // namespace
+
 inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> std::error_code {
   {
     std::scoped_lock lk{mtx_};
@@ -204,20 +222,6 @@ inline void socket_impl_base::fd_wait_operation::complete(std::error_code ec) {
   }
   st_->ec = ec;
   ex_.post([s = st_] { s->h.resume(); });
-}
-
-inline auto socket_impl_base::set_nonblocking(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFL, 0);
-  if (flags < 0) return false;
-  if ((flags & O_NONBLOCK) != 0) return true;
-  return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-}
-
-inline auto socket_impl_base::set_cloexec(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFD, 0);
-  if (flags < 0) return false;
-  if ((flags & FD_CLOEXEC) != 0) return true;
-  return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
 }
 
 }  // namespace iocoro::detail::socket

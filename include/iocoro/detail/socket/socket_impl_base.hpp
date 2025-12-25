@@ -227,11 +227,6 @@ class socket_impl_base {
     }
   };
 
-  // No locked helpers that call external/system boundaries; we keep those outside locks.
-
-  static auto set_nonblocking(int fd) noexcept -> bool;
-  static auto set_cloexec(int fd) noexcept -> bool;
-
   executor ex_{};
 
   mutable std::mutex mtx_{};
