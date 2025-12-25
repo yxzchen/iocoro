@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/detail/ip/endpoint_base.hpp>
+#include <iocoro/ip/endpoint_base.hpp>
 
 #include <utility>
 
@@ -8,32 +8,31 @@ namespace iocoro::ip::udp {
 
 /// UDP endpoint type.
 ///
-/// This is a strong type wrapper around the shared `iocoro::detail::ip::endpoint_base`
-/// implementation (asio/std::net style).
+/// This is a strong type wrapper around the shared `iocoro::ip::endpoint_base` implementation.
 class endpoint {
  public:
   endpoint() noexcept = default;
 
   endpoint(address_v4 addr, std::uint16_t port) noexcept : base_(addr, port) {}
   endpoint(address_v6 addr, std::uint16_t port) noexcept : base_(addr, port) {}
-  endpoint(iocoro::ip::address addr, std::uint16_t port) noexcept : base_(addr, port) {}
+  endpoint(ip::address addr, std::uint16_t port) noexcept : base_(addr, port) {}
 
-  explicit endpoint(iocoro::detail::ip::endpoint_base base) noexcept : base_(std::move(base)) {}
+  explicit endpoint(endpoint_base base) noexcept : base_(std::move(base)) {}
 
   static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
-    auto r = iocoro::detail::ip::endpoint_base::from_string(s);
+    auto r = endpoint_base::from_string(s);
     if (!r) return unexpected(r.error());
     return endpoint{*r};
   }
 
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint, std::error_code> {
-    auto r = iocoro::detail::ip::endpoint_base::from_native(addr, len);
+    auto r = endpoint_base::from_native(addr, len);
     if (!r) return unexpected(r.error());
     return endpoint{*r};
   }
 
-  auto address() const noexcept -> iocoro::ip::address { return base_.address(); }
+  auto address() const noexcept -> ip::address { return base_.address(); }
   auto port() const noexcept -> std::uint16_t { return base_.port(); }
   auto to_string() const -> std::string { return base_.to_string(); }
 
@@ -46,7 +45,7 @@ class endpoint {
     -> std::strong_ordering = default;
 
  private:
-  iocoro::detail::ip::endpoint_base base_{};
+  endpoint_base base_{};
 };
 
 }  // namespace iocoro::ip::udp

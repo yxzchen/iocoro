@@ -16,7 +16,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-namespace iocoro::detail::ip {
+namespace iocoro::ip {
 
 inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error_code> {
   if (p.empty()) {
@@ -39,12 +39,12 @@ inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error
 /// type to provide strong typing without duplicating implementation.
 class endpoint_base {
  public:
-  endpoint_base() noexcept { init_v4(iocoro::ip::address_v4::any(), 0); }
+  endpoint_base() noexcept { init_v4(address_v4::any(), 0); }
 
-  endpoint_base(iocoro::ip::address_v4 addr, std::uint16_t port) noexcept { init_v4(addr, port); }
-  endpoint_base(iocoro::ip::address_v6 addr, std::uint16_t port) noexcept { init_v6(addr, port); }
+  endpoint_base(address_v4 addr, std::uint16_t port) noexcept { init_v4(addr, port); }
+  endpoint_base(address_v6 addr, std::uint16_t port) noexcept { init_v6(addr, port); }
 
-  endpoint_base(iocoro::ip::address addr, std::uint16_t port) noexcept {
+  endpoint_base(ip::address addr, std::uint16_t port) noexcept {
     if (addr.is_v4()) {
       init_v4(addr.to_v4(), port);
     } else {
@@ -79,7 +79,7 @@ class endpoint_base {
       }
 
       // Force IPv6 parsing for bracketed form.
-      auto a6 = iocoro::ip::address_v6::from_string(host);
+      auto a6 = address_v6::from_string(host);
       if (!a6) {
         return unexpected(a6.error());
       }
@@ -104,7 +104,7 @@ class endpoint_base {
       return unexpected(port.error());
     }
 
-    auto a4 = iocoro::ip::address_v4::from_string(host);
+    auto a4 = address_v4::from_string(host);
     if (!a4) {
       return unexpected(a4.error());
     }
@@ -139,20 +139,20 @@ class endpoint_base {
     return ep;
   }
 
-  auto address() const noexcept -> iocoro::ip::address {
+  auto address() const noexcept -> ip::address {
     if (family() == AF_INET) {
       auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
-      iocoro::ip::address_v4::bytes_type b{};
+      address_v4::bytes_type b{};
       std::memcpy(b.data(), &sa->sin_addr.s_addr, 4);
-      return iocoro::ip::address{iocoro::ip::address_v4{b}};
+      return ip::address{address_v4{b}};
     }
     if (family() == AF_INET6) {
       auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
-      iocoro::ip::address_v6::bytes_type b{};
+      address_v6::bytes_type b{};
       std::memcpy(b.data(), sa->sin6_addr.s6_addr, 16);
-      return iocoro::ip::address{iocoro::ip::address_v6{b, sa->sin6_scope_id}};
+      return ip::address{address_v6{b, sa->sin6_scope_id}};
     }
-    return iocoro::ip::address{iocoro::ip::address_v4::any()};
+    return ip::address{address_v4::any()};
   }
 
   auto port() const noexcept -> std::uint16_t {
@@ -195,7 +195,7 @@ class endpoint_base {
   }
 
  private:
-  void init_v4(iocoro::ip::address_v4 addr, std::uint16_t port) noexcept {
+  void init_v4(address_v4 addr, std::uint16_t port) noexcept {
     auto sa = sockaddr_in{};
     sa.sin_family = AF_INET;
     sa.sin_port = htons(port);
@@ -209,7 +209,7 @@ class endpoint_base {
     size_ = sizeof(sockaddr_in);
   }
 
-  void init_v6(iocoro::ip::address_v6 addr, std::uint16_t port) noexcept {
+  void init_v6(address_v6 addr, std::uint16_t port) noexcept {
     auto sa = sockaddr_in6{};
     sa.sin6_family = AF_INET6;
     sa.sin6_port = htons(port);
@@ -227,4 +227,4 @@ class endpoint_base {
   socklen_t size_{0};
 };
 
-}  // namespace iocoro::detail::ip
+}  // namespace iocoro::ip
