@@ -106,6 +106,11 @@ class socket_impl {
     return stream_.async_write_some(buffer);
   }
 
+  /// Adopt an already-connected native fd (from accept()).
+  ///
+  /// This is intended for use by `tcp::acceptor` only.
+  auto assign(int fd) noexcept -> std::error_code { return stream_.assign(fd); }
+
  private:
   socket::stream_socket_impl stream_{};
 };

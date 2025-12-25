@@ -76,7 +76,18 @@ class stream_socket_impl {
   /// POSTCONDITIONS (on success):
   /// - The socket takes ownership of `fd` and is ready for I/O operations.
   /// - The fd is set to non-blocking mode (best-effort).
-  auto assign(int fd) noexcept -> std::error_code { return base_.assign(fd); }
+  auto assign(int fd) noexcept -> std::error_code {
+    auto ec = base_.assign(fd);
+    if (ec) return ec;
+    // An fd returned by accept() represents an already-established connection.
+    // Mark the logical stream state as connected so read/write/remote_endpoint work.
+    {
+      std::scoped_lock lk{mtx_};
+      state_ = conn_state::connected;
+      shutdown_ = {};
+    }
+    return {};
+  }
 
   auto is_open() const noexcept -> bool { return base_.is_open(); }
   auto is_connected() const noexcept -> bool {

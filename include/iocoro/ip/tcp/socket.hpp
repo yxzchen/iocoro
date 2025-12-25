@@ -17,6 +17,8 @@ class socket_impl;
 
 namespace iocoro::ip::tcp {
 
+class acceptor;
+
 /// Public TCP socket type (RAII + coroutine async interface).
 ///
 /// First-stage contract:
@@ -68,6 +70,12 @@ class socket : public basic_socket<detail::ip::tcp::socket_impl> {
 
   using base_type::get_option;
   using base_type::set_option;
+
+ private:
+  friend class acceptor;
+
+  // Internal hook for `tcp::acceptor`: adopt a connected fd from accept().
+  auto assign(int fd) -> std::error_code;
 };
 
 }  // namespace iocoro::ip::tcp

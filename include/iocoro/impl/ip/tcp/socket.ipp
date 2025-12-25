@@ -37,4 +37,6 @@ inline auto socket::shutdown(shutdown_type what) -> std::error_code {
 
 inline auto socket::is_connected() const noexcept -> bool { return impl_->is_connected(); }
 
+inline auto socket::assign(int fd) -> std::error_code { return impl_->assign(fd); }
+
 }  // namespace iocoro::ip::tcp
