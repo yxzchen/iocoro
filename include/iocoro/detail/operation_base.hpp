@@ -37,7 +37,7 @@ class operation_base {
   virtual void abort(std::error_code ec) = 0;
 
  protected:
-  explicit operation_base(iocoro::executor const& ex) noexcept : impl_{ex.impl_} {
+  explicit operation_base(executor const& ex) noexcept : impl_{ex.impl_} {
     IOCORO_ENSURE(impl_ != nullptr, "operation_base: executor has null impl_");
   }
 

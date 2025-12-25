@@ -181,7 +181,7 @@ class socket_impl_base {
     std::atomic<bool> done{false};
   };
 
-  class fd_wait_operation final : public iocoro::detail::operation_base {
+  class fd_wait_operation final : public operation_base {
    public:
     fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base, executor ex,
                       std::shared_ptr<wait_state> st) noexcept;
@@ -190,7 +190,7 @@ class socket_impl_base {
     void abort(std::error_code ec) override;
 
    private:
-    void do_start(std::unique_ptr<iocoro::detail::operation_base> self) override;
+    void do_start(std::unique_ptr<operation_base> self) override;
     void complete(std::error_code ec);
 
     fd_wait_kind kind_;
