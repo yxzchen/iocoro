@@ -23,9 +23,9 @@ namespace iocoro::ip::tcp {
 /// - Only coroutine-based async APIs are provided (no completion tokens).
 /// - Implementations are stubs for now (compilation-only).
 /// - Future: methods will perform real non-blocking I/O backed by io_context_impl.
-class socket : public basic_socket<iocoro::detail::ip::tcp::socket_impl> {
+class socket : public basic_socket<::iocoro::detail::ip::tcp::socket_impl> {
  public:
-  using base_type = basic_socket<iocoro::detail::ip::tcp::socket_impl>;
+  using base_type = basic_socket<::iocoro::detail::ip::tcp::socket_impl>;
 
   socket() = delete;
 
