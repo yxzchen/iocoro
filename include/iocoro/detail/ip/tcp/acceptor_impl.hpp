@@ -40,13 +40,7 @@ class acceptor_impl {
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
   auto is_open() const noexcept -> bool { return base_.is_open(); }
 
-  void cancel() noexcept {
-    {
-      std::scoped_lock lk{mtx_};
-      ++accept_epoch_;
-    }
-    base_.cancel();
-  }
+  void cancel() noexcept { cancel_read(); }
 
   void cancel_read() noexcept {
     {
@@ -56,7 +50,7 @@ class acceptor_impl {
     base_.cancel_read();
   }
 
-  void cancel_write() noexcept { base_.cancel_write(); }
+  void cancel_write() noexcept { IOCORO_UNREACHABLE(); }
 
   void close() noexcept {
     {

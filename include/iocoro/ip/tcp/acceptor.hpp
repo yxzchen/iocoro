@@ -58,6 +58,7 @@ class acceptor : public basic_socket<detail::ip::tcp::acceptor_impl> {
   using base_type::is_open;
 
   using base_type::cancel;
+  using base_type::cancel_read;
 
   using base_type::get_option;
   using base_type::set_option;

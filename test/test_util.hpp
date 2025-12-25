@@ -76,7 +76,7 @@ auto sync_wait(io_context& ctx, awaitable<T> a) -> T {
 
   detail::sync_wait_state<T> st{};
   co_spawn(ex, std::move(a), [&](expected<T, std::exception_ptr> r) mutable {
-    detail::set_from_expected<T>(st, std::move(r));
+    detail::set_from_expected(st, std::move(r));
   });
 
   ctx.run();
@@ -97,7 +97,7 @@ auto sync_wait_for(io_context& ctx, std::chrono::duration<Rep, Period> timeout, 
 
   detail::sync_wait_state<T> st{};
   co_spawn(ex, std::move(a), [&](expected<T, std::exception_ptr> r) mutable {
-    detail::set_from_expected<T>(st, std::move(r));
+    detail::set_from_expected(st, std::move(r));
   });
 
   ctx.run_for(std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
