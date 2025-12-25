@@ -3,6 +3,8 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/impl.hpp>
+#include <iocoro/io/async_read_until.hpp>
+#include <iocoro/io/async_write.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/ip/tcp/socket.hpp>
 #include <iocoro/socket_option.hpp>
@@ -118,37 +120,6 @@ static void fill_send_buffer_nonblocking(int fd) {
   }
 }
 
-static auto write_all(iocoro::ip::tcp::socket& s, std::span<std::byte const> buf)
-  -> iocoro::awaitable<std::error_code> {
-  std::size_t off = 0;
-  while (off < buf.size()) {
-    auto wr = co_await s.async_write_some(buf.subspan(off));
-    if (!wr) co_return wr.error();
-    if (*wr == 0) co_return iocoro::error::broken_pipe;
-    off += *wr;
-  }
-  co_return std::error_code{};
-}
-
-static auto read_line_crlf(iocoro::ip::tcp::socket& s) -> iocoro::awaitable<iocoro::expected<std::string, std::error_code>> {
-  std::string out;
-  out.reserve(128);
-
-  std::array<std::byte, 256> tmp{};
-  for (int i = 0; i < 2000; ++i) {  // safety bound
-    auto rr = co_await s.async_read_some(tmp);
-    if (!rr) co_return iocoro::unexpected(rr.error());
-    if (*rr == 0) break;  // EOF
-
-    out.append(reinterpret_cast<char const*>(tmp.data()), *rr);
-    if (auto pos = out.find("\r\n"); pos != std::string::npos) {
-      out.resize(pos + 2);
-      co_return out;
-    }
-  }
-  co_return iocoro::unexpected(iocoro::error::timed_out);
-}
-
 TEST(tcp_socket_test, construction_and_executor) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
@@ -187,10 +158,14 @@ TEST(tcp_socket_test, redis_ping_ipv4_and_endpoints) {
       EXPECT_GT(le->port(), 0);
 
       std::string cmd = "*1\r\n$4\r\nPING\r\n";
-      auto w_ec = co_await write_all(s, as_bytes(cmd));
-      if (w_ec) co_return iocoro::unexpected(w_ec);
+      auto wr = co_await iocoro::io::async_write(s, as_bytes(cmd));
+      if (!wr) co_return iocoro::unexpected(wr.error());
 
-      co_return co_await read_line_crlf(s);
+      std::string out;
+      out.reserve(64);
+      auto n = co_await iocoro::io::async_read_until(s, out, "\r\n", 4096);
+      if (!n) co_return iocoro::unexpected(n.error());
+      co_return out.substr(0, *n);
     }());
 
   if (!rr && should_skip_net_error(rr.error())) {
