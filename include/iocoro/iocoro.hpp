@@ -29,6 +29,9 @@
 
 // Networking
 #include <iocoro/basic_socket.hpp>
+#include <iocoro/shutdown.hpp>
+#include <iocoro/socket_option.hpp>
+
 #include <iocoro/ip.hpp>
 
 // Async I/O algorithms
