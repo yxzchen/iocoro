@@ -82,7 +82,7 @@ struct when_awaiter {
 };
 
 template <class State>
-auto await_when(std::shared_ptr<State> st) -> ::iocoro::awaitable<void> {
+auto await_when(std::shared_ptr<State> st) -> awaitable<void> {
   co_await when_awaiter<State>{std::move(st)};
 }
 

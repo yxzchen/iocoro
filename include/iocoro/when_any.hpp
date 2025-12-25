@@ -118,21 +118,21 @@ auto when_any_container_run_one(executor ex, std::shared_ptr<when_any_container_
 /// - Other tasks may still be running after when_any returns.
 template <class... Ts>
 auto when_any(awaitable<Ts>... tasks)
-  -> awaitable<std::pair<std::size_t, std::variant<::iocoro::detail::when_value_t<Ts>...>>> {
+  -> awaitable<std::pair<std::size_t, std::variant<detail::when_value_t<Ts>...>>> {
   static_assert(sizeof...(Ts) > 0, "when_any requires at least one task");
 
   auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "when_any: requires a bound executor");
 
-  auto st = std::make_shared<::iocoro::detail::when_any_variadic_state<Ts...>>(ex);
+  auto st = std::make_shared<detail::when_any_variadic_state<Ts...>>(ex);
   detail::when_any_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
-  co_await ::iocoro::detail::await_when(st);
+  co_await detail::await_when(st);
 
   std::exception_ptr ep{};
   std::size_t index{};
-  typename ::iocoro::detail::when_any_variadic_state<Ts...>::values_variant result{};
+  typename detail::when_any_variadic_state<Ts...>::values_variant result{};
   {
     std::scoped_lock lk{st->result_m};
     ep = st->first_ep;
@@ -161,13 +161,13 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   IOCORO_ENSURE(ex, "when_any(vector): requires a bound executor");
   IOCORO_ENSURE(!tasks.empty(), "when_any(vector): requires at least one task");
 
-  auto st = std::make_shared<::iocoro::detail::when_any_container_state<T>>(ex);
+  auto st = std::make_shared<detail::when_any_container_state<T>>(ex);
 
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     co_spawn(ex, detail::when_any_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);
   }
 
-  co_await ::iocoro::detail::await_when(st);
+  co_await detail::await_when(st);
 
   std::exception_ptr ep{};
   std::size_t index{};

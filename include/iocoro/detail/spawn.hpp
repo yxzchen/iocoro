@@ -23,7 +23,7 @@ struct awaitable_traits;
 
 /// Specialization for iocoro::awaitable<T>
 template <typename T>
-struct awaitable_traits<::iocoro::awaitable<T>> {
+struct awaitable_traits<awaitable<T>> {
   using value_type = T;
 };
 
@@ -44,7 +44,7 @@ template <typename F>
 concept awaitable_factory = std::invocable<F&> && requires { typename awaitable_value_t<F>; };
 
 template <typename T>
-using spawn_expected = ::iocoro::expected<T, std::exception_ptr>;
+using spawn_expected = expected<T, std::exception_ptr>;
 
 template <typename F, typename T>
 concept completion_callback_for =
@@ -58,7 +58,7 @@ concept completion_callback_for =
 /// can leave the coroutine holding a dangling `this` pointer to the closure.
 template <typename Fn>
   requires awaitable_factory<Fn>
-auto invoke_and_await(Fn fn) -> ::iocoro::awaitable<awaitable_value_t<Fn>> {
+auto invoke_and_await(Fn fn) -> awaitable<awaitable_value_t<Fn>> {
   if constexpr (std::is_void_v<awaitable_value_t<Fn>>) {
     co_await fn();
     co_return;

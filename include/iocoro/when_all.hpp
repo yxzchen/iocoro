@@ -93,22 +93,22 @@ auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_
 /// - void results are represented as std::monostate in the returned tuple.
 template <class... Ts>
 auto when_all(awaitable<Ts>... tasks)
-  -> awaitable<std::tuple<::iocoro::detail::when_value_t<Ts>...>> {
+  -> awaitable<std::tuple<detail::when_value_t<Ts>...>> {
   auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "when_all: requires a bound executor");
 
   if constexpr (sizeof...(Ts) == 0) {
-    co_return std::tuple<::iocoro::detail::when_value_t<Ts>...>{};
+    co_return std::tuple<detail::when_value_t<Ts>...>{};
   }
 
-  auto st = std::make_shared<::iocoro::detail::when_all_variadic_state<Ts...>>(ex);
+  auto st = std::make_shared<detail::when_all_variadic_state<Ts...>>(ex);
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
-  co_await ::iocoro::detail::await_when(st);
+  co_await detail::await_when(st);
 
   std::exception_ptr ep{};
-  typename ::iocoro::detail::when_all_variadic_state<Ts...>::values_tuple values{};
+  typename detail::when_all_variadic_state<Ts...>::values_tuple values{};
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;
@@ -141,16 +141,16 @@ auto when_all(std::vector<awaitable<T>> tasks)
     }
   }
 
-  auto st = std::make_shared<::iocoro::detail::when_all_container_state<T>>(ex, tasks.size());
+  auto st = std::make_shared<detail::when_all_container_state<T>>(ex, tasks.size());
 
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     co_spawn(ex, detail::when_all_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);
   }
 
-  co_await ::iocoro::detail::await_when(st);
+  co_await detail::await_when(st);
 
   std::exception_ptr ep{};
-  std::vector<std::optional<::iocoro::detail::when_value_t<T>>> values{};
+  std::vector<std::optional<detail::when_value_t<T>>> values{};
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;

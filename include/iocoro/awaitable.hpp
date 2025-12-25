@@ -96,14 +96,14 @@ class awaitable<void> {
 namespace iocoro::detail {
 
 template <typename T>
-auto awaitable_promise<T>::get_return_object() -> ::iocoro::awaitable<T> {
+auto awaitable_promise<T>::get_return_object() -> awaitable<T> {
   using promise_t = awaitable_promise<T>;
-  return ::iocoro::awaitable<T>{std::coroutine_handle<promise_t>::from_promise(*this)};
+  return awaitable<T>{std::coroutine_handle<promise_t>::from_promise(*this)};
 }
 
-inline auto awaitable_promise<void>::get_return_object() -> ::iocoro::awaitable<void> {
+inline auto awaitable_promise<void>::get_return_object() -> awaitable<void> {
   using promise_t = awaitable_promise<void>;
-  return ::iocoro::awaitable<void>{std::coroutine_handle<promise_t>::from_promise(*this)};
+  return awaitable<void>{std::coroutine_handle<promise_t>::from_promise(*this)};
 }
 
 }  // namespace iocoro::detail
