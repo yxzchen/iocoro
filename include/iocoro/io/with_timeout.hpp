@@ -41,13 +41,23 @@ namespace iocoro::io {
 template <class T, class Rep, class Period, class OnTimeout>
   requires std::invocable<OnTimeout&>
 auto with_timeout(awaitable<expected<T, std::error_code>> op,
+                  std::chrono::duration<Rep, Period> timeout,
                   // NOTE: pass by value because this is a coroutine; storing an `OnTimeout&&`
                   // (forwarding ref) could capture a reference to a temporary lambda in the frame.
                   // That reference may dangle when the coroutine resumes, causing UAF/segfault.
-                  std::chrono::duration<Rep, Period> timeout, OnTimeout on_timeout)
-  -> awaitable<expected<T, std::error_code>> {
+                  OnTimeout on_timeout) -> awaitable<expected<T, std::error_code>> {
   if (timeout <= std::chrono::duration<Rep, Period>::zero()) {
-    co_return unexpected(error::timed_out);
+    // Cannot return immediately, because it would skip the timeout callback, potentially causing
+    // resource leaks or inconsistent state. Even if the timeout is zero, we must invoke on_timeout
+    // and co_await op before returning timed_out.
+
+    on_timeout();
+    auto r = co_await std::move(op);
+
+    if (!r && r.error() == error::operation_aborted) {
+      co_return unexpected(error::timed_out);
+    }
+    co_return r;
   }
 
   auto ex = co_await this_coro::executor;
