@@ -47,6 +47,9 @@ enum class error {
 
   /// Operation timed out.
   timed_out,
+
+  /// Acceptor is open/bound but not in listening state (listen() not called successfully).
+  not_listening,
 };
 
 auto make_error_code(error e) -> std::error_code;

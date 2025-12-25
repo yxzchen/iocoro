@@ -38,6 +38,8 @@ class error_category_impl : public std::error_category {
         return "connection reset";
       case error::timed_out:
         return "timed out";
+      case error::not_listening:
+        return "not listening";
       default:
         return "unknown error";
     }
