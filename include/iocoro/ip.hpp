@@ -5,6 +5,7 @@
 // and acceptors. Most users should include <iocoro/iocoro.hpp>.
 
 #include <iocoro/ip/address.hpp>
+#include <iocoro/ip/endpoint_base.hpp>
 #include <iocoro/ip/resolver.hpp>
 
 #include <iocoro/ip/tcp/acceptor.hpp>
