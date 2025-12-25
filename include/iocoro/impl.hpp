@@ -14,7 +14,7 @@
 #include <iocoro/impl/socket/stream_socket_impl.ipp>
 
 #include <iocoro/impl/ip/address.ipp>
-#include <iocoro/impl/ip/endpoint_base.ipp>
+#include <iocoro/impl/ip/basic_endpoint.ipp>
 #include <iocoro/impl/ip/tcp/acceptor.ipp>
 #include <iocoro/impl/ip/tcp/socket.ipp>
 #include <iocoro/impl/ip/udp/socket.ipp>

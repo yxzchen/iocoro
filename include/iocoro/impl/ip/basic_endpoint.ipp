@@ -1,4 +1,4 @@
-#include <iocoro/ip/endpoint_base.hpp>
+#include <iocoro/ip/basic_endpoint.hpp>
 
 #include <charconv>
 #include <cstddef>
@@ -32,17 +32,17 @@ inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error
 
 }  // namespace
 
-inline endpoint_base::endpoint_base() noexcept { init_v4(address_v4::any(), 0); }
+inline basic_endpoint::basic_endpoint() noexcept { init_v4(address_v4::any(), 0); }
 
-inline endpoint_base::endpoint_base(address_v4 addr, std::uint16_t port) noexcept {
+inline basic_endpoint::basic_endpoint(address_v4 addr, std::uint16_t port) noexcept {
   init_v4(addr, port);
 }
 
-inline endpoint_base::endpoint_base(address_v6 addr, std::uint16_t port) noexcept {
+inline basic_endpoint::basic_endpoint(address_v6 addr, std::uint16_t port) noexcept {
   init_v6(addr, port);
 }
 
-inline endpoint_base::endpoint_base(ip::address addr, std::uint16_t port) noexcept {
+inline basic_endpoint::basic_endpoint(ip::address addr, std::uint16_t port) noexcept {
   if (addr.is_v4()) {
     init_v4(addr.to_v4(), port);
   } else {
@@ -50,7 +50,7 @@ inline endpoint_base::endpoint_base(ip::address addr, std::uint16_t port) noexce
   }
 }
 
-inline auto endpoint_base::address() const noexcept -> ip::address {
+inline auto basic_endpoint::address() const noexcept -> ip::address {
   if (family() == AF_INET) {
     auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
     address_v4::bytes_type b{};
@@ -66,7 +66,7 @@ inline auto endpoint_base::address() const noexcept -> ip::address {
   return ip::address{address_v4::any()};
 }
 
-inline auto endpoint_base::port() const noexcept -> std::uint16_t {
+inline auto basic_endpoint::port() const noexcept -> std::uint16_t {
   if (family() == AF_INET) {
     auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
     return ntohs(sa->sin_port);
@@ -78,17 +78,17 @@ inline auto endpoint_base::port() const noexcept -> std::uint16_t {
   return 0;
 }
 
-inline auto endpoint_base::data() const noexcept -> sockaddr const* {
+inline auto basic_endpoint::data() const noexcept -> sockaddr const* {
   return reinterpret_cast<sockaddr const*>(&storage_);
 }
 
-inline auto endpoint_base::size() const noexcept -> socklen_t { return size_; }
+inline auto basic_endpoint::size() const noexcept -> socklen_t { return size_; }
 
-inline auto endpoint_base::family() const noexcept -> int {
+inline auto basic_endpoint::family() const noexcept -> int {
   return static_cast<int>(storage_.ss_family);
 }
 
-inline auto endpoint_base::to_string() const -> std::string {
+inline auto basic_endpoint::to_string() const -> std::string {
   auto addr_str = address().to_string();
   if (family() == AF_INET6) {
     return "[" + addr_str + "]:" + std::to_string(port());
@@ -96,8 +96,8 @@ inline auto endpoint_base::to_string() const -> std::string {
   return addr_str + ":" + std::to_string(port());
 }
 
-inline auto endpoint_base::from_string(std::string_view s)
-  -> expected<endpoint_base, std::error_code> {
+inline auto basic_endpoint::from_string(std::string_view s)
+  -> expected<basic_endpoint, std::error_code> {
   if (s.empty()) {
     return unexpected(error::invalid_argument);
   }
@@ -121,7 +121,7 @@ inline auto endpoint_base::from_string(std::string_view s)
     if (!a6) {
       return unexpected(a6.error());
     }
-    return endpoint_base{*a6, *port};
+    return basic_endpoint{*a6, *port};
   }
 
   // IPv4: host:port (reject raw IPv6 without brackets).
@@ -146,11 +146,11 @@ inline auto endpoint_base::from_string(std::string_view s)
   if (!a4) {
     return unexpected(a4.error());
   }
-  return endpoint_base{*a4, *port};
+  return basic_endpoint{*a4, *port};
 }
 
-inline auto endpoint_base::from_native(sockaddr const* addr, socklen_t len)
-  -> expected<endpoint_base, std::error_code> {
+inline auto basic_endpoint::from_native(sockaddr const* addr, socklen_t len)
+  -> expected<basic_endpoint, std::error_code> {
   if (addr == nullptr || len <= 0) {
     return unexpected(error::invalid_argument);
   }
@@ -161,26 +161,26 @@ inline auto endpoint_base::from_native(sockaddr const* addr, socklen_t len)
     return unexpected(error::unsupported_address_family);
   }
 
-  endpoint_base ep{};
+  basic_endpoint ep{};
   std::memset(&ep.storage_, 0, sizeof(ep.storage_));
   std::memcpy(&ep.storage_, addr, static_cast<std::size_t>(len));
   ep.size_ = len;
   return ep;
 }
 
-inline auto operator==(endpoint_base const& a, endpoint_base const& b) noexcept -> bool {
+inline auto operator==(basic_endpoint const& a, basic_endpoint const& b) noexcept -> bool {
   if (a.size_ != b.size_) return false;
   return std::memcmp(&a.storage_, &b.storage_, a.size_) == 0;
 }
 
-inline auto operator<=>(endpoint_base const& a, endpoint_base const& b) noexcept
+inline auto operator<=>(basic_endpoint const& a, basic_endpoint const& b) noexcept
   -> std::strong_ordering {
   if (auto cmp = a.family() <=> b.family(); cmp != 0) return cmp;
   if (auto cmp = a.address() <=> b.address(); cmp != 0) return cmp;
   return a.port() <=> b.port();
 }
 
-inline void endpoint_base::init_v4(address_v4 addr, std::uint16_t port) noexcept {
+inline void basic_endpoint::init_v4(address_v4 addr, std::uint16_t port) noexcept {
   auto sa = sockaddr_in{};
   sa.sin_family = AF_INET;
   sa.sin_port = htons(port);
@@ -194,7 +194,7 @@ inline void endpoint_base::init_v4(address_v4 addr, std::uint16_t port) noexcept
   size_ = sizeof(sockaddr_in);
 }
 
-inline void endpoint_base::init_v6(address_v6 addr, std::uint16_t port) noexcept {
+inline void basic_endpoint::init_v6(address_v6 addr, std::uint16_t port) noexcept {
   auto sa = sockaddr_in6{};
   sa.sin6_family = AF_INET6;
   sa.sin6_port = htons(port);

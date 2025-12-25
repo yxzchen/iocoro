@@ -18,13 +18,13 @@ namespace iocoro::ip {
 /// This is the single source of truth for socket-address storage, parsing, and
 /// conversion. Protocol-specific endpoint types (e.g. tcp::endpoint) wrap this
 /// type to provide strong typing without duplicating implementation.
-class endpoint_base {
+class basic_endpoint {
  public:
-  endpoint_base() noexcept;
+  basic_endpoint() noexcept;
 
-  endpoint_base(address_v4 addr, std::uint16_t port) noexcept;
-  endpoint_base(address_v6 addr, std::uint16_t port) noexcept;
-  endpoint_base(ip::address addr, std::uint16_t port) noexcept;
+  basic_endpoint(address_v4 addr, std::uint16_t port) noexcept;
+  basic_endpoint(address_v6 addr, std::uint16_t port) noexcept;
+  basic_endpoint(ip::address addr, std::uint16_t port) noexcept;
 
   auto address() const noexcept -> ip::address;
   auto port() const noexcept -> std::uint16_t;
@@ -43,7 +43,7 @@ class endpoint_base {
   /// - "[::1]:80" (IPv6 must use brackets to avoid ambiguity)
   ///
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> expected<endpoint_base, std::error_code>;
+  static auto from_string(std::string_view s) -> expected<basic_endpoint, std::error_code>;
 
   /// Construct an endpoint from a native sockaddr.
   ///
@@ -52,13 +52,13 @@ class endpoint_base {
   /// - `len` must not exceed sizeof(sockaddr_storage).
   ///
   /// Returns:
-  /// - endpoint_base on success
+  /// - basic_endpoint on success
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
   static auto from_native(sockaddr const* addr, socklen_t len)
-    -> expected<endpoint_base, std::error_code>;
+    -> expected<basic_endpoint, std::error_code>;
 
-  friend auto operator==(endpoint_base const& a, endpoint_base const& b) noexcept -> bool;
-  friend auto operator<=>(endpoint_base const& a, endpoint_base const& b) noexcept
+  friend auto operator==(basic_endpoint const& a, basic_endpoint const& b) noexcept -> bool;
+  friend auto operator<=>(basic_endpoint const& a, basic_endpoint const& b) noexcept
     -> std::strong_ordering;
 
  private:
