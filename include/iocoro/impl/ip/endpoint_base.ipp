@@ -14,6 +14,8 @@
 
 namespace iocoro::ip {
 
+namespace {
+
 inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error_code> {
   if (p.empty()) {
     return unexpected(error::invalid_argument);
@@ -27,6 +29,8 @@ inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error
   }
   return static_cast<std::uint16_t>(value);
 }
+
+}  // namespace
 
 inline endpoint_base::endpoint_base() noexcept { init_v4(address_v4::any(), 0); }
 

@@ -13,8 +13,6 @@
 
 namespace iocoro::ip {
 
-auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error_code>;
-
 /// Shared endpoint implementation for IP protocols.
 ///
 /// This is the single source of truth for socket-address storage, parsing, and
