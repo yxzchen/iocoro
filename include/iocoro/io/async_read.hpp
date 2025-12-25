@@ -4,7 +4,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io/concepts.hpp>
+#include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/io/with_timeout.hpp>
 
 #include <chrono>
@@ -21,8 +21,8 @@ namespace iocoro::io {
 /// - Requires `Stream::cancel()` so the pending I/O can be safely aborted on timeout.
 /// - If the stream is cancelled externally (not by this timeout), `error::operation_aborted`
 ///   is propagated as-is.
-template <detail::async_read_stream Stream, class Rep, class Period>
-  requires detail::cancellable_stream<Stream>
+template <async_read_stream Stream, class Rep, class Period>
+  requires cancellable_stream<Stream>
 auto async_read_some_timeout(Stream& s, std::span<std::byte> buf,
                              std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
@@ -35,7 +35,7 @@ auto async_read_some_timeout(Stream& s, std::span<std::byte> buf,
 /// - This is an algorithm layered on top of the Stream's `async_read_some` primitive.
 /// - Concurrency rules (e.g. "only one read in-flight") are defined by the Stream type.
 /// - If `async_read_some` yields 0 before the buffer is full, this returns `error::eof`.
-template <detail::async_stream Stream>
+template <async_stream Stream>
 auto async_read(Stream& s, std::span<std::byte> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const wanted = buf.size();
@@ -65,8 +65,8 @@ auto async_read(Stream& s, std::span<std::byte> buf)
 /// Notes:
 /// - Requires `Stream::cancel()` so the pending I/O can be safely aborted on timeout.
 /// - On timeout, this returns `error::timed_out` (not `error::operation_aborted`).
-template <detail::async_stream Stream, class Rep, class Period>
-  requires detail::cancellable_stream<Stream>
+template <async_stream Stream, class Rep, class Period>
+  requires cancellable_stream<Stream>
 auto async_read_timeout(Stream& s, std::span<std::byte> buf,
                         std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
@@ -83,7 +83,7 @@ auto async_read_timeout(Stream& s, std::span<std::byte> buf,
 /// - If EOF is encountered after some bytes were read, returns success with that count.
 /// - If an error occurs before any bytes are read, returns that error.
 /// - If an error occurs after some bytes are read, returns that error (no partial success).
-template <detail::async_stream Stream>
+template <async_stream Stream>
 auto async_read_until_eof(Stream& s, std::span<std::byte> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
   std::size_t total = 0;

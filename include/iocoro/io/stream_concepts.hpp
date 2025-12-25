@@ -8,7 +8,7 @@
 #include <span>
 #include <system_error>
 
-namespace iocoro::io::detail {
+namespace iocoro::io {
 
 /// Minimal asynchronous stream concept for composed I/O algorithms.
 ///
@@ -73,4 +73,4 @@ concept cancel_readable_stream = requires(Stream& s) { s.cancel_read(); };
 template <class Stream>
 concept cancel_writable_stream = requires(Stream& s) { s.cancel_write(); };
 
-}  // namespace iocoro::io::detail
+}  // namespace iocoro::io

@@ -4,7 +4,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io/concepts.hpp>
+#include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/io/with_timeout.hpp>
 
 #include <chrono>
@@ -21,8 +21,8 @@ namespace iocoro::io {
 /// - Requires `Stream::cancel()` so the pending I/O can be safely aborted on timeout.
 /// - If the stream is cancelled externally (not by this timeout), `error::operation_aborted`
 ///   is propagated as-is.
-template <detail::async_write_stream Stream, class Rep, class Period>
-  requires detail::cancellable_stream<Stream>
+template <async_write_stream Stream, class Rep, class Period>
+  requires cancellable_stream<Stream>
 auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
                               std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
@@ -36,7 +36,7 @@ auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
 /// - Concurrency rules (e.g. "only one write in-flight") are defined by the Stream type.
 /// - If `async_write_some` yields 0 before the buffer is fully written, this returns
 ///   `error::broken_pipe`.
-template <detail::async_stream Stream>
+template <async_stream Stream>
 auto async_write(Stream& s, std::span<std::byte const> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const wanted = buf.size();
@@ -64,8 +64,8 @@ auto async_write(Stream& s, std::span<std::byte const> buf)
 /// Notes:
 /// - Requires `Stream::cancel()` so the pending I/O can be safely aborted on timeout.
 /// - On timeout, this returns `error::timed_out` (not `error::operation_aborted`).
-template <detail::async_stream Stream, class Rep, class Period>
-  requires detail::cancellable_stream<Stream>
+template <async_stream Stream, class Rep, class Period>
+  requires cancellable_stream<Stream>
 auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
                          std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {

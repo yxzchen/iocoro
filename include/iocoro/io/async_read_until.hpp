@@ -3,7 +3,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io/concepts.hpp>
+#include <iocoro/io/stream_concepts.hpp>
 
 #include <algorithm>
 #include <array>
@@ -27,7 +27,7 @@ namespace iocoro::io {
 ///
 /// Note: the underlying `async_read_some` may read past the delimiter; in that case, `out`
 /// will contain extra bytes after the returned count.
-template <detail::async_read_stream Stream>
+template <async_read_stream Stream>
 auto async_read_until(Stream& s, std::string& out, std::string_view delim,
                       std::size_t max_size = 64 * 1024)
   -> awaitable<expected<std::size_t, std::error_code>> {
@@ -80,7 +80,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
 }
 
 /// Convenience overload for single-character delimiters.
-template <detail::async_read_stream Stream>
+template <async_read_stream Stream>
 auto async_read_until(Stream& s, std::string& out, char delim, std::size_t max_size = 64 * 1024)
   -> awaitable<expected<std::size_t, std::error_code>> {
   char const d[1] = {delim};

@@ -6,7 +6,7 @@
 #include <iocoro/completion_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io/concepts.hpp>
+#include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
 
@@ -92,7 +92,7 @@ auto with_timeout(awaitable<expected<T, std::error_code>> op,
 
 /// Convenience overload that uses `Stream::cancel()` on timeout.
 template <class T, class Rep, class Period, class Stream>
-  requires detail::cancellable_stream<Stream>
+  requires cancellable_stream<Stream>
 auto with_timeout(Stream& s, awaitable<expected<T, std::error_code>> op,
                   std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<T, std::error_code>> {
@@ -104,11 +104,11 @@ auto with_timeout(Stream& s, awaitable<expected<T, std::error_code>> op,
 /// If the stream supports `cancel_read()`, only the read side is cancelled on timeout.
 /// Otherwise, falls back to `cancel()`.
 template <class T, class Rep, class Period, class Stream>
-  requires detail::cancellable_stream<Stream>
+  requires cancellable_stream<Stream>
 auto with_timeout_read(Stream& s, awaitable<expected<T, std::error_code>> op,
                        std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<T, std::error_code>> {
-  if constexpr (detail::cancel_readable_stream<Stream>) {
+  if constexpr (cancel_readable_stream<Stream>) {
     co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_read(); });
   } else {
     co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
@@ -120,11 +120,11 @@ auto with_timeout_read(Stream& s, awaitable<expected<T, std::error_code>> op,
 /// If the stream supports `cancel_write()`, only the write side is cancelled on timeout.
 /// Otherwise, falls back to `cancel()`.
 template <class T, class Rep, class Period, class Stream>
-  requires detail::cancellable_stream<Stream>
+  requires cancellable_stream<Stream>
 auto with_timeout_write(Stream& s, awaitable<expected<T, std::error_code>> op,
                         std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<T, std::error_code>> {
-  if constexpr (detail::cancel_writable_stream<Stream>) {
+  if constexpr (cancel_writable_stream<Stream>) {
     co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_write(); });
   } else {
     co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
