@@ -5,6 +5,7 @@
 #include <iocoro/impl/executor.ipp>
 #include <iocoro/impl/io_context.ipp>
 #include <iocoro/impl/io_context_impl.ipp>
+#include <iocoro/impl/ip/endpoint_base.ipp>
 #include <iocoro/impl/ip/tcp/acceptor.ipp>
 #include <iocoro/impl/ip/tcp/socket.ipp>
 #include <iocoro/impl/ip/udp/socket.ipp>
