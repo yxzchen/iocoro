@@ -184,6 +184,7 @@ class acceptor_impl {
           (void)::close(fd);
           co_return unexpected(ec);
         }
+      }
 #endif
 
       if (fd >= 0) {
