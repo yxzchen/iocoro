@@ -28,6 +28,16 @@ class endpoint_base {
   endpoint_base(address_v6 addr, std::uint16_t port) noexcept;
   endpoint_base(ip::address addr, std::uint16_t port) noexcept;
 
+  auto address() const noexcept -> ip::address;
+  auto port() const noexcept -> std::uint16_t;
+
+  /// Accessors for native interop.
+  auto data() const noexcept -> sockaddr const*;
+  auto size() const noexcept -> socklen_t;
+  auto family() const noexcept -> int;
+
+  auto to_string() const -> std::string;
+
   /// Parse an endpoint from string.
   ///
   /// Supported forms:
@@ -48,16 +58,6 @@ class endpoint_base {
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint_base, std::error_code>;
-
-  auto address() const noexcept -> ip::address;
-  auto port() const noexcept -> std::uint16_t;
-
-  /// Accessors for native interop.
-  auto data() const noexcept -> sockaddr const*;
-  auto size() const noexcept -> socklen_t;
-  auto family() const noexcept -> int;
-
-  auto to_string() const -> std::string;
 
   friend auto operator==(endpoint_base const& a, endpoint_base const& b) noexcept -> bool;
   friend auto operator<=>(endpoint_base const& a, endpoint_base const& b) noexcept

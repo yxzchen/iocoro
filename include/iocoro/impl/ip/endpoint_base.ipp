@@ -46,6 +46,52 @@ inline endpoint_base::endpoint_base(ip::address addr, std::uint16_t port) noexce
   }
 }
 
+inline auto endpoint_base::address() const noexcept -> ip::address {
+  if (family() == AF_INET) {
+    auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
+    address_v4::bytes_type b{};
+    std::memcpy(b.data(), &sa->sin_addr.s_addr, 4);
+    return ip::address{address_v4{b}};
+  }
+  if (family() == AF_INET6) {
+    auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
+    address_v6::bytes_type b{};
+    std::memcpy(b.data(), sa->sin6_addr.s6_addr, 16);
+    return ip::address{address_v6{b, sa->sin6_scope_id}};
+  }
+  return ip::address{address_v4::any()};
+}
+
+inline auto endpoint_base::port() const noexcept -> std::uint16_t {
+  if (family() == AF_INET) {
+    auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
+    return ntohs(sa->sin_port);
+  }
+  if (family() == AF_INET6) {
+    auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
+    return ntohs(sa->sin6_port);
+  }
+  return 0;
+}
+
+inline auto endpoint_base::data() const noexcept -> sockaddr const* {
+  return reinterpret_cast<sockaddr const*>(&storage_);
+}
+
+inline auto endpoint_base::size() const noexcept -> socklen_t { return size_; }
+
+inline auto endpoint_base::family() const noexcept -> int {
+  return static_cast<int>(storage_.ss_family);
+}
+
+inline auto endpoint_base::to_string() const -> std::string {
+  auto addr_str = address().to_string();
+  if (family() == AF_INET6) {
+    return "[" + addr_str + "]:" + std::to_string(port());
+  }
+  return addr_str + ":" + std::to_string(port());
+}
+
 inline auto endpoint_base::from_string(std::string_view s)
   -> expected<endpoint_base, std::error_code> {
   if (s.empty()) {
@@ -116,52 +162,6 @@ inline auto endpoint_base::from_native(sockaddr const* addr, socklen_t len)
   std::memcpy(&ep.storage_, addr, static_cast<std::size_t>(len));
   ep.size_ = len;
   return ep;
-}
-
-inline auto endpoint_base::address() const noexcept -> ip::address {
-  if (family() == AF_INET) {
-    auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
-    address_v4::bytes_type b{};
-    std::memcpy(b.data(), &sa->sin_addr.s_addr, 4);
-    return ip::address{address_v4{b}};
-  }
-  if (family() == AF_INET6) {
-    auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
-    address_v6::bytes_type b{};
-    std::memcpy(b.data(), sa->sin6_addr.s6_addr, 16);
-    return ip::address{address_v6{b, sa->sin6_scope_id}};
-  }
-  return ip::address{address_v4::any()};
-}
-
-inline auto endpoint_base::port() const noexcept -> std::uint16_t {
-  if (family() == AF_INET) {
-    auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
-    return ntohs(sa->sin_port);
-  }
-  if (family() == AF_INET6) {
-    auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
-    return ntohs(sa->sin6_port);
-  }
-  return 0;
-}
-
-inline auto endpoint_base::to_string() const -> std::string {
-  auto addr_str = address().to_string();
-  if (family() == AF_INET6) {
-    return "[" + addr_str + "]:" + std::to_string(port());
-  }
-  return addr_str + ":" + std::to_string(port());
-}
-
-inline auto endpoint_base::data() const noexcept -> sockaddr const* {
-  return reinterpret_cast<sockaddr const*>(&storage_);
-}
-
-inline auto endpoint_base::size() const noexcept -> socklen_t { return size_; }
-
-inline auto endpoint_base::family() const noexcept -> int {
-  return static_cast<int>(storage_.ss_family);
 }
 
 inline auto operator==(endpoint_base const& a, endpoint_base const& b) noexcept -> bool {
