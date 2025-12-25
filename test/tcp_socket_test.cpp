@@ -269,38 +269,37 @@ TEST(tcp_socket_test, cancel_read_aborts_pending_read) {
   ASSERT_TRUE(ep_r) << ep_r.error().message();
   auto ep = *ep_r;
 
-  auto read_ec = iocoro::sync_wait_for(
-    ctx, 500ms, [&]() -> iocoro::awaitable<std::error_code> {
-      auto ec = co_await s.async_connect(ep);
-      if (ec) co_return ec;
+  auto read_ec = iocoro::sync_wait_for(ctx, 500ms, [&]() -> iocoro::awaitable<std::error_code> {
+    auto ec = co_await s.async_connect(ep);
+    if (ec) co_return ec;
 
-      std::array<std::byte, 1> b{};
-      std::atomic<bool> started{false};
-      std::error_code got{};
+    std::array<std::byte, 1> b{};
+    std::atomic<bool> started{false};
+    std::error_code got{};
 
-      auto read_task = iocoro::co_spawn(
-        ex,
-        [&]() -> iocoro::awaitable<void> {
-          started.store(true, std::memory_order_release);
-          auto rr = co_await s.async_read_some(b);
-          if (!rr) got = rr.error();
-        },
-        iocoro::use_awaitable);
+    auto read_task = iocoro::co_spawn(
+      ex,
+      [&]() -> iocoro::awaitable<void> {
+        started.store(true, std::memory_order_release);
+        auto rr = co_await s.async_read_some(b);
+        if (!rr) got = rr.error();
+      },
+      iocoro::use_awaitable);
 
-      for (int i = 0; i < 50 && !started.load(std::memory_order_acquire); ++i) {
-        (void)co_await iocoro::co_sleep(1ms);
-      }
-      (void)co_await iocoro::co_sleep(5ms);
+    for (int i = 0; i < 50 && !started.load(std::memory_order_acquire); ++i) {
+      (void)co_await iocoro::co_sleep(1ms);
+    }
+    (void)co_await iocoro::co_sleep(5ms);
 
-      s.cancel_read();
+    s.cancel_read();
 
-      try {
-        co_await std::move(read_task);
-      } catch (...) {
-      }
+    try {
+      co_await std::move(read_task);
+    } catch (...) {
+    }
 
-      co_return got;
-    }());
+    co_return got;
+  }());
 
   EXPECT_EQ(read_ec, iocoro::error::operation_aborted);
 
@@ -349,34 +348,33 @@ TEST(tcp_socket_test, cancel_write_aborts_pending_write) {
   ASSERT_TRUE(ep_r) << ep_r.error().message();
   auto ep = *ep_r;
 
-  auto write_ec = iocoro::sync_wait_for(
-    ctx, 800ms, [&]() -> iocoro::awaitable<std::error_code> {
-      auto ec = co_await s.async_connect(ep);
-      if (ec) co_return ec;
+  auto write_ec = iocoro::sync_wait_for(ctx, 800ms, [&]() -> iocoro::awaitable<std::error_code> {
+    auto ec = co_await s.async_connect(ep);
+    if (ec) co_return ec;
 
-      fill_send_buffer_nonblocking(s.native_handle());
+    fill_send_buffer_nonblocking(s.native_handle());
 
-      std::string payload(64 * 1024, 'x');
-      std::error_code got{};
+    std::string payload(64 * 1024, 'x');
+    std::error_code got{};
 
-      auto write_task = iocoro::co_spawn(
-        ex,
-        [&]() -> iocoro::awaitable<void> {
-          auto wr = co_await s.async_write_some(as_bytes(payload));
-          if (!wr) got = wr.error();
-        },
-        iocoro::use_awaitable);
+    auto write_task = iocoro::co_spawn(
+      ex,
+      [&]() -> iocoro::awaitable<void> {
+        auto wr = co_await s.async_write_some(as_bytes(payload));
+        if (!wr) got = wr.error();
+      },
+      iocoro::use_awaitable);
 
-      (void)co_await iocoro::co_sleep(10ms);
-      s.cancel_write();
+    (void)co_await iocoro::co_sleep(10ms);
+    s.cancel_write();
 
-      try {
-        co_await std::move(write_task);
-      } catch (...) {
-      }
+    try {
+      co_await std::move(write_task);
+    } catch (...) {
+    }
 
-      co_return got;
-    }());
+    co_return got;
+  }());
 
   EXPECT_EQ(write_ec, iocoro::error::operation_aborted);
 
@@ -385,5 +383,3 @@ TEST(tcp_socket_test, cancel_write_aborts_pending_write) {
 }
 
 }  // namespace
-
-

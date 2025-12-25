@@ -92,8 +92,7 @@ auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_
 /// - If any task throws, when_all waits for all tasks and then rethrows the first exception.
 /// - void results are represented as std::monostate in the returned tuple.
 template <class... Ts>
-auto when_all(awaitable<Ts>... tasks)
-  -> awaitable<std::tuple<detail::when_value_t<Ts>...>> {
+auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value_t<Ts>...>> {
   auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "when_all: requires a bound executor");
 

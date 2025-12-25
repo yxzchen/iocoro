@@ -179,8 +179,7 @@ inline void socket_impl_base::fd_wait_operation::execute() { complete(std::error
 
 inline void socket_impl_base::fd_wait_operation::abort(std::error_code ec) { complete(ec); }
 
-inline void socket_impl_base::fd_wait_operation::do_start(
-  std::unique_ptr<operation_base> self) {
+inline void socket_impl_base::fd_wait_operation::do_start(std::unique_ptr<operation_base> self) {
   // Register and publish handle for cancellation.
   // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
   // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
