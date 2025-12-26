@@ -7,7 +7,6 @@
 #include <iocoro/ip/address.hpp>
 #include <iocoro/ip/endpoint.hpp>
 #include <iocoro/ip/resolver.hpp>
-#include <iocoro/net/protocol.hpp>
 
 #include <iocoro/ip/tcp.hpp>
 #include <iocoro/ip/udp.hpp>

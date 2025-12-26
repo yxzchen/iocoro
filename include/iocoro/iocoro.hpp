@@ -28,11 +28,7 @@
 #include <iocoro/when_any.hpp>
 
 // Networking
-#include <iocoro/detail/basic_io_handle.hpp>
-#include <iocoro/shutdown.hpp>
-#include <iocoro/socket_option.hpp>
-
-#include <iocoro/ip.hpp>
+#include <iocoro/net.hpp>
 
 // Async I/O algorithms
 #include <iocoro/io/async_read.hpp>
