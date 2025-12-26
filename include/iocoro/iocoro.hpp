@@ -28,7 +28,7 @@
 #include <iocoro/when_any.hpp>
 
 // Networking
-#include <iocoro/basic_socket.hpp>
+#include <iocoro/detail/basic_io_handle.hpp>
 #include <iocoro/shutdown.hpp>
 #include <iocoro/socket_option.hpp>
 

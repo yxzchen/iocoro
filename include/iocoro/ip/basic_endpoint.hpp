@@ -17,7 +17,8 @@ namespace iocoro::ip {
 /// Strongly-typed IP endpoint for a given Protocol.
 ///
 /// Design note (naming / layering):
-/// - `iocoro::basic_socket<Impl>` is a protocol-agnostic PImpl wrapper used by sockets/acceptors.
+/// - `iocoro::detail::basic_io_handle<Impl>` is a protocol-agnostic PImpl wrapper used by
+///   socket-like facades (stream sockets, acceptors, etc.).
 /// - `iocoro::ip::basic_endpoint<Protocol>` is a protocol-typed networking facade.
 /// - The underlying storage and parsing logic lives in `iocoro::ip::detail::endpoint_storage`,
 ///   which MUST NOT depend on Protocol.

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/basic_socket.hpp>
+#include <iocoro/detail/basic_io_handle.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
@@ -18,7 +18,7 @@ namespace iocoro::ip {
 /// Protocol-typed stream socket facade (network semantic layer).
 ///
 /// Layering / responsibilities (important):
-/// - `iocoro::basic_socket<Impl>` is a small protocol-agnostic PImpl wrapper
+/// - `iocoro::detail::basic_io_handle<Impl>` is a small protocol-agnostic PImpl wrapper
 ///   (fd lifecycle, cancel/close, socket options, native_handle).
 /// - `iocoro::ip::basic_stream_socket<Protocol>` is the protocol-typed *network facade*
 ///   providing connect/read/write/endpoint/shutdown semantics.
@@ -29,12 +29,13 @@ namespace iocoro::ip {
 /// - No default constructor: a socket must be bound to an executor (or io_context) up-front.
 /// - Protocol is fixed by the template parameter; there is no "rebind protocol" behavior.
 template <class Protocol>
-class basic_stream_socket : public basic_socket<detail::ip::basic_stream_socket_impl<Protocol>> {
+class basic_stream_socket
+    : public ::iocoro::detail::basic_io_handle<detail::ip::basic_stream_socket_impl<Protocol>> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
   using impl_type = detail::ip::basic_stream_socket_impl<Protocol>;
-  using base_type = basic_socket<impl_type>;
+  using base_type = ::iocoro::detail::basic_io_handle<impl_type>;
 
   basic_stream_socket() = delete;
 
