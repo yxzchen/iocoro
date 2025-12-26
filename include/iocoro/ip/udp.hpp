@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/ip/basic_endpoint.hpp>
+#include <iocoro/ip/basic_resolver.hpp>
 #include <iocoro/ip/protocol.hpp>
 
 #include <netinet/in.h>
@@ -14,6 +15,7 @@ namespace iocoro::ip {
 /// are introduced when datagram semantics are implemented.
 struct udp {
   using endpoint = ip::basic_endpoint<udp>;
+  using resolver = ip::basic_resolver<udp>;
 
   static constexpr auto type() noexcept -> int { return SOCK_DGRAM; }
   static constexpr auto protocol() noexcept -> int { return IPPROTO_UDP; }
