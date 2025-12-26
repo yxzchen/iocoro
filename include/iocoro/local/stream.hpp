@@ -25,5 +25,3 @@ struct stream {
 static_assert(::iocoro::net::protocol_tag<stream>);
 
 }  // namespace iocoro::local
-
-

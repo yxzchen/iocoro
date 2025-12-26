@@ -135,11 +135,15 @@ inline auto endpoint_storage::from_string(std::string_view s)
     auto port_str = s.substr(close + 2);
 
     auto port = parse_port(port_str);
-    if (!port) { return unexpected(port.error()); }
+    if (!port) {
+      return unexpected(port.error());
+    }
 
     // Force IPv6 parsing for bracketed form.
     auto a6 = address_v6::from_string(host);
-    if (!a6) { return unexpected(a6.error()); }
+    if (!a6) {
+      return unexpected(a6.error());
+    }
     return endpoint_storage{*a6, *port};
   }
 
@@ -157,10 +161,14 @@ inline auto endpoint_storage::from_string(std::string_view s)
   }
 
   auto port = parse_port(port_str);
-  if (!port) { return unexpected(port.error()); }
+  if (!port) {
+    return unexpected(port.error());
+  }
 
   auto a4 = address_v4::from_string(host);
-  if (!a4) { return unexpected(a4.error()); }
+  if (!a4) {
+    return unexpected(a4.error());
+  }
   return endpoint_storage{*a4, *port};
 }
 
@@ -192,14 +200,20 @@ inline auto endpoint_storage::from_native(sockaddr const* addr, socklen_t len)
 }
 
 inline auto operator==(endpoint_storage const& a, endpoint_storage const& b) noexcept -> bool {
-  if (a.size_ != b.size_) { return false; }
+  if (a.size_ != b.size_) {
+    return false;
+  }
   return std::memcmp(&a.storage_, &b.storage_, a.size_) == 0;
 }
 
 inline auto operator<=>(endpoint_storage const& a, endpoint_storage const& b) noexcept
   -> std::strong_ordering {
-  if (auto cmp = a.family() <=> b.family(); cmp != 0) { return cmp; }
-  if (auto cmp = a.address() <=> b.address(); cmp != 0) { return cmp; }
+  if (auto cmp = a.family() <=> b.family(); cmp != 0) {
+    return cmp;
+  }
+  if (auto cmp = a.address() <=> b.address(); cmp != 0) {
+    return cmp;
+  }
   return a.port() <=> b.port();
 }
 

@@ -9,5 +9,3 @@
 
 #include <iocoro/net/basic_acceptor.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
-
-

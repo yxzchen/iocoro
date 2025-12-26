@@ -16,17 +16,17 @@ namespace iocoro::net {
 /// - Endpoint MUST NOT influence socket type or protocol selection.
 /// - `from_native()` is allowed to fail and should return an error (not UB).
 template <class E>
-concept endpoint_like = requires(E const& ep, sockaddr* out, socklen_t out_len, sockaddr const* in,
-                                 socklen_t in_len) {
-  // Native view of the endpoint.
-  { ep.data() } -> std::convertible_to<sockaddr const*>;
-  { ep.size() } -> std::convertible_to<socklen_t>;
-  { ep.family() } -> std::convertible_to<int>;
+concept endpoint_like =
+  requires(E const& ep, sockaddr* out, socklen_t out_len, sockaddr const* in, socklen_t in_len) {
+    // Native view of the endpoint.
+    { ep.data() } -> std::convertible_to<sockaddr const*>;
+    { ep.size() } -> std::convertible_to<socklen_t>;
+    { ep.family() } -> std::convertible_to<int>;
 
-  // Native conversions (symmetry with failure allowed).
-  { E::from_native(in, in_len) } -> std::same_as<expected<E, std::error_code>>;
-  { ep.to_native(out, out_len) } -> std::same_as<expected<socklen_t, std::error_code>>;
-};
+    // Native conversions (symmetry with failure allowed).
+    { E::from_native(in, in_len) } -> std::same_as<expected<E, std::error_code>>;
+    { ep.to_native(out, out_len) } -> std::same_as<expected<socklen_t, std::error_code>>;
+  };
 
 /// Minimal protocol tag concept for sockaddr-based networking facades.
 ///
@@ -45,5 +45,3 @@ concept protocol_tag = requires {
 };
 
 }  // namespace iocoro::net
-
-

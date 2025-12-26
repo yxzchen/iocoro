@@ -26,8 +26,8 @@ namespace iocoro::net {
 /// - `async_accept()` returns a connected `basic_stream_socket<Protocol>` and adopts the
 ///   accepted native fd internally.
 template <class Protocol>
-class basic_acceptor
-    : public ::iocoro::detail::basic_io_handle<::iocoro::detail::net::basic_acceptor_impl<Protocol>> {
+class basic_acceptor : public ::iocoro::detail::basic_io_handle<
+                         ::iocoro::detail::net::basic_acceptor_impl<Protocol>> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
@@ -92,5 +92,3 @@ class basic_acceptor
 };
 
 }  // namespace iocoro::net
-
-

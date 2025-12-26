@@ -74,5 +74,3 @@ class endpoint_storage {
 };
 
 }  // namespace iocoro::ip::detail
-
-

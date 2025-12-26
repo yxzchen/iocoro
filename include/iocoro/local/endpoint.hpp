@@ -103,8 +103,8 @@ class endpoint {
 
 #if defined(__linux__)
     // Reject empty abstract name (sun_path[0] == '\0' and no further bytes).
-    if (ep.addr_.sun_path[0] == '\0'
-        && static_cast<std::size_t>(len) == offsetof(sockaddr_un, sun_path) + 1) {
+    if (ep.addr_.sun_path[0] == '\0' &&
+        static_cast<std::size_t>(len) == offsetof(sockaddr_un, sun_path) + 1) {
       return unexpected(error::invalid_endpoint);
     }
 #endif
@@ -129,7 +129,9 @@ class endpoint {
     return size_;
   }
 
-  auto data() const noexcept -> sockaddr const* { return reinterpret_cast<sockaddr const*>(&addr_); }
+  auto data() const noexcept -> sockaddr const* {
+    return reinterpret_cast<sockaddr const*>(&addr_);
+  }
   auto size() const noexcept -> socklen_t { return size_; }
   auto family() const noexcept -> int { return AF_UNIX; }
 
@@ -139,5 +141,3 @@ class endpoint {
 };
 
 }  // namespace iocoro::local
-
-

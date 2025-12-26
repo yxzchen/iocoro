@@ -22,16 +22,16 @@ namespace iocoro::net {
 ///   (fd lifecycle, cancel/close, socket options, native_handle).
 /// - `iocoro::net::basic_stream_socket<Protocol>` is the protocol-typed *network facade*
 ///   providing connect/read/write/endpoint/shutdown semantics.
-/// - The protocol-injected implementation is `iocoro::detail::net::basic_stream_socket_impl<Protocol>`,
+/// - The protocol-injected implementation is
+/// `iocoro::detail::net::basic_stream_socket_impl<Protocol>`,
 ///   built on top of `iocoro::detail::socket::stream_socket_impl` (protocol-agnostic stream IO).
 ///
 /// Construction:
 /// - No default constructor: a socket must be bound to an executor (or io_context) up-front.
 /// - Protocol is fixed by the template parameter; there is no "rebind protocol" behavior.
 template <class Protocol>
-class basic_stream_socket
-    : public ::iocoro::detail::basic_io_handle<
-          ::iocoro::detail::net::basic_stream_socket_impl<Protocol>> {
+class basic_stream_socket : public ::iocoro::detail::basic_io_handle<
+                              ::iocoro::detail::net::basic_stream_socket_impl<Protocol>> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
@@ -96,5 +96,3 @@ class basic_stream_socket
 };
 
 }  // namespace iocoro::net
-
-

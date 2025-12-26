@@ -8,8 +8,8 @@
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
-#include <cstdint>
 #include <coroutine>
+#include <cstdint>
 #include <deque>
 #include <mutex>
 #include <system_error>
@@ -272,8 +272,9 @@ class basic_acceptor_impl {
   auto try_acquire_turn(std::shared_ptr<accept_turn_state> const& st) noexcept -> bool {
     std::scoped_lock lk{mtx_};
     cleanup_expired_queue_front();
-    IOCORO_ENSURE(!accept_queue_.empty(),
-                  "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
+    IOCORO_ENSURE(
+      !accept_queue_.empty(),
+      "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
     if (accept_active_) {
       return false;
     }
@@ -307,8 +308,9 @@ class basic_acceptor_impl {
       auto front = accept_queue_.front().lock();
       IOCORO_ENSURE(static_cast<bool>(front),
                     "basic_acceptor_impl: accept_queue_ front expired while completing turn");
-      IOCORO_ENSURE(front.get() == st.get(),
-                    "basic_acceptor_impl: FIFO invariant broken; completing state is not queue front");
+      IOCORO_ENSURE(
+        front.get() == st.get(),
+        "basic_acceptor_impl: FIFO invariant broken; completing state is not queue front");
       accept_queue_.pop_front();
 
       accept_active_ = false;
@@ -316,8 +318,9 @@ class basic_acceptor_impl {
 
       if (!accept_queue_.empty()) {
         auto next = accept_queue_.front().lock();
-        IOCORO_ENSURE(static_cast<bool>(next),
-                      "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
+        IOCORO_ENSURE(
+          static_cast<bool>(next),
+          "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
         accept_active_ = true;
         next_h = next->h;
         ex = base_.get_executor();
@@ -354,5 +357,3 @@ class basic_acceptor_impl {
 };
 
 }  // namespace iocoro::detail::net
-
-

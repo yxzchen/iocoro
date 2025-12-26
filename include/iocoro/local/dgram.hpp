@@ -22,5 +22,3 @@ struct dgram {
 static_assert(::iocoro::net::protocol_tag<dgram>);
 
 }  // namespace iocoro::local
-
-

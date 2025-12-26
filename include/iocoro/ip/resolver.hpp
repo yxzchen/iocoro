@@ -5,8 +5,8 @@
 // Resolver is inherently IP-specific (host/service resolution), so it lives under `iocoro::ip`.
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/expected.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/expected.hpp>
 
 #include <string>
 #include <system_error>
@@ -36,6 +36,3 @@ class resolver {
 };
 
 }  // namespace iocoro::ip
-
-
-

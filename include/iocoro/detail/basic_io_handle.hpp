@@ -71,5 +71,3 @@ class basic_io_handle {
 };
 
 }  // namespace iocoro::detail
-
-

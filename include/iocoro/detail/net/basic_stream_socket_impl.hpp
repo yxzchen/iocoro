@@ -124,5 +124,3 @@ class basic_stream_socket_impl {
 };
 
 }  // namespace iocoro::detail::net
-
-

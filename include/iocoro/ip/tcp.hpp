@@ -30,5 +30,3 @@ struct tcp {
 static_assert(::iocoro::net::protocol_tag<tcp>);
 
 }  // namespace iocoro::ip
-
-

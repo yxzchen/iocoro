@@ -24,5 +24,3 @@ struct udp {
 static_assert(::iocoro::net::protocol_tag<udp>);
 
 }  // namespace iocoro::ip
-
-
