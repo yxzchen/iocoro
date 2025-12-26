@@ -45,6 +45,22 @@ class endpoint_storage {
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint_storage, std::error_code>;
 
+  /// Copy the native sockaddr representation into the user-provided buffer.
+  ///
+  /// This is the dual of `from_native()`:
+  /// - `addr` points to a writable buffer of length `len`.
+  /// - On success, writes `size()` bytes and returns the number of bytes written.
+  ///
+  /// Returns:
+  /// - invalid_argument if `addr` is null or `len == 0`
+  /// - invalid_endpoint if `len < size()`
+  auto to_native(sockaddr* addr, socklen_t len) const noexcept
+    -> expected<socklen_t, std::error_code>;
+
+  /// Lexicographical ordering for endpoints.
+  ///
+  /// Order is: family, then address, then port.
+  /// This is a semantic ordering (not a raw byte memcmp) and is intended to be stable.
   friend auto operator==(endpoint_storage const& a, endpoint_storage const& b) noexcept -> bool;
   friend auto operator<=>(endpoint_storage const& a, endpoint_storage const& b) noexcept
     -> std::strong_ordering;

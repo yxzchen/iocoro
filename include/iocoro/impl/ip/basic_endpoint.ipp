@@ -1,5 +1,7 @@
 #include <iocoro/ip/basic_endpoint.hpp>
 
+#include <iocoro/assert.hpp>
+
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
@@ -52,6 +54,8 @@ inline endpoint_storage::endpoint_storage(ip::address addr, std::uint16_t port) 
 }
 
 inline auto endpoint_storage::address() const noexcept -> ip::address {
+  IOCORO_ASSERT(family() == AF_INET || family() == AF_INET6,
+                "endpoint_storage::address(): invalid address family");
   if (family() == AF_INET) {
     auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
     address_v4::bytes_type b{};
@@ -64,10 +68,12 @@ inline auto endpoint_storage::address() const noexcept -> ip::address {
     std::memcpy(b.data(), sa->sin6_addr.s6_addr, 16);
     return ip::address{address_v6{b, sa->sin6_scope_id}};
   }
-  return ip::address{address_v4::any()};
+  IOCORO_UNREACHABLE();
 }
 
 inline auto endpoint_storage::port() const noexcept -> std::uint16_t {
+  IOCORO_ASSERT(family() == AF_INET || family() == AF_INET6,
+                "endpoint_storage::port(): invalid address family");
   if (family() == AF_INET) {
     auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
     return ntohs(sa->sin_port);
@@ -76,7 +82,7 @@ inline auto endpoint_storage::port() const noexcept -> std::uint16_t {
     auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
     return ntohs(sa->sin6_port);
   }
-  return 0;
+  IOCORO_UNREACHABLE();
 }
 
 inline auto endpoint_storage::data() const noexcept -> sockaddr const* {
@@ -91,6 +97,18 @@ inline auto endpoint_storage::size() const noexcept -> socklen_t { return size_;
 
 inline auto endpoint_storage::family() const noexcept -> int {
   return static_cast<int>(storage_.ss_family);
+}
+
+inline auto endpoint_storage::to_native(sockaddr* addr, socklen_t len) const noexcept
+  -> expected<socklen_t, std::error_code> {
+  if (addr == nullptr || len == 0) {
+    return unexpected(error::invalid_argument);
+  }
+  if (static_cast<std::size_t>(len) < static_cast<std::size_t>(size_)) {
+    return unexpected(error::invalid_endpoint);
+  }
+  std::memcpy(addr, data(), static_cast<std::size_t>(size_));
+  return size_;
 }
 
 inline auto endpoint_storage::to_string() const -> std::string {
@@ -166,10 +184,18 @@ inline auto endpoint_storage::from_native(sockaddr const* addr, socklen_t len)
     return unexpected(error::unsupported_address_family);
   }
 
+  // Enforce that the provided sockaddr is "complete" for its family.
+  // We accept len >= sizeof(sockaddr_in[_6]) and normalize to the canonical size.
+  auto const required_len =
+    (addr->sa_family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+  if (static_cast<std::size_t>(len) < required_len) {
+    return unexpected(error::invalid_endpoint);
+  }
+
   endpoint_storage ep{};
   std::memset(&ep.storage_, 0, sizeof(ep.storage_));
-  std::memcpy(&ep.storage_, addr, static_cast<std::size_t>(len));
-  ep.size_ = len;
+  std::memcpy(&ep.storage_, addr, required_len);
+  ep.size_ = static_cast<socklen_t>(required_len);
   return ep;
 }
 

@@ -71,6 +71,13 @@ class basic_endpoint {
     return basic_endpoint{std::move(*r)};
   }
 
+  /// Copy the native sockaddr representation into the user-provided buffer.
+  /// See `detail::endpoint_storage::to_native()` for contract.
+  auto to_native(sockaddr* addr, socklen_t len) const noexcept
+    -> expected<socklen_t, std::error_code> {
+    return storage_.to_native(addr, len);
+  }
+
   friend auto operator==(basic_endpoint const& a, basic_endpoint const& b) noexcept -> bool;
   friend auto operator<=>(basic_endpoint const& a, basic_endpoint const& b) noexcept
     -> std::strong_ordering;
