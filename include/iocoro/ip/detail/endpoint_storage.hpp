@@ -1,0 +1,62 @@
+#pragma once
+
+#include <iocoro/error.hpp>
+#include <iocoro/expected.hpp>
+#include <iocoro/ip/address.hpp>
+
+#include <compare>
+#include <cstdint>
+#include <string>
+#include <string_view>
+
+#include <sys/socket.h>
+
+namespace iocoro::ip::detail {
+
+/// Protocol-agnostic storage for an IP endpoint (sockaddr_storage + helpers).
+///
+/// Responsibilities:
+/// - Own sockaddr storage and length.
+/// - Parse/format endpoints (string <-> native sockaddr).
+/// - Provide accessors for address/port/family.
+///
+/// Non-responsibilities:
+/// - MUST NOT depend on any Protocol tag or Protocol-specific typing.
+class endpoint_storage {
+ public:
+  endpoint_storage() noexcept;
+
+  endpoint_storage(address_v4 addr, std::uint16_t port) noexcept;
+  endpoint_storage(address_v6 addr, std::uint16_t port) noexcept;
+  endpoint_storage(ip::address addr, std::uint16_t port) noexcept;
+
+  auto address() const noexcept -> ip::address;
+  auto port() const noexcept -> std::uint16_t;
+
+  auto data() const noexcept -> sockaddr const*;
+  auto data() noexcept -> sockaddr*;
+
+  auto size() const noexcept -> socklen_t;
+  auto family() const noexcept -> int;
+
+  auto to_string() const -> std::string;
+
+  static auto from_string(std::string_view s) -> expected<endpoint_storage, std::error_code>;
+  static auto from_native(sockaddr const* addr, socklen_t len)
+    -> expected<endpoint_storage, std::error_code>;
+
+  friend auto operator==(endpoint_storage const& a, endpoint_storage const& b) noexcept -> bool;
+  friend auto operator<=>(endpoint_storage const& a, endpoint_storage const& b) noexcept
+    -> std::strong_ordering;
+
+ private:
+  void init_v4(address_v4 addr, std::uint16_t port) noexcept;
+  void init_v6(address_v6 addr, std::uint16_t port) noexcept;
+
+  sockaddr_storage storage_{};
+  socklen_t size_{0};
+};
+
+}  // namespace iocoro::ip::detail
+
+

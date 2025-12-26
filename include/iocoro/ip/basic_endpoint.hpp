@@ -3,6 +3,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/ip/address.hpp>
+#include <iocoro/ip/detail/endpoint_storage.hpp>
 
 #include <compare>
 #include <cstdint>
@@ -13,28 +14,33 @@
 
 namespace iocoro::ip {
 
-/// Shared endpoint implementation for IP protocols.
+/// Strongly-typed IP endpoint for a given Protocol.
 ///
-/// This is the single source of truth for socket-address storage, parsing, and
-/// conversion. Protocol-specific endpoint types (e.g. tcp::endpoint) wrap this
-/// type to provide strong typing without duplicating implementation.
+/// Design note (naming / layering):
+/// - `iocoro::basic_socket<Impl>` is a protocol-agnostic PImpl wrapper used by sockets/acceptors.
+/// - `iocoro::ip::basic_endpoint<Protocol>` is a protocol-typed networking facade.
+/// - The underlying storage and parsing logic lives in `iocoro::ip::detail::endpoint_storage`,
+///   which MUST NOT depend on Protocol.
+template <class Protocol>
 class basic_endpoint {
  public:
-  basic_endpoint() noexcept;
+  using protocol_type = Protocol;
 
-  basic_endpoint(address_v4 addr, std::uint16_t port) noexcept;
-  basic_endpoint(address_v6 addr, std::uint16_t port) noexcept;
-  basic_endpoint(ip::address addr, std::uint16_t port) noexcept;
+  basic_endpoint() noexcept = default;
 
-  auto address() const noexcept -> ip::address;
-  auto port() const noexcept -> std::uint16_t;
+  basic_endpoint(address_v4 addr, std::uint16_t port) noexcept : storage_(addr, port) {}
+  basic_endpoint(address_v6 addr, std::uint16_t port) noexcept : storage_(addr, port) {}
+  basic_endpoint(ip::address addr, std::uint16_t port) noexcept : storage_(addr, port) {}
+
+  auto address() const noexcept -> ip::address { return storage_.address(); }
+  auto port() const noexcept -> std::uint16_t { return storage_.port(); }
 
   /// Accessors for native interop.
-  auto data() const noexcept -> sockaddr const*;
-  auto size() const noexcept -> socklen_t;
-  auto family() const noexcept -> int;
+  auto data() const noexcept -> sockaddr const* { return storage_.data(); }
+  auto size() const noexcept -> socklen_t { return storage_.size(); }
+  auto family() const noexcept -> int { return storage_.family(); }
 
-  auto to_string() const -> std::string;
+  auto to_string() const -> std::string { return storage_.to_string(); }
 
   /// Parse an endpoint from string.
   ///
@@ -43,7 +49,11 @@ class basic_endpoint {
   /// - "[::1]:80" (IPv6 must use brackets to avoid ambiguity)
   ///
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> expected<basic_endpoint, std::error_code>;
+  static auto from_string(std::string_view s) -> expected<basic_endpoint, std::error_code> {
+    auto r = detail::endpoint_storage::from_string(s);
+    if (!r) return unexpected(r.error());
+    return basic_endpoint{std::move(*r)};
+  }
 
   /// Construct an endpoint from a native sockaddr.
   ///
@@ -55,18 +65,32 @@ class basic_endpoint {
   /// - basic_endpoint on success
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
   static auto from_native(sockaddr const* addr, socklen_t len)
-    -> expected<basic_endpoint, std::error_code>;
+    -> expected<basic_endpoint, std::error_code> {
+    auto r = detail::endpoint_storage::from_native(addr, len);
+    if (!r) return unexpected(r.error());
+    return basic_endpoint{std::move(*r)};
+  }
 
   friend auto operator==(basic_endpoint const& a, basic_endpoint const& b) noexcept -> bool;
   friend auto operator<=>(basic_endpoint const& a, basic_endpoint const& b) noexcept
     -> std::strong_ordering;
 
  private:
-  void init_v4(address_v4 addr, std::uint16_t port) noexcept;
-  void init_v6(address_v6 addr, std::uint16_t port) noexcept;
+  explicit basic_endpoint(detail::endpoint_storage st) noexcept : storage_(std::move(st)) {}
 
-  sockaddr_storage storage_{};
-  socklen_t size_{0};
+  detail::endpoint_storage storage_{};
 };
+
+template <class Protocol>
+inline auto operator==(basic_endpoint<Protocol> const& a, basic_endpoint<Protocol> const& b) noexcept
+  -> bool {
+  return a.storage_ == b.storage_;
+}
+
+template <class Protocol>
+inline auto operator<=>(basic_endpoint<Protocol> const& a, basic_endpoint<Protocol> const& b) noexcept
+  -> std::strong_ordering {
+  return a.storage_ <=> b.storage_;
+}
 
 }  // namespace iocoro::ip
