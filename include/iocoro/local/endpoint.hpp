@@ -32,7 +32,7 @@ class endpoint {
     if (path.empty()) return unexpected(error::invalid_argument);
 
     // Must fit including NUL terminator.
-    if (path.size() >= sizeof(sockaddr_un::sun_path)) {
+    if (path.size() + 1 > sizeof(sockaddr_un::sun_path)) {
       return unexpected(error::invalid_argument);
     }
 
@@ -79,7 +79,8 @@ class endpoint {
     if (addr == nullptr || len == 0) return unexpected(error::invalid_argument);
     if (addr->sa_family != AF_UNIX) return unexpected(error::unsupported_address_family);
 
-    auto const min_len = offsetof(sockaddr_un, sun_path);
+    // Must include at least one byte of sun_path (pathname NUL or abstract leading NUL).
+    auto const min_len = offsetof(sockaddr_un, sun_path) + 1;
     if (static_cast<std::size_t>(len) < min_len) return unexpected(error::invalid_endpoint);
     if (static_cast<std::size_t>(len) > sizeof(sockaddr_un)) return unexpected(error::invalid_endpoint);
 
@@ -87,6 +88,15 @@ class endpoint {
     std::memset(&ep.addr_, 0, sizeof(ep.addr_));
     std::memcpy(&ep.addr_, addr, static_cast<std::size_t>(len));
     ep.size_ = len;
+
+#if defined(__linux__)
+    // Reject empty abstract name (sun_path[0] == '\0' and no further bytes).
+    if (ep.addr_.sun_path[0] == '\0'
+        && static_cast<std::size_t>(len) == offsetof(sockaddr_un, sun_path) + 1) {
+      return unexpected(error::invalid_endpoint);
+    }
+#endif
+
     return ep;
   }
 
