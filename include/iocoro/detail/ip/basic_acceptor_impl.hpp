@@ -5,36 +5,47 @@
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/ip/tcp/endpoint.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <cstdint>
+#include <coroutine>
 #include <deque>
 #include <mutex>
 #include <system_error>
 
 // Native socket APIs.
 #include <fcntl.h>
-#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
 
-namespace iocoro::detail::ip::tcp {
+namespace iocoro::detail::ip {
 
-/// TCP acceptor implementation (IP-specific adapter).
-class acceptor_impl {
+/// Generic acceptor implementation for IP protocols, parameterized by Protocol.
+///
+/// This type is responsible for:
+/// - owning a listening fd via `socket::socket_impl_base`
+/// - bind/listen/accept loops
+/// - cancellation and FIFO-serialized async_accept
+///
+/// Protocol injection points:
+/// - `Protocol::type()` and `Protocol::protocol()` (SOCK_* / IPPROTO_*)
+/// - `typename Protocol::endpoint` for bind/local_endpoint construction
+template <class Protocol>
+class basic_acceptor_impl {
  public:
-  acceptor_impl() noexcept = default;
-  explicit acceptor_impl(executor ex) noexcept : base_(ex) {}
+  using endpoint_type = typename Protocol::endpoint;
 
-  acceptor_impl(acceptor_impl const&) = delete;
-  auto operator=(acceptor_impl const&) -> acceptor_impl& = delete;
-  acceptor_impl(acceptor_impl&&) = delete;
-  auto operator=(acceptor_impl&&) -> acceptor_impl& = delete;
+  basic_acceptor_impl() noexcept = default;
+  explicit basic_acceptor_impl(executor ex) noexcept : base_(ex) {}
 
-  ~acceptor_impl() = default;
+  basic_acceptor_impl(basic_acceptor_impl const&) = delete;
+  auto operator=(basic_acceptor_impl const&) -> basic_acceptor_impl& = delete;
+  basic_acceptor_impl(basic_acceptor_impl&&) = delete;
+  auto operator=(basic_acceptor_impl&&) -> basic_acceptor_impl& = delete;
+
+  ~basic_acceptor_impl() = default;
 
   auto get_executor() const noexcept -> executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
@@ -73,14 +84,14 @@ class acceptor_impl {
   }
 
   auto open(int family) -> std::error_code {
-    auto ec = base_.open(family, SOCK_STREAM, IPPROTO_TCP);
+    auto ec = base_.open(family, Protocol::type(), Protocol::protocol());
     if (ec) return ec;
     std::scoped_lock lk{mtx_};
     listening_ = false;
     return {};
   }
 
-  auto bind(iocoro::ip::tcp::endpoint const& ep) -> std::error_code {
+  auto bind(endpoint_type const& ep) -> std::error_code {
     auto const fd = base_.native_handle();
     if (fd < 0) {
       return error::not_open;
@@ -105,7 +116,7 @@ class acceptor_impl {
     return {};
   }
 
-  auto local_endpoint() const -> expected<iocoro::ip::tcp::endpoint, std::error_code> {
+  auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
     auto const fd = base_.native_handle();
     if (fd < 0) return unexpected(error::not_open);
 
@@ -114,28 +125,21 @@ class acceptor_impl {
     if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
       return unexpected(std::error_code(errno, std::generic_category()));
     }
-    return iocoro::ip::tcp::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+    return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
 
   /// Accept a new connection.
   ///
   /// Returns:
-  /// - a native connected fd on success (to be adopted by a `tcp::socket` implementation)
+  /// - a native connected fd on success (to be adopted by a stream socket)
   /// - error_code on failure
-  ///
-  /// NOTE (fd ownership):
-  /// On success, this function returns a *native fd* that the caller MUST either adopt
-  /// into a socket object or close. This is safe for the public API because `tcp::acceptor`
-  /// immediately adopts the fd into a `tcp::socket` before returning to user code.
   auto async_accept() -> awaitable<expected<int, std::error_code>> {
     auto const listen_fd = base_.native_handle();
     if (listen_fd < 0) {
       co_return unexpected(error::not_open);
     }
 
-    // Queue-based serialization:
-    // - Multiple coroutines may call async_accept(); they will be served FIFO.
-    // - Only the coroutine holding the "turn" is allowed to run the accept loop.
+    // Queue-based serialization (FIFO).
     auto st = std::make_shared<accept_turn_state>();
     {
       std::scoped_lock lk{mtx_};
@@ -157,8 +161,7 @@ class acceptor_impl {
     }
 
     for (;;) {
-      // Each loop iteration begins with a cancellation check to close the "cancel between
-      // accept() and wait_read_ready()" race window.
+      // Cancellation check to close the "cancel between accept() and wait_read_ready()" race.
       {
         std::scoped_lock lk{mtx_};
         if (accept_epoch_ != my_epoch) {
@@ -171,8 +174,6 @@ class acceptor_impl {
 #else
       int fd = ::accept(listen_fd, nullptr, nullptr);
       if (fd >= 0) {
-        // Ensure accepted sockets are non-blocking and close-on-exec on non-Linux platforms.
-        // If we can't enforce non-blocking, treat it as an error to avoid surprising blocking IO.
         if (!set_cloexec(fd) || !set_nonblocking(fd)) {
           auto ec = std::error_code(errno, std::generic_category());
           (void)::close(fd);
@@ -197,8 +198,6 @@ class acceptor_impl {
       }
 
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        // If cancel/close happened after accept() returned EAGAIN but before we register
-        // read-interest, abort now instead of potentially waiting forever.
         {
           std::scoped_lock lk{mtx_};
           if (accept_epoch_ != my_epoch) {
@@ -242,10 +241,10 @@ class acceptor_impl {
   };
 
   struct accept_turn_awaiter {
-    acceptor_impl* self;
+    basic_acceptor_impl* self;
     std::shared_ptr<accept_turn_state> st;
 
-    accept_turn_awaiter(acceptor_impl* self_, std::shared_ptr<accept_turn_state> st_)
+    accept_turn_awaiter(basic_acceptor_impl* self_, std::shared_ptr<accept_turn_state> st_)
         : self(self_), st(st_) {}
 
     bool await_ready() noexcept { return self->try_acquire_turn(st); }
@@ -262,12 +261,12 @@ class acceptor_impl {
     std::scoped_lock lk{mtx_};
     cleanup_expired_queue_front();
     IOCORO_ENSURE(!accept_queue_.empty(),
-                  "acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
+                  "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
     if (accept_active_) return false;
 
     auto front = accept_queue_.front().lock();
     IOCORO_ENSURE(static_cast<bool>(front),
-                  "acceptor_impl: accept_queue_ front expired after cleanup");
+                  "basic_acceptor_impl: accept_queue_ front expired after cleanup");
     if (front.get() != st.get()) return false;
     accept_active_ = true;
     return true;
@@ -288,12 +287,12 @@ class acceptor_impl {
       // Remove ourselves from the queue (FIFO invariant: active turn is always at front).
       cleanup_expired_queue_front();
       IOCORO_ENSURE(!accept_queue_.empty(),
-                    "acceptor_impl: completing turn but accept_queue_ is empty");
+                    "basic_acceptor_impl: completing turn but accept_queue_ is empty");
       auto front = accept_queue_.front().lock();
       IOCORO_ENSURE(static_cast<bool>(front),
-                    "acceptor_impl: accept_queue_ front expired while completing turn");
+                    "basic_acceptor_impl: accept_queue_ front expired while completing turn");
       IOCORO_ENSURE(front.get() == st.get(),
-                    "acceptor_impl: FIFO invariant broken; completing state is not queue front");
+                    "basic_acceptor_impl: FIFO invariant broken; completing state is not queue front");
       accept_queue_.pop_front();
 
       accept_active_ = false;
@@ -302,7 +301,7 @@ class acceptor_impl {
       if (!accept_queue_.empty()) {
         auto next = accept_queue_.front().lock();
         IOCORO_ENSURE(static_cast<bool>(next),
-                      "acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
+                      "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
         accept_active_ = true;
         next_h = next->h;
         ex = base_.get_executor();
@@ -338,4 +337,6 @@ class acceptor_impl {
   std::deque<std::weak_ptr<accept_turn_state>> accept_queue_{};
 };
 
-}  // namespace iocoro::detail::ip::tcp
+}  // namespace iocoro::detail::ip
+
+
