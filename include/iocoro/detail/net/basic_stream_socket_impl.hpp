@@ -47,39 +47,9 @@ class basic_stream_socket_impl {
   void cancel_write() noexcept { stream_.cancel_write(); }
   void close() noexcept { stream_.close(); }
 
-  auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
-    auto const fd = stream_.native_handle();
-    if (fd < 0) {
-      return unexpected(error::not_open);
-    }
+  auto local_endpoint() const -> expected<endpoint_type, std::error_code>;
 
-    sockaddr_storage ss{};
-    socklen_t len = sizeof(ss);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
-      return unexpected(std::error_code(errno, std::generic_category()));
-    }
-    return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
-  }
-
-  auto remote_endpoint() const -> expected<endpoint_type, std::error_code> {
-    auto const fd = stream_.native_handle();
-    if (fd < 0) {
-      return unexpected(error::not_open);
-    }
-    if (!stream_.is_connected()) {
-      return unexpected(error::not_connected);
-    }
-
-    sockaddr_storage ss{};
-    socklen_t len = sizeof(ss);
-    if (::getpeername(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
-      if (errno == ENOTCONN) {
-        return unexpected(error::not_connected);
-      }
-      return unexpected(std::error_code(errno, std::generic_category()));
-    }
-    return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
-  }
+  auto remote_endpoint() const -> expected<endpoint_type, std::error_code>;
 
   auto shutdown(shutdown_type what) -> std::error_code { return stream_.shutdown(what); }
 
@@ -95,16 +65,7 @@ class basic_stream_socket_impl {
     return stream_.get_option(opt);
   }
 
-  auto async_connect(endpoint_type const& ep) -> awaitable<std::error_code> {
-    // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
-    if (!stream_.is_open()) {
-      auto ec = stream_.open(ep.family(), Protocol::type(), Protocol::protocol());
-      if (ec) {
-        co_return ec;
-      }
-    }
-    co_return co_await stream_.async_connect(ep.data(), ep.size());
-  }
+  auto async_connect(endpoint_type const& ep) -> awaitable<std::error_code>;
 
   auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>> {
