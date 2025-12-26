@@ -26,12 +26,12 @@ namespace iocoro::ip {
 ///   accepted native fd internally.
 template <class Protocol>
 class basic_acceptor
-    : public ::iocoro::detail::basic_io_handle<detail::ip::basic_acceptor_impl<Protocol>> {
+    : public ::iocoro::detail::basic_io_handle<::iocoro::detail::ip::basic_acceptor_impl<Protocol>> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
   using socket = basic_stream_socket<Protocol>;
-  using impl_type = detail::ip::basic_acceptor_impl<Protocol>;
+  using impl_type = ::iocoro::detail::ip::basic_acceptor_impl<Protocol>;
   using base_type = ::iocoro::detail::basic_io_handle<impl_type>;
 
   basic_acceptor() = delete;

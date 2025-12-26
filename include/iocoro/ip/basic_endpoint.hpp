@@ -79,26 +79,18 @@ class basic_endpoint {
     return storage_.to_native(addr, len);
   }
 
-  friend auto operator==(basic_endpoint const& a, basic_endpoint const& b) noexcept -> bool;
+  friend auto operator==(basic_endpoint const& a, basic_endpoint const& b) noexcept -> bool {
+    return a.storage_ == b.storage_;
+  }
   friend auto operator<=>(basic_endpoint const& a, basic_endpoint const& b) noexcept
-    -> std::strong_ordering;
+    -> std::strong_ordering {
+    return a.storage_ <=> b.storage_;
+  }
 
  private:
   explicit basic_endpoint(detail::endpoint_storage st) noexcept : storage_(std::move(st)) {}
 
   detail::endpoint_storage storage_{};
 };
-
-template <class Protocol>
-inline auto operator==(basic_endpoint<Protocol> const& a, basic_endpoint<Protocol> const& b) noexcept
-  -> bool {
-  return a.storage_ == b.storage_;
-}
-
-template <class Protocol>
-inline auto operator<=>(basic_endpoint<Protocol> const& a, basic_endpoint<Protocol> const& b) noexcept
-  -> std::strong_ordering {
-  return a.storage_ <=> b.storage_;
-}
 
 }  // namespace iocoro::ip
