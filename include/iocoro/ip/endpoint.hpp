@@ -1,5 +1,10 @@
 #pragma once
 
+// IP-domain endpoint.
+//
+// This type is IP-specific (parsing, formatting, address/port semantics).
+// It is NOT a generic endpoint for non-IP domains (e.g. AF_UNIX).
+
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/ip/address.hpp>
@@ -16,22 +21,22 @@ namespace iocoro::ip {
 
 /// Strongly-typed IP endpoint for a given Protocol.
 ///
-/// Design note (naming / layering):
-/// - `iocoro::detail::basic_io_handle<Impl>` is a protocol-agnostic PImpl wrapper used by
-///   socket-like facades (stream sockets, acceptors, etc.).
-/// - `iocoro::ip::basic_endpoint<Protocol>` is a protocol-typed networking facade.
+/// Layering / responsibilities:
+/// - `iocoro::detail::basic_io_handle<Impl>` (elsewhere) is a protocol-agnostic handle wrapper
+///   used by socket-like facades.
+/// - `iocoro::ip::endpoint<Protocol>` is the protocol-typed IP endpoint facade.
 /// - The underlying storage and parsing logic lives in `iocoro::ip::detail::endpoint_storage`,
 ///   which MUST NOT depend on Protocol.
 template <class Protocol>
-class basic_endpoint {
+class endpoint {
  public:
   using protocol_type = Protocol;
 
-  basic_endpoint() noexcept = default;
+  endpoint() noexcept = default;
 
-  basic_endpoint(address_v4 addr, std::uint16_t port) noexcept : storage_(addr, port) {}
-  basic_endpoint(address_v6 addr, std::uint16_t port) noexcept : storage_(addr, port) {}
-  basic_endpoint(ip::address addr, std::uint16_t port) noexcept : storage_(addr, port) {}
+  endpoint(address_v4 addr, std::uint16_t port) noexcept : storage_(addr, port) {}
+  endpoint(address_v6 addr, std::uint16_t port) noexcept : storage_(addr, port) {}
+  endpoint(ip::address addr, std::uint16_t port) noexcept : storage_(addr, port) {}
 
   auto address() const noexcept -> ip::address { return storage_.address(); }
   auto port() const noexcept -> std::uint16_t { return storage_.port(); }
@@ -50,26 +55,22 @@ class basic_endpoint {
   /// - "[::1]:80" (IPv6 must use brackets to avoid ambiguity)
   ///
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> expected<basic_endpoint, std::error_code> {
+  static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
     auto r = detail::endpoint_storage::from_string(s);
     if (!r) return unexpected(r.error());
-    return basic_endpoint{std::move(*r)};
+    return endpoint{std::move(*r)};
   }
 
   /// Construct an endpoint from a native sockaddr.
   ///
-  /// Preconditions:
-  /// - `addr` points to a valid socket address of length `len`.
-  /// - `len` must not exceed sizeof(sockaddr_storage).
-  ///
   /// Returns:
-  /// - basic_endpoint on success
+  /// - endpoint on success
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
   static auto from_native(sockaddr const* addr, socklen_t len)
-    -> expected<basic_endpoint, std::error_code> {
+    -> expected<endpoint, std::error_code> {
     auto r = detail::endpoint_storage::from_native(addr, len);
     if (!r) return unexpected(r.error());
-    return basic_endpoint{std::move(*r)};
+    return endpoint{std::move(*r)};
   }
 
   /// Copy the native sockaddr representation into the user-provided buffer.
@@ -79,18 +80,20 @@ class basic_endpoint {
     return storage_.to_native(addr, len);
   }
 
-  friend auto operator==(basic_endpoint const& a, basic_endpoint const& b) noexcept -> bool {
+  friend auto operator==(endpoint const& a, endpoint const& b) noexcept -> bool {
     return a.storage_ == b.storage_;
   }
-  friend auto operator<=>(basic_endpoint const& a, basic_endpoint const& b) noexcept
-    -> std::strong_ordering {
+  friend auto operator<=>(endpoint const& a, endpoint const& b) noexcept -> std::strong_ordering {
     return a.storage_ <=> b.storage_;
   }
 
  private:
-  explicit basic_endpoint(detail::endpoint_storage st) noexcept : storage_(std::move(st)) {}
+  explicit endpoint(detail::endpoint_storage st) noexcept : storage_(std::move(st)) {}
 
   detail::endpoint_storage storage_{};
 };
 
 }  // namespace iocoro::ip
+
+
+

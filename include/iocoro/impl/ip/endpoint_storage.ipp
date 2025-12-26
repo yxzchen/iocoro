@@ -1,4 +1,4 @@
-#include <iocoro/ip/basic_endpoint.hpp>
+#include <iocoro/ip/detail/endpoint_storage.hpp>
 
 #include <iocoro/assert.hpp>
 

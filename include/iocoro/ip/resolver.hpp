@@ -1,5 +1,9 @@
 #pragma once
 
+// IP-domain resolver.
+//
+// Resolver is inherently IP-specific (host/service resolution), so it lives under `iocoro::ip`.
+
 #include <iocoro/awaitable.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/error.hpp>
@@ -20,7 +24,7 @@ namespace iocoro::ip {
 /// Current status:
 /// - Not implemented yet; returns `error::not_implemented`.
 template <class Protocol>
-class basic_resolver {
+class resolver {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
@@ -32,5 +36,6 @@ class basic_resolver {
 };
 
 }  // namespace iocoro::ip
+
 
 
