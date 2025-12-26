@@ -10,6 +10,9 @@ class timer_handle;
 namespace detail {
 class io_context_impl;
 struct operation_base;
+namespace socket {
+class socket_impl_base;
+}  // namespace socket
 }  // namespace detail
 
 template <typename Executor>
@@ -68,6 +71,7 @@ class executor {
   friend class work_guard;
 
   friend struct detail::operation_base;
+  friend class detail::socket::socket_impl_base;
 
   void add_work_guard() const noexcept;
   void remove_work_guard() const noexcept;

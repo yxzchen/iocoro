@@ -3,11 +3,12 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
+#include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/src.hpp>
 
-#include <atomic>
 #include <chrono>
+
+#include "test_util.hpp"
 
 namespace {
 
@@ -15,17 +16,12 @@ TEST(co_sleep_test, co_sleep_resumes_via_timer_and_executor) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
-  std::atomic<bool> done{false};
-
-  auto task = [&]() -> iocoro::awaitable<void> {
+  auto done = iocoro::sync_wait_for(ctx, 200ms, [&]() -> iocoro::awaitable<bool> {
     co_await iocoro::co_sleep(10ms);
-    done.store(true, std::memory_order_relaxed);
-  };
+    co_return true;
+  }());
 
-  iocoro::co_spawn(ctx.get_executor(), task(), iocoro::detached);
-
-  (void)ctx.run_for(200ms);
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
+  EXPECT_TRUE(done);
 }
 
 }  // namespace

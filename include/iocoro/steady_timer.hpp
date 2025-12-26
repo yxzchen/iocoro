@@ -1,9 +1,9 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/timer_handle.hpp>
-#include <iocoro/use_awaitable.hpp>
 
 #include <chrono>
 #include <cstddef>

@@ -1,6 +1,6 @@
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 
@@ -166,7 +166,7 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::read, 0};
+      return fd_event_handle{this, fd, fd_event_kind::read, invalid_fd_token};
     }
 
     if (it == fd_operations_.end()) {
@@ -203,7 +203,7 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::write, 0};
+      return fd_event_handle{this, fd, fd_event_kind::write, invalid_fd_token};
     }
 
     if (it == fd_operations_.end()) {
@@ -264,7 +264,7 @@ inline void io_context_impl::add_work_guard() noexcept {
 inline void io_context_impl::remove_work_guard() noexcept {
   auto const old = work_guard_counter_.fetch_sub(1, std::memory_order_acq_rel);
   IOCORO_ENSURE(old > 0,
-            "io_context_impl: remove_work_guard() called more times than add_work_guard()");
+                "io_context_impl: remove_work_guard() called more times than add_work_guard()");
 
   if (old == 1) {
     wakeup();

@@ -4,7 +4,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/co_spawn.hpp>
-#include <iocoro/detached.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/detail/when/when_all_state.hpp>
 #include <iocoro/this_coro.hpp>
 
@@ -19,19 +19,11 @@ namespace iocoro {
 
 namespace detail {
 
-// Bind executor to an awaitable
-template <typename T>
-auto when_all_bind_executor(executor ex, awaitable<T>&& a) -> awaitable<T> {
-  auto h = a.release();
-  h.promise().set_executor(ex);
-  return awaitable<T>{h};
-}
-
 // Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-auto when_all_run_one(executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st, awaitable<T> a)
-  -> awaitable<void> {
-  auto bound = when_all_bind_executor<T>(ex, std::move(a));
+auto when_all_run_one(executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st,
+                      awaitable<T> a) -> awaitable<void> {
+  auto bound = bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {
       co_await std::move(bound);
@@ -60,7 +52,8 @@ void when_all_start_variadic([[maybe_unused]] executor ex,
 }
 
 template <class... Ts, std::size_t... Is>
-auto when_all_collect_variadic([[maybe_unused]] typename when_all_variadic_state<Ts...>::values_tuple values,
+auto when_all_collect_variadic([[maybe_unused]]
+                               typename when_all_variadic_state<Ts...>::values_tuple values,
                                std::index_sequence<Is...>) -> std::tuple<when_value_t<Ts>...> {
   return std::tuple<when_value_t<Ts>...>{
     ([&]() -> when_value_t<std::tuple_element_t<Is, std::tuple<Ts...>>> {
@@ -74,7 +67,7 @@ auto when_all_collect_variadic([[maybe_unused]] typename when_all_variadic_state
 template <class T>
 auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_state<T>> st,
                                 std::size_t i, awaitable<T> a) -> awaitable<void> {
-  auto bound = when_all_bind_executor<T>(ex, std::move(a));
+  auto bound = bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {
       co_await std::move(bound);
@@ -99,23 +92,22 @@ auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_
 /// - If any task throws, when_all waits for all tasks and then rethrows the first exception.
 /// - void results are represented as std::monostate in the returned tuple.
 template <class... Ts>
-auto when_all(awaitable<Ts>... tasks)
-  -> awaitable<std::tuple<::iocoro::detail::when_value_t<Ts>...>> {
+auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value_t<Ts>...>> {
   auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "when_all: requires a bound executor");
 
   if constexpr (sizeof...(Ts) == 0) {
-    co_return std::tuple<::iocoro::detail::when_value_t<Ts>...>{};
+    co_return std::tuple<detail::when_value_t<Ts>...>{};
   }
 
-  auto st = std::make_shared<::iocoro::detail::when_all_variadic_state<Ts...>>(ex);
+  auto st = std::make_shared<detail::when_all_variadic_state<Ts...>>(ex);
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
-  co_await ::iocoro::detail::await_when(st);
+  co_await detail::await_when(st);
 
   std::exception_ptr ep{};
-  typename ::iocoro::detail::when_all_variadic_state<Ts...>::values_tuple values{};
+  typename detail::when_all_variadic_state<Ts...>::values_tuple values{};
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;
@@ -148,16 +140,16 @@ auto when_all(std::vector<awaitable<T>> tasks)
     }
   }
 
-  auto st = std::make_shared<::iocoro::detail::when_all_container_state<T>>(ex, tasks.size());
+  auto st = std::make_shared<detail::when_all_container_state<T>>(ex, tasks.size());
 
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     co_spawn(ex, detail::when_all_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);
   }
 
-  co_await ::iocoro::detail::await_when(st);
+  co_await detail::await_when(st);
 
   std::exception_ptr ep{};
-  std::vector<std::optional<::iocoro::detail::when_value_t<T>>> values{};
+  std::vector<std::optional<detail::when_value_t<T>>> values{};
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;

@@ -2,17 +2,69 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/src.hpp>
 #include <iocoro/this_coro.hpp>
-#include <iocoro/use_awaitable.hpp>
+
+#include "test_util.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <exception>
 
 namespace {
+
+TEST(co_spawn_test, co_spawn_factory_detached_runs) {
+  iocoro::io_context ctx;
+
+  // Use the factory overload (callable returning awaitable) to avoid temporary-lambda pitfalls.
+  auto ran = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<bool> {
+    (void)co_await iocoro::this_coro::executor;
+    co_return true;
+  }());
+
+  EXPECT_TRUE(ran);
+}
+
+TEST(co_spawn_test, co_spawn_factory_use_awaitable_returns_value) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  auto v = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<int> {
+    return iocoro::co_spawn(
+      ex,
+      [ex]() -> iocoro::awaitable<int> {
+        auto cur = co_await iocoro::this_coro::executor;
+        EXPECT_EQ(cur, ex);
+        co_return 42;
+      },
+      iocoro::use_awaitable);
+  }());
+
+  EXPECT_EQ(v, 42);
+}
+
+TEST(co_spawn_test, co_spawn_factory_completion_callback_receives_value) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> called{false};
+  std::atomic<int> value{0};
+
+  iocoro::co_spawn(
+    ex, []() -> iocoro::awaitable<int> { co_return 7; },
+    [&](iocoro::expected<int, std::exception_ptr> r) {
+      EXPECT_TRUE(r.has_value());
+      value.store(*r, std::memory_order_relaxed);
+      called.store(true, std::memory_order_relaxed);
+    });
+
+  (void)ctx.run();
+  EXPECT_TRUE(called.load(std::memory_order_relaxed));
+  EXPECT_EQ(value.load(std::memory_order_relaxed), 7);
+}
 
 TEST(co_spawn_test, co_spawn_use_awaitable_hot_starts_without_await) {
   iocoro::io_context ctx;
@@ -38,33 +90,22 @@ TEST(co_spawn_test, co_spawn_use_awaitable_returns_value) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
-  std::atomic<bool> done{false};
-  std::atomic<int> value{0};
-
   auto child = [ex]() -> iocoro::awaitable<int> {
     auto cur = co_await iocoro::this_coro::executor;
     EXPECT_EQ(cur, ex);
     co_return 42;
   };
 
-  auto parent = [&]() -> iocoro::awaitable<void> {
-    auto v = co_await iocoro::co_spawn(ex, child(), iocoro::use_awaitable);
-    value.store(v, std::memory_order_relaxed);
-    done.store(true, std::memory_order_relaxed);
-  };
+  auto v = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<int> {
+    return iocoro::co_spawn(ex, child(), iocoro::use_awaitable);
+  }());
 
-  iocoro::co_spawn(ex, parent(), iocoro::detached);
-
-  (void)ctx.run();
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
-  EXPECT_EQ(value.load(std::memory_order_relaxed), 42);
+  EXPECT_EQ(v, 42);
 }
 
 TEST(co_spawn_test, co_spawn_use_awaitable_rethrows_exception) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
-
-  std::atomic<bool> got_exception{false};
 
   auto child = [ex]() -> iocoro::awaitable<int> {
     auto cur = co_await iocoro::this_coro::executor;
@@ -72,19 +113,17 @@ TEST(co_spawn_test, co_spawn_use_awaitable_rethrows_exception) {
     throw std::runtime_error("boom");
   };
 
-  auto parent = [&]() -> iocoro::awaitable<void> {
+  auto got_exception = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<bool> {
     try {
       (void)co_await iocoro::co_spawn(ex, child(), iocoro::use_awaitable);
     } catch (std::runtime_error const& e) {
       EXPECT_STREQ(e.what(), "boom");
-      got_exception.store(true, std::memory_order_relaxed);
+      co_return true;
     }
-  };
+    co_return false;
+  }());
 
-  iocoro::co_spawn(ex, parent(), iocoro::detached);
-
-  (void)ctx.run();
-  EXPECT_TRUE(got_exception.load(std::memory_order_relaxed));
+  EXPECT_TRUE(got_exception);
 }
 
 TEST(co_spawn_test, co_spawn_use_awaitable_waits_for_timer_based_child) {
@@ -93,22 +132,16 @@ TEST(co_spawn_test, co_spawn_use_awaitable_waits_for_timer_based_child) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
-  std::atomic<bool> done{false};
-
-  auto slow = [&]() -> iocoro::awaitable<void> {
+  auto slow = [&]() -> iocoro::awaitable<int> {
     co_await iocoro::co_sleep(10ms);
-    done.store(true, std::memory_order_relaxed);
+    co_return 7;
   };
 
-  auto parent = [&]() -> iocoro::awaitable<void> {
-    (void)co_await iocoro::co_spawn(ex, slow(), iocoro::use_awaitable);
-    EXPECT_TRUE(done.load(std::memory_order_relaxed));
-  };
+  auto v = iocoro::sync_wait_for(ctx, 200ms, [&]() -> iocoro::awaitable<int> {
+    return iocoro::co_spawn(ex, slow(), iocoro::use_awaitable);
+  }());
 
-  iocoro::co_spawn(ex, parent(), iocoro::detached);
-  (void)ctx.run_for(200ms);
-
-  EXPECT_TRUE(done.load(std::memory_order_relaxed));
+  EXPECT_EQ(v, 7);
 }
 
 TEST(co_spawn_test, co_spawn_completion_callback_receives_value) {

@@ -37,7 +37,7 @@ class operation_base {
   virtual void abort(std::error_code ec) = 0;
 
  protected:
-  explicit operation_base(iocoro::executor const& ex) noexcept : impl_{ex.impl_} {
+  explicit operation_base(executor const& ex) noexcept : impl_{ex.impl_} {
     IOCORO_ENSURE(impl_ != nullptr, "operation_base: executor has null impl_");
   }
 
@@ -46,26 +46,6 @@ class operation_base {
  private:
   /// Derived classes only implement the registration action.
   virtual void do_start(std::unique_ptr<operation_base> self) = 0;
-};
-
-// auto op = std::make_unique<read_operation>(fd, ex);
-// ex.dispatch([op = std::move(op)]() mutable {
-//   op->start(std::move(op));
-// });
-
-class read_operation final : public operation_base {
- public:
-  read_operation(int fd, iocoro::executor const& ex) noexcept : operation_base(ex), fd_{fd} {}
-
-  void do_start(std::unique_ptr<operation_base> self) override {
-    (void)impl_->register_fd_read(fd_, std::move(self));
-  }
-
-  void execute() override {}
-  void abort(std::error_code) override {}
-
- private:
-  int fd_;
 };
 
 }  // namespace iocoro::detail

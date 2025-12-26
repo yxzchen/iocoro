@@ -12,6 +12,34 @@ class error_category_impl : public std::error_category {
     switch (static_cast<error>(ev)) {
       case error::operation_aborted:
         return "operation aborted";
+      case error::not_implemented:
+        return "not implemented";
+      case error::invalid_argument:
+        return "invalid argument";
+      case error::not_open:
+        return "resource not open";
+      case error::busy:
+        return "resource busy";
+      case error::not_connected:
+        return "not connected";
+      case error::already_connected:
+        return "already connected";
+      case error::eof:
+        return "end of file";
+      case error::broken_pipe:
+        return "broken pipe";
+      case error::invalid_endpoint:
+        return "invalid endpoint";
+      case error::unsupported_address_family:
+        return "unsupported address family";
+      case error::message_size:
+        return "message size";
+      case error::connection_reset:
+        return "connection reset";
+      case error::timed_out:
+        return "timed out";
+      case error::not_listening:
+        return "not listening";
       default:
         return "unknown error";
     }

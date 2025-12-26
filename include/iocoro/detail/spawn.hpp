@@ -2,11 +2,10 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detached.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/use_awaitable.hpp>
 
 #include <atomic>
 #include <concepts>
@@ -19,13 +18,54 @@
 
 namespace iocoro::detail {
 
+template <typename A>
+struct awaitable_traits;
+
+/// Specialization for iocoro::awaitable<T>
 template <typename T>
-using spawn_expected = ::iocoro::expected<T, std::exception_ptr>;
+struct awaitable_traits<awaitable<T>> {
+  using value_type = T;
+};
+
+/// Helper alias that strips cv/ref before trait lookup.
+template <typename A>
+using awaitable_traits_t = awaitable_traits<std::remove_cvref_t<A>>;
+
+/// Extract the value type `T` from a callable returning `iocoro::awaitable<T>`.
+///
+/// This alias is intentionally ill-formed if `F()` does not return
+/// `iocoro::awaitable<T>`, so that misuse is diagnosed at the concept boundary.
+template <typename F>
+using awaitable_value_t = typename awaitable_traits_t<std::invoke_result_t<F&>>::value_type;
+
+/// A callable that can be invoked with no arguments and returns
+/// `iocoro::awaitable<T>` for some `T`.
+template <typename F>
+concept awaitable_factory = std::invocable<F&> && requires { typename awaitable_value_t<F>; };
+
+template <typename T>
+using spawn_expected = expected<T, std::exception_ptr>;
 
 template <typename F, typename T>
 concept completion_callback_for =
   std::invocable<F&, spawn_expected<T>> && (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
   (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
+
+/// Wrap a callable that returns iocoro::awaitable<T> into an awaitable<T> whose coroutine
+/// frame *owns* the callable.
+///
+/// This avoids GCC/ASan issues where invoking a coroutine lambda on a temporary closure object
+/// can leave the coroutine holding a dangling `this` pointer to the closure.
+template <typename Fn>
+  requires awaitable_factory<Fn>
+auto invoke_and_await(Fn fn) -> awaitable<awaitable_value_t<Fn>> {
+  if constexpr (std::is_void_v<awaitable_value_t<Fn>>) {
+    co_await fn();
+    co_return;
+  } else {
+    co_return co_await fn();
+  }
+}
 
 template <typename T>
 auto bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {
@@ -58,7 +98,7 @@ auto completion_wrapper(executor ex, awaitable<T> a, Completion completion) -> a
   } catch (...) {
     auto ep = std::current_exception();
     try {
-      completion(spawn_expected<T>{unexpected<std::exception_ptr>(ep)});
+      completion(spawn_expected<T>{unexpected(ep)});
     } catch (...) {
       // Completion callback exceptions are swallowed (detached semantics).
     }

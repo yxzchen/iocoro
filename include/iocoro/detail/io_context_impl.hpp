@@ -34,7 +34,9 @@ class io_context_impl {
     fd_event_kind kind = fd_event_kind::read;
     std::uint64_t token = 0;
 
-    auto valid() const noexcept -> bool { return impl != nullptr && fd >= 0 && token != 0; }
+    auto valid() const noexcept -> bool {
+      return impl != nullptr && fd >= 0 && token != io_context_impl::invalid_fd_token;
+    }
     explicit operator bool() const noexcept { return valid(); }
 
     /// Cancel the registered event iff it is still the same registration.
@@ -118,6 +120,7 @@ class io_context_impl {
   std::unordered_map<int, fd_ops> fd_operations_;
   std::mutex fd_mutex_;
   std::uint64_t next_fd_token_ = 1;
+  static constexpr std::uint64_t invalid_fd_token = 0;
 
   std::priority_queue<std::shared_ptr<timer_entry>, std::vector<std::shared_ptr<timer_entry>>,
                       timer_entry_compare>

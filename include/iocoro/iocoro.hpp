@@ -1,20 +1,42 @@
 #pragma once
 
+// Primary public header for the iocoro coroutine-based I/O library.
+// Most users should include this header only.
+
+// Error & result model
+#include <iocoro/error.hpp>
+#include <iocoro/expected.hpp>
+
+// Coroutine & completion model
 #include <iocoro/awaitable.hpp>
-#include <iocoro/basic_socket.hpp>
+#include <iocoro/completion_token.hpp>
+#include <iocoro/this_coro.hpp>
+
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
-#include <iocoro/detached.hpp>
-#include <iocoro/error.hpp>
+
+// Execution & lifetime
 #include <iocoro/executor.hpp>
-#include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/ip.hpp>
-#include <iocoro/socket_option.hpp>
+#include <iocoro/work_guard.hpp>
+
+// Timers & composition
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/this_coro.hpp>
 #include <iocoro/timer_handle.hpp>
-#include <iocoro/use_awaitable.hpp>
+
 #include <iocoro/when_all.hpp>
 #include <iocoro/when_any.hpp>
-#include <iocoro/work_guard.hpp>
+
+// Networking
+#include <iocoro/basic_socket.hpp>
+#include <iocoro/shutdown.hpp>
+#include <iocoro/socket_option.hpp>
+
+#include <iocoro/ip.hpp>
+
+// Async I/O algorithms
+#include <iocoro/io/async_read.hpp>
+#include <iocoro/io/async_read_until.hpp>
+#include <iocoro/io/async_write.hpp>
+#include <iocoro/io/stream_concepts.hpp>
+#include <iocoro/io/with_timeout.hpp>

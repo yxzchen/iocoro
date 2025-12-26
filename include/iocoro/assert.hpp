@@ -34,14 +34,16 @@ namespace iocoro::detail {
 
 #define IOCORO_ASSERT_SELECTOR(_1, _2, NAME, ...) NAME
 
-#define IOCORO_ASSERT_1(expr) \
-  (IOCORO_LIKELY(expr) ? (void)0 : ::iocoro::detail::assert_fail(#expr, __FILE__, __LINE__, __func__))
+#define IOCORO_ASSERT_1(expr)    \
+  (IOCORO_LIKELY(expr) ? (void)0 \
+                       : ::iocoro::detail::assert_fail(#expr, __FILE__, __LINE__, __func__))
 
 #define IOCORO_ASSERT_2(expr, msg) \
   (IOCORO_LIKELY(expr) ? (void)0   \
-                   : ::iocoro::detail::assert_fail(#expr, msg, __FILE__, __LINE__, __func__))
+                       : ::iocoro::detail::assert_fail(#expr, msg, __FILE__, __LINE__, __func__))
 
-#define IOCORO_ASSERT(...) IOCORO_ASSERT_SELECTOR(__VA_ARGS__, IOCORO_ASSERT_2, IOCORO_ASSERT_1)(__VA_ARGS__)
+#define IOCORO_ASSERT(...) \
+  IOCORO_ASSERT_SELECTOR(__VA_ARGS__, IOCORO_ASSERT_2, IOCORO_ASSERT_1)(__VA_ARGS__)
 
 #else
 #define IOCORO_ASSERT(...) ((void)0)
@@ -51,14 +53,16 @@ namespace iocoro::detail {
 
 #define IOCORO_ENSURE_SELECTOR(_1, _2, NAME, ...) NAME
 
-#define IOCORO_ENSURE_1(expr) \
-  (IOCORO_LIKELY(expr) ? (void)0 : ::iocoro::detail::ensure_fail(#expr, __FILE__, __LINE__, __func__))
+#define IOCORO_ENSURE_1(expr)    \
+  (IOCORO_LIKELY(expr) ? (void)0 \
+                       : ::iocoro::detail::ensure_fail(#expr, __FILE__, __LINE__, __func__))
 
 #define IOCORO_ENSURE_2(expr, msg) \
   (IOCORO_LIKELY(expr) ? (void)0   \
-                   : ::iocoro::detail::ensure_fail(#expr, msg, __FILE__, __LINE__, __func__))
+                       : ::iocoro::detail::ensure_fail(#expr, msg, __FILE__, __LINE__, __func__))
 
-#define IOCORO_ENSURE(...) IOCORO_ENSURE_SELECTOR(__VA_ARGS__, IOCORO_ENSURE_2, IOCORO_ENSURE_1)(__VA_ARGS__)
+#define IOCORO_ENSURE(...) \
+  IOCORO_ENSURE_SELECTOR(__VA_ARGS__, IOCORO_ENSURE_2, IOCORO_ENSURE_1)(__VA_ARGS__)
 
 // -------------------- UNREACHABLE --------------------
 

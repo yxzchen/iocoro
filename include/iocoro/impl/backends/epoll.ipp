@@ -1,5 +1,5 @@
-#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 
@@ -175,7 +175,16 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
     }
 
     if (is_error) {
-      auto const ec = std::make_error_code(std::errc::connection_reset);
+      std::error_code ec;
+
+      if (ev & static_cast<std::uint32_t>(EPOLLRDHUP)) {
+        ec = error::eof;
+      } else if (ev & static_cast<std::uint32_t>(EPOLLHUP)) {
+        ec = error::eof;
+      } else {
+        ec = error::connection_reset;
+      }
+
       if (read_op) {
         read_op->abort(ec);
         ++count;
