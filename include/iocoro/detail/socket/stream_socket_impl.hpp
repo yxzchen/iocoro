@@ -78,7 +78,9 @@ class stream_socket_impl {
   /// - The fd is set to non-blocking mode (best-effort).
   auto assign(int fd) noexcept -> std::error_code {
     auto ec = base_.assign(fd);
-    if (ec) return ec;
+    if (ec) {
+      return ec;
+    }
     // An fd returned by accept() represents an already-established connection.
     // Mark the logical stream state as connected so read/write/remote_endpoint work.
     {

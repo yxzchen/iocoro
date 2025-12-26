@@ -47,7 +47,9 @@ inline void stream_socket_impl::close() noexcept {
 
 inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> std::error_code {
   auto const fd = base_.native_handle();
-  if (fd < 0) return error::not_open;
+  if (fd < 0) {
+    return error::not_open;
+  }
   if (::bind(fd, addr, len) != 0) {
     return std::error_code(errno, std::generic_category());
   }
@@ -273,7 +275,9 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
 
 inline auto stream_socket_impl::shutdown(shutdown_type what) -> std::error_code {
   auto const fd = base_.native_handle();
-  if (fd < 0) return error::not_open;
+  if (fd < 0) {
+    return error::not_open;
+  }
 
   int how = SHUT_RDWR;
   if (what == shutdown_type::receive) {

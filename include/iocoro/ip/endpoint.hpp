@@ -57,7 +57,9 @@ class endpoint {
   /// Returns invalid_argument on parse failure.
   static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
     auto r = detail::endpoint_storage::from_string(s);
-    if (!r) return unexpected(r.error());
+    if (!r) {
+      return unexpected(r.error());
+    }
     return endpoint{std::move(*r)};
   }
 
@@ -69,7 +71,9 @@ class endpoint {
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint, std::error_code> {
     auto r = detail::endpoint_storage::from_native(addr, len);
-    if (!r) return unexpected(r.error());
+    if (!r) {
+      return unexpected(r.error());
+    }
     return endpoint{std::move(*r)};
   }
 

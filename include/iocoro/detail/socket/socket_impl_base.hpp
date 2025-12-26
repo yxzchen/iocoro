@@ -80,7 +80,9 @@ class socket_impl_base {
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {
     auto const fd = native_handle();
-    if (fd < 0) return error::not_open;
+    if (fd < 0) {
+      return error::not_open;
+    }
 
     if (::setsockopt(fd, opt.level(), opt.name(), opt.data(), opt.size()) != 0) {
       return std::error_code(errno, std::generic_category());
@@ -91,7 +93,9 @@ class socket_impl_base {
   template <class Option>
   auto get_option(Option& opt) -> std::error_code {
     auto const fd = native_handle();
-    if (fd < 0) return error::not_open;
+    if (fd < 0) {
+      return error::not_open;
+    }
 
     socklen_t len = opt.size();
     if (::getsockopt(fd, opt.level(), opt.name(), opt.data(), &len) != 0) {
@@ -221,8 +225,12 @@ class socket_impl_base {
     }
 
     auto await_resume() noexcept -> std::error_code {
-      if (fd < 0) return error::not_open;
-      if (!ex) return error::not_open;
+      if (fd < 0) {
+        return error::not_open;
+      }
+      if (!ex) {
+        return error::not_open;
+      }
       return st->ec;
     }
   };

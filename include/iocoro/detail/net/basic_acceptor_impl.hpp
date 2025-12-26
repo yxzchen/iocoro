@@ -81,7 +81,9 @@ class basic_acceptor_impl {
 
   auto open(int family) -> std::error_code {
     auto ec = base_.open(family, Protocol::type(), Protocol::protocol());
-    if (ec) return ec;
+    if (ec) {
+      return ec;
+    }
     std::scoped_lock lk{mtx_};
     listening_ = false;
     return {};
@@ -100,8 +102,12 @@ class basic_acceptor_impl {
 
   auto listen(int backlog) -> std::error_code {
     auto const fd = base_.native_handle();
-    if (fd < 0) return error::not_open;
-    if (backlog <= 0) backlog = SOMAXCONN;
+    if (fd < 0) {
+      return error::not_open;
+    }
+    if (backlog <= 0) {
+      backlog = SOMAXCONN;
+    }
     if (::listen(fd, backlog) != 0) {
       return std::error_code(errno, std::generic_category());
     }
@@ -114,7 +120,9 @@ class basic_acceptor_impl {
 
   auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
     auto const fd = base_.native_handle();
-    if (fd < 0) return unexpected(error::not_open);
+    if (fd < 0) {
+      return unexpected(error::not_open);
+    }
 
     sockaddr_storage ss{};
     socklen_t len = sizeof(ss);
@@ -220,15 +228,23 @@ class basic_acceptor_impl {
  private:
   static auto set_nonblocking(int fd) noexcept -> bool {
     int flags = ::fcntl(fd, F_GETFL, 0);
-    if (flags < 0) return false;
-    if ((flags & O_NONBLOCK) != 0) return true;
+    if (flags < 0) {
+      return false;
+    }
+    if ((flags & O_NONBLOCK) != 0) {
+      return true;
+    }
     return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
   }
 
   static auto set_cloexec(int fd) noexcept -> bool {
     int flags = ::fcntl(fd, F_GETFD, 0);
-    if (flags < 0) return false;
-    if ((flags & FD_CLOEXEC) != 0) return true;
+    if (flags < 0) {
+      return false;
+    }
+    if ((flags & FD_CLOEXEC) != 0) {
+      return true;
+    }
     return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
   }
 
@@ -258,12 +274,16 @@ class basic_acceptor_impl {
     cleanup_expired_queue_front();
     IOCORO_ENSURE(!accept_queue_.empty(),
                   "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
-    if (accept_active_) return false;
+    if (accept_active_) {
+      return false;
+    }
 
     auto front = accept_queue_.front().lock();
     IOCORO_ENSURE(static_cast<bool>(front),
                   "basic_acceptor_impl: accept_queue_ front expired after cleanup");
-    if (front.get() != st.get()) return false;
+    if (front.get() != st.get()) {
+      return false;
+    }
     accept_active_ = true;
     return true;
   }

@@ -16,7 +16,9 @@ class awaitable {
 
   explicit awaitable(handle_type h) noexcept : coro_(h) {}
   ~awaitable() {
-    if (coro_) coro_.destroy();
+    if (coro_) {
+      coro_.destroy();
+    }
   }
 
   awaitable(awaitable const&) = delete;
@@ -25,7 +27,9 @@ class awaitable {
   awaitable(awaitable&& other) noexcept : coro_(std::exchange(other.coro_, {})) {}
   auto operator=(awaitable&& other) noexcept -> awaitable& {
     if (this != &other) {
-      if (coro_) coro_.destroy();
+      if (coro_) {
+        coro_.destroy();
+      }
       coro_ = std::exchange(other.coro_, {});
     }
     return *this;
@@ -59,7 +63,9 @@ class awaitable<void> {
 
   explicit awaitable(handle_type h) noexcept : coro_(h) {}
   ~awaitable() {
-    if (coro_) coro_.destroy();
+    if (coro_) {
+      coro_.destroy();
+    }
   }
 
   awaitable(awaitable const&) = delete;
@@ -68,7 +74,9 @@ class awaitable<void> {
   awaitable(awaitable&& other) noexcept : coro_(std::exchange(other.coro_, {})) {}
   auto operator=(awaitable&& other) noexcept -> awaitable& {
     if (this != &other) {
-      if (coro_) coro_.destroy();
+      if (coro_) {
+        coro_.destroy();
+      }
       coro_ = std::exchange(other.coro_, {});
     }
     return *this;

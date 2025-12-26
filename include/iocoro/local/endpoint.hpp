@@ -29,7 +29,9 @@ class endpoint {
   ///
   /// Returns invalid_argument if the path is empty or doesn't fit.
   static auto from_path(std::string_view path) noexcept -> expected<endpoint, std::error_code> {
-    if (path.empty()) return unexpected(error::invalid_argument);
+    if (path.empty()) {
+      return unexpected(error::invalid_argument);
+    }
 
     // Must fit including NUL terminator.
     if (path.size() + 1 > sizeof(sockaddr_un::sun_path)) {
@@ -51,7 +53,9 @@ class endpoint {
   /// `name` is the bytes after the leading NUL.
   /// Returns invalid_argument if name is empty or doesn't fit.
   static auto from_abstract(std::string_view name) noexcept -> expected<endpoint, std::error_code> {
-    if (name.empty()) return unexpected(error::invalid_argument);
+    if (name.empty()) {
+      return unexpected(error::invalid_argument);
+    }
 
     // First byte is NUL, rest is name bytes without NUL terminator.
     if (name.size() > sizeof(sockaddr_un::sun_path) - 1) {
@@ -76,13 +80,21 @@ class endpoint {
   /// - invalid_endpoint if len is not a valid sockaddr_un length
   static auto from_native(sockaddr const* addr, socklen_t len) noexcept
     -> expected<endpoint, std::error_code> {
-    if (addr == nullptr || len == 0) return unexpected(error::invalid_argument);
-    if (addr->sa_family != AF_UNIX) return unexpected(error::unsupported_address_family);
+    if (addr == nullptr || len == 0) {
+      return unexpected(error::invalid_argument);
+    }
+    if (addr->sa_family != AF_UNIX) {
+      return unexpected(error::unsupported_address_family);
+    }
 
     // Must include at least one byte of sun_path (pathname NUL or abstract leading NUL).
     auto const min_len = offsetof(sockaddr_un, sun_path) + 1;
-    if (static_cast<std::size_t>(len) < min_len) return unexpected(error::invalid_endpoint);
-    if (static_cast<std::size_t>(len) > sizeof(sockaddr_un)) return unexpected(error::invalid_endpoint);
+    if (static_cast<std::size_t>(len) < min_len) {
+      return unexpected(error::invalid_endpoint);
+    }
+    if (static_cast<std::size_t>(len) > sizeof(sockaddr_un)) {
+      return unexpected(error::invalid_endpoint);
+    }
 
     endpoint ep{};
     std::memset(&ep.addr_, 0, sizeof(ep.addr_));
@@ -107,7 +119,9 @@ class endpoint {
   /// - invalid_endpoint if `len < size()`
   auto to_native(sockaddr* addr, socklen_t len) const noexcept
     -> expected<socklen_t, std::error_code> {
-    if (addr == nullptr || len == 0) return unexpected(error::invalid_argument);
+    if (addr == nullptr || len == 0) {
+      return unexpected(error::invalid_argument);
+    }
     if (static_cast<std::size_t>(len) < static_cast<std::size_t>(size_)) {
       return unexpected(error::invalid_endpoint);
     }
