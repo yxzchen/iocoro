@@ -4,7 +4,7 @@
 #include <iocoro/ip/basic_acceptor.hpp>
 #include <iocoro/ip/basic_resolver.hpp>
 #include <iocoro/ip/basic_stream_socket.hpp>
-#include <iocoro/ip/protocol.hpp>
+#include <iocoro/ip/protocol_concepts.hpp>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
