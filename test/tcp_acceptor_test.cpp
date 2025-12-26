@@ -5,9 +5,7 @@
 #include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/ip/address.hpp>
-#include <iocoro/ip/tcp/acceptor.hpp>
-#include <iocoro/ip/tcp/endpoint.hpp>
-#include <iocoro/ip/tcp/socket.hpp>
+#include <iocoro/ip/tcp.hpp>
 #include <iocoro/socket_option.hpp>
 
 #include "test_util.hpp"
