@@ -3,7 +3,7 @@
 namespace iocoro::detail::net {
 
 template <class Protocol>
-void basic_acceptor_impl<Protocol>::cancel_read() noexcept {
+inline void basic_acceptor_impl<Protocol>::cancel_read() noexcept {
   {
     std::scoped_lock lk{mtx_};
     ++accept_epoch_;
@@ -12,7 +12,7 @@ void basic_acceptor_impl<Protocol>::cancel_read() noexcept {
 }
 
 template <class Protocol>
-void basic_acceptor_impl<Protocol>::close() noexcept {
+inline void basic_acceptor_impl<Protocol>::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
     ++accept_epoch_;
@@ -23,7 +23,7 @@ void basic_acceptor_impl<Protocol>::close() noexcept {
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::open(int family) -> std::error_code {
+inline auto basic_acceptor_impl<Protocol>::open(int family) -> std::error_code {
   auto ec = base_.open(family, Protocol::type(), Protocol::protocol());
   if (ec) {
     return ec;
@@ -34,7 +34,7 @@ auto basic_acceptor_impl<Protocol>::open(int family) -> std::error_code {
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::bind(endpoint_type const& ep) -> std::error_code {
+inline auto basic_acceptor_impl<Protocol>::bind(endpoint_type const& ep) -> std::error_code {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     return error::not_open;
@@ -46,7 +46,7 @@ auto basic_acceptor_impl<Protocol>::bind(endpoint_type const& ep) -> std::error_
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::listen(int backlog) -> std::error_code {
+inline auto basic_acceptor_impl<Protocol>::listen(int backlog) -> std::error_code {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     return error::not_open;
@@ -65,7 +65,7 @@ auto basic_acceptor_impl<Protocol>::listen(int backlog) -> std::error_code {
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::local_endpoint() const
+inline auto basic_acceptor_impl<Protocol>::local_endpoint() const
   -> expected<endpoint_type, std::error_code> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
@@ -81,7 +81,7 @@ auto basic_acceptor_impl<Protocol>::local_endpoint() const
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::async_accept() -> awaitable<expected<int, std::error_code>> {
+inline auto basic_acceptor_impl<Protocol>::async_accept() -> awaitable<expected<int, std::error_code>> {
   auto const listen_fd = base_.native_handle();
   if (listen_fd < 0) {
     co_return unexpected(error::not_open);
@@ -170,7 +170,7 @@ auto basic_acceptor_impl<Protocol>::async_accept() -> awaitable<expected<int, st
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::set_nonblocking(int fd) noexcept -> bool {
+inline auto basic_acceptor_impl<Protocol>::set_nonblocking(int fd) noexcept -> bool {
   int flags = ::fcntl(fd, F_GETFL, 0);
   if (flags < 0) {
     return false;
@@ -182,7 +182,7 @@ auto basic_acceptor_impl<Protocol>::set_nonblocking(int fd) noexcept -> bool {
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::set_cloexec(int fd) noexcept -> bool {
+inline auto basic_acceptor_impl<Protocol>::set_cloexec(int fd) noexcept -> bool {
   int flags = ::fcntl(fd, F_GETFD, 0);
   if (flags < 0) {
     return false;
@@ -194,7 +194,7 @@ auto basic_acceptor_impl<Protocol>::set_cloexec(int fd) noexcept -> bool {
 }
 
 template <class Protocol>
-auto basic_acceptor_impl<Protocol>::try_acquire_turn(
+inline auto basic_acceptor_impl<Protocol>::try_acquire_turn(
   std::shared_ptr<accept_turn_state> const& st) noexcept -> bool {
   std::scoped_lock lk{mtx_};
   cleanup_expired_queue_front();
@@ -216,14 +216,14 @@ auto basic_acceptor_impl<Protocol>::try_acquire_turn(
 }
 
 template <class Protocol>
-void basic_acceptor_impl<Protocol>::cleanup_expired_queue_front() noexcept {
+inline void basic_acceptor_impl<Protocol>::cleanup_expired_queue_front() noexcept {
   while (!accept_queue_.empty() && accept_queue_.front().expired()) {
     accept_queue_.pop_front();
   }
 }
 
 template <class Protocol>
-void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
+inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
   std::coroutine_handle<> next_h{};
   executor ex{};
   {

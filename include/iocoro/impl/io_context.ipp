@@ -7,9 +7,9 @@
 
 namespace iocoro {
 
-io_context::io_context() : impl_(std::make_unique<detail::io_context_impl>()) {}
+inline io_context::io_context() : impl_(std::make_unique<detail::io_context_impl>()) {}
 
-io_context::~io_context() = default;
+inline io_context::~io_context() = default;
 
 inline auto io_context::run() -> std::size_t { return impl_->run(); }
 
