@@ -10,3 +10,6 @@
 
 #include <iocoro/ip/tcp.hpp>
 #include <iocoro/ip/udp.hpp>
+
+#include <iocoro/impl/ip/address.ipp>
+#include <iocoro/impl/ip/endpoint_storage.ipp>

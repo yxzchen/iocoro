@@ -15,6 +15,3 @@
 
 #include <iocoro/impl/net/basic_acceptor_impl.ipp>
 #include <iocoro/impl/net/basic_stream_socket_impl.ipp>
-
-#include <iocoro/impl/ip/address.ipp>
-#include <iocoro/impl/ip/endpoint_storage.ipp>
