@@ -14,24 +14,20 @@
 #include <mutex>
 #include <system_error>
 
-// Native socket APIs.
+// Native socket APIs (generic / non-domain-specific).
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
 
-namespace iocoro::detail::ip {
+namespace iocoro::detail::net {
 
-/// Generic acceptor implementation for IP protocols, parameterized by Protocol.
+/// Generic acceptor implementation for sockaddr-based protocols, parameterized by Protocol.
 ///
-/// This type is responsible for:
-/// - owning a listening fd via `socket::socket_impl_base`
-/// - bind/listen/accept loops
-/// - cancellation and FIFO-serialized async_accept
-///
-/// Protocol injection points:
-/// - `Protocol::type()` and `Protocol::protocol()` (SOCK_* / IPPROTO_*)
-/// - `typename Protocol::endpoint` for bind/local_endpoint construction
+/// Boundary:
+/// - Depends on `Protocol::type()` / `Protocol::protocol()` only for socket creation.
+/// - Endpoint semantics are NOT interpreted here; the endpoint is treated as a native view:
+///   `data()/size()/family()` plus conversion helpers.
 template <class Protocol>
 class basic_acceptor_impl {
  public:
@@ -337,6 +333,6 @@ class basic_acceptor_impl {
   std::deque<std::weak_ptr<accept_turn_state>> accept_queue_{};
 };
 
-}  // namespace iocoro::detail::ip
+}  // namespace iocoro::detail::net
 
 

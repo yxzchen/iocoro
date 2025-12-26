@@ -12,19 +12,17 @@
 #include <span>
 #include <system_error>
 
-// Native socket APIs.
+// Native socket APIs (generic / non-domain-specific).
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <cerrno>
 
-namespace iocoro::detail::ip {
+namespace iocoro::detail::net {
 
-/// Generic stream-socket implementation for IP protocols, parameterized by Protocol.
+/// Generic stream-socket implementation for sockaddr-based protocols, parameterized by Protocol.
 ///
-/// This is a protocol-injected adapter on top of `detail::socket::stream_socket_impl`.
-/// Protocol injection points:
-/// - `Protocol::type()` and `Protocol::protocol()` (SOCK_* / IPPROTO_*)
-/// - `typename Protocol::endpoint` for higher-level endpoint typing
+/// Boundary:
+/// - Depends on `Protocol::type()` / `Protocol::protocol()` only for socket creation.
+/// - Endpoint semantics are NOT interpreted here; endpoint is a native view with `family()`.
 template <class Protocol>
 class basic_stream_socket_impl {
  public:
@@ -90,7 +88,7 @@ class basic_stream_socket_impl {
   }
 
   auto async_connect(endpoint_type const& ep) -> awaitable<std::error_code> {
-    // For stream sockets, it's reasonable to open on-demand based on the endpoint family.
+    // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
     if (!stream_.is_open()) {
       auto ec = stream_.open(ep.family(), Protocol::type(), Protocol::protocol());
       if (ec) co_return ec;
@@ -115,6 +113,6 @@ class basic_stream_socket_impl {
   socket::stream_socket_impl stream_{};
 };
 
-}  // namespace iocoro::detail::ip
+}  // namespace iocoro::detail::net
 
 

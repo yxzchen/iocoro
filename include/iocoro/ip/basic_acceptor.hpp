@@ -6,7 +6,7 @@
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 
-#include <iocoro/detail/ip/basic_acceptor_impl.hpp>
+#include <iocoro/detail/net/basic_acceptor_impl.hpp>
 #include <iocoro/ip/basic_stream_socket.hpp>
 
 #include <system_error>
@@ -18,7 +18,7 @@ namespace iocoro::ip {
 /// This is a networking facade layered on top of:
 /// - `iocoro::detail::basic_io_handle<Impl>`: a small, reusable PImpl wrapper that provides
 ///   fd lifecycle and common cancellation/option APIs.
-/// - `iocoro::detail::ip::basic_acceptor_impl<Protocol>`: protocol-injected implementation.
+/// - `iocoro::detail::net::basic_acceptor_impl<Protocol>`: protocol-injected implementation.
 ///
 /// Important:
 /// - This type is protocol-typed (via `Protocol` template parameter).
@@ -26,12 +26,12 @@ namespace iocoro::ip {
 ///   accepted native fd internally.
 template <class Protocol>
 class basic_acceptor
-    : public ::iocoro::detail::basic_io_handle<::iocoro::detail::ip::basic_acceptor_impl<Protocol>> {
+    : public ::iocoro::detail::basic_io_handle<::iocoro::detail::net::basic_acceptor_impl<Protocol>> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
   using socket = basic_stream_socket<Protocol>;
-  using impl_type = ::iocoro::detail::ip::basic_acceptor_impl<Protocol>;
+  using impl_type = ::iocoro::detail::net::basic_acceptor_impl<Protocol>;
   using base_type = ::iocoro::detail::basic_io_handle<impl_type>;
 
   basic_acceptor() = delete;

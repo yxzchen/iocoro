@@ -7,7 +7,7 @@
 #include <iocoro/io_context.hpp>
 #include <iocoro/shutdown.hpp>
 
-#include <iocoro/detail/ip/basic_stream_socket_impl.hpp>
+#include <iocoro/detail/net/basic_stream_socket_impl.hpp>
 
 #include <cstddef>
 #include <span>
@@ -22,7 +22,7 @@ namespace iocoro::ip {
 ///   (fd lifecycle, cancel/close, socket options, native_handle).
 /// - `iocoro::ip::basic_stream_socket<Protocol>` is the protocol-typed *network facade*
 ///   providing connect/read/write/endpoint/shutdown semantics.
-/// - The protocol-injected implementation is `detail::ip::basic_stream_socket_impl<Protocol>`,
+/// - The protocol-injected implementation is `detail::net::basic_stream_socket_impl<Protocol>`,
 ///   built on top of `detail::socket::stream_socket_impl` (protocol-agnostic stream IO).
 ///
 /// Construction:
@@ -31,11 +31,11 @@ namespace iocoro::ip {
 template <class Protocol>
 class basic_stream_socket
     : public ::iocoro::detail::basic_io_handle<
-          ::iocoro::detail::ip::basic_stream_socket_impl<Protocol>> {
+          ::iocoro::detail::net::basic_stream_socket_impl<Protocol>> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
-  using impl_type = ::iocoro::detail::ip::basic_stream_socket_impl<Protocol>;
+  using impl_type = ::iocoro::detail::net::basic_stream_socket_impl<Protocol>;
   using base_type = ::iocoro::detail::basic_io_handle<impl_type>;
 
   basic_stream_socket() = delete;
