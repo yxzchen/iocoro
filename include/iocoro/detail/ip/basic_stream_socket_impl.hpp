@@ -7,34 +7,38 @@
 #include <iocoro/shutdown.hpp>
 
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
-#include <iocoro/ip/tcp/endpoint.hpp>
 
 #include <cstddef>
 #include <span>
 #include <system_error>
 
-#include <netinet/in.h>
+// Native socket APIs.
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <cerrno>
 
-namespace iocoro::detail::ip::tcp {
+namespace iocoro::detail::ip {
 
-/// TCP socket implementation (IP-specific adapter).
+/// Generic stream-socket implementation for IP protocols, parameterized by Protocol.
 ///
-/// Design choice:
-/// - Uses composition (NOT inheritance): holds a `socket::stream_socket_impl`.
-/// - This avoids exposing unrelated stream interfaces when we add other stream protocols
-///   (e.g. Unix domain sockets) that also reuse `stream_socket_impl`.
-class socket_impl {
+/// This is a protocol-injected adapter on top of `detail::socket::stream_socket_impl`.
+/// Protocol injection points:
+/// - `Protocol::type()` and `Protocol::protocol()` (SOCK_* / IPPROTO_*)
+/// - `typename Protocol::endpoint` for higher-level endpoint typing
+template <class Protocol>
+class basic_stream_socket_impl {
  public:
-  socket_impl() noexcept = default;
-  explicit socket_impl(executor ex) noexcept : stream_(ex) {}
+  using endpoint_type = typename Protocol::endpoint;
 
-  socket_impl(socket_impl const&) = delete;
-  auto operator=(socket_impl const&) -> socket_impl& = delete;
-  socket_impl(socket_impl&&) = delete;
-  auto operator=(socket_impl&&) -> socket_impl& = delete;
+  basic_stream_socket_impl() noexcept = default;
+  explicit basic_stream_socket_impl(executor ex) noexcept : stream_(ex) {}
 
-  ~socket_impl() = default;
+  basic_stream_socket_impl(basic_stream_socket_impl const&) = delete;
+  auto operator=(basic_stream_socket_impl const&) -> basic_stream_socket_impl& = delete;
+  basic_stream_socket_impl(basic_stream_socket_impl&&) = delete;
+  auto operator=(basic_stream_socket_impl&&) -> basic_stream_socket_impl& = delete;
+
+  ~basic_stream_socket_impl() = default;
 
   auto get_executor() const noexcept -> executor { return stream_.get_executor(); }
   auto native_handle() const noexcept -> int { return stream_.native_handle(); }
@@ -45,7 +49,7 @@ class socket_impl {
   void cancel_write() noexcept { stream_.cancel_write(); }
   void close() noexcept { stream_.close(); }
 
-  auto local_endpoint() const -> expected<iocoro::ip::tcp::endpoint, std::error_code> {
+  auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
     auto const fd = stream_.native_handle();
     if (fd < 0) return unexpected(error::not_open);
 
@@ -54,10 +58,10 @@ class socket_impl {
     if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
       return unexpected(std::error_code(errno, std::generic_category()));
     }
-    return iocoro::ip::tcp::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+    return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
 
-  auto remote_endpoint() const -> expected<iocoro::ip::tcp::endpoint, std::error_code> {
+  auto remote_endpoint() const -> expected<endpoint_type, std::error_code> {
     auto const fd = stream_.native_handle();
     if (fd < 0) return unexpected(error::not_open);
     if (!stream_.is_connected()) return unexpected(error::not_connected);
@@ -68,7 +72,7 @@ class socket_impl {
       if (errno == ENOTCONN) return unexpected(error::not_connected);
       return unexpected(std::error_code(errno, std::generic_category()));
     }
-    return iocoro::ip::tcp::endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+    return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
 
   auto shutdown(shutdown_type what) -> std::error_code { return stream_.shutdown(what); }
@@ -85,12 +89,10 @@ class socket_impl {
     return stream_.get_option(opt);
   }
 
-  auto async_connect(iocoro::ip::tcp::endpoint const& ep) -> awaitable<std::error_code> {
-    // For TCP sockets, it's reasonable to open on-demand based on the endpoint family.
-    // This matches typical user expectations: construct socket with executor,
-    // then connect without an explicit open().
+  auto async_connect(endpoint_type const& ep) -> awaitable<std::error_code> {
+    // For stream sockets, it's reasonable to open on-demand based on the endpoint family.
     if (!stream_.is_open()) {
-      auto ec = stream_.open(ep.family(), SOCK_STREAM, IPPROTO_TCP);
+      auto ec = stream_.open(ep.family(), Protocol::type(), Protocol::protocol());
       if (ec) co_return ec;
     }
     co_return co_await stream_.async_connect(ep.data(), ep.size());
@@ -107,12 +109,12 @@ class socket_impl {
   }
 
   /// Adopt an already-connected native fd (from accept()).
-  ///
-  /// This is intended for use by `tcp::acceptor` only.
   auto assign(int fd) noexcept -> std::error_code { return stream_.assign(fd); }
 
  private:
   socket::stream_socket_impl stream_{};
 };
 
-}  // namespace iocoro::detail::ip::tcp
+}  // namespace iocoro::detail::ip
+
+

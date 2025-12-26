@@ -2,6 +2,7 @@
 
 #include <iocoro/ip/basic_endpoint.hpp>
 #include <iocoro/ip/basic_acceptor.hpp>
+#include <iocoro/ip/basic_stream_socket.hpp>
 #include <iocoro/ip/protocol.hpp>
 
 #include <netinet/in.h>
@@ -18,6 +19,7 @@ namespace iocoro::ip {
 struct tcp {
   using endpoint = ip::basic_endpoint<tcp>;
   using acceptor = ip::basic_acceptor<tcp>;
+  using socket = ip::basic_stream_socket<tcp>;
 
   static constexpr auto type() noexcept -> int { return SOCK_STREAM; }
   static constexpr auto protocol() noexcept -> int { return IPPROTO_TCP; }

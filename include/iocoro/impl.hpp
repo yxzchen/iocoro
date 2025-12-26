@@ -15,5 +15,4 @@
 
 #include <iocoro/impl/ip/address.ipp>
 #include <iocoro/impl/ip/basic_endpoint.ipp>
-#include <iocoro/impl/ip/tcp/socket.ipp>
 #include <iocoro/impl/ip/udp/socket.ipp>
