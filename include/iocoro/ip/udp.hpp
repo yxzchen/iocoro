@@ -2,7 +2,7 @@
 
 #include <iocoro/ip/basic_endpoint.hpp>
 #include <iocoro/ip/basic_resolver.hpp>
-#include <iocoro/ip/protocol_concepts.hpp>
+#include <iocoro/net/protocol.hpp>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -21,7 +21,7 @@ struct udp {
   static constexpr auto protocol() noexcept -> int { return IPPROTO_UDP; }
 };
 
-static_assert(ip_protocol<udp>);
+static_assert(::iocoro::net::protocol_tag<udp>);
 
 }  // namespace iocoro::ip
 

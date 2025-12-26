@@ -4,7 +4,7 @@
 #include <iocoro/ip/basic_acceptor.hpp>
 #include <iocoro/ip/basic_resolver.hpp>
 #include <iocoro/ip/basic_stream_socket.hpp>
-#include <iocoro/ip/protocol_concepts.hpp>
+#include <iocoro/net/protocol.hpp>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -27,7 +27,7 @@ struct tcp {
   static constexpr auto protocol() noexcept -> int { return IPPROTO_TCP; }
 };
 
-static_assert(ip_protocol<tcp>);
+static_assert(::iocoro::net::protocol_tag<tcp>);
 
 }  // namespace iocoro::ip
 
