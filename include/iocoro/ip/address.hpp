@@ -105,7 +105,9 @@ class address {
   constexpr auto to_v6() const -> address_v6 { return std::get<address_v6>(storage_); }
 
   auto to_string() const -> std::string {
-    if (is_v4()) return std::get<address_v4>(storage_).to_string();
+    if (is_v4()) {
+      return std::get<address_v4>(storage_).to_string();
+    }
     return std::get<address_v6>(storage_).to_string();
   }
 

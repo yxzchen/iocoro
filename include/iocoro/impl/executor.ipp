@@ -7,9 +7,9 @@
 
 namespace iocoro {
 
-executor::executor(detail::io_context_impl& impl) noexcept : impl_{&impl} {}
+inline executor::executor(detail::io_context_impl& impl) noexcept : impl_{&impl} {}
 
-executor::executor() noexcept : impl_{nullptr} {}
+inline executor::executor() noexcept : impl_{nullptr} {}
 
 inline void executor::execute(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
 inline void executor::post(std::function<void()> f) const { ensure_impl().post(std::move(f)); }

@@ -106,7 +106,9 @@ struct timer_entry {
     std::vector<std::function<void()>> local;
     {
       std::scoped_lock lk{waiters_mutex};
-      if (completion_notified) return 0;
+      if (completion_notified) {
+        return 0;
+      }
       completion_notified = true;
       local.swap(waiters);
     }

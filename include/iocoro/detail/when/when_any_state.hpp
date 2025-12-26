@@ -2,7 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detail/when/state_base.hpp>
+#include <iocoro/detail/when/when_state_base.hpp>
 
 #include <coroutine>
 #include <cstddef>

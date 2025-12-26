@@ -61,11 +61,15 @@ struct awaitable_promise_base {
   void set_continuation(std::coroutine_handle<> h) noexcept {
     continuation_ = h;
     // Child coroutines inherit the current executor by default.
-    if (!ex_) ex_ = detail::get_current_executor();
+    if (!ex_) {
+      ex_ = detail::get_current_executor();
+    }
   }
 
   void resume_continuation() noexcept {
-    if (!continuation_) return;
+    if (!continuation_) {
+      return;
+    }
 
     IOCORO_ENSURE(ex_, "awaitable_promise: resume_continuation() requires executor");
 
@@ -79,7 +83,9 @@ struct awaitable_promise_base {
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
 
   void rethrow_if_exception() {
-    if (exception_) std::rethrow_exception(exception_);
+    if (exception_) {
+      std::rethrow_exception(exception_);
+    }
   }
 
   template <typename Awaitable>

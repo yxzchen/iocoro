@@ -5,12 +5,11 @@
 // and acceptors. Most users should include <iocoro/iocoro.hpp>.
 
 #include <iocoro/ip/address.hpp>
-#include <iocoro/ip/basic_endpoint.hpp>
+#include <iocoro/ip/endpoint.hpp>
 #include <iocoro/ip/resolver.hpp>
 
-#include <iocoro/ip/tcp/acceptor.hpp>
-#include <iocoro/ip/tcp/endpoint.hpp>
-#include <iocoro/ip/tcp/socket.hpp>
+#include <iocoro/ip/tcp.hpp>
+#include <iocoro/ip/udp.hpp>
 
-#include <iocoro/ip/udp/endpoint.hpp>
-#include <iocoro/ip/udp/socket.hpp>
+#include <iocoro/impl/ip/address.ipp>
+#include <iocoro/impl/ip/endpoint_storage.ipp>

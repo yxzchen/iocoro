@@ -9,15 +9,23 @@ namespace {
 
 inline auto set_nonblocking(int fd) noexcept -> bool {
   int flags = ::fcntl(fd, F_GETFL, 0);
-  if (flags < 0) return false;
-  if ((flags & O_NONBLOCK) != 0) return true;
+  if (flags < 0) {
+    return false;
+  }
+  if ((flags & O_NONBLOCK) != 0) {
+    return true;
+  }
   return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
 inline auto set_cloexec(int fd) noexcept -> bool {
   int flags = ::fcntl(fd, F_GETFD, 0);
-  if (flags < 0) return false;
-  if ((flags & FD_CLOEXEC) != 0) return true;
+  if (flags < 0) {
+    return false;
+  }
+  if ((flags & FD_CLOEXEC) != 0) {
+    return true;
+  }
   return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
 }
 
@@ -61,7 +69,9 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
 }
 
 inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
-  if (fd < 0) return error::invalid_argument;
+  if (fd < 0) {
+    return error::invalid_argument;
+  }
 
   int old_fd = -1;
   fd_event_handle rh{};

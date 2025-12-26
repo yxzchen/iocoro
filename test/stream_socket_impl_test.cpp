@@ -7,7 +7,7 @@
 #include <iocoro/io/async_read_until.hpp>
 #include <iocoro/io/async_write.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/ip/tcp/endpoint.hpp>
+#include <iocoro/ip.hpp>
 
 #include "test_util.hpp"
 
@@ -540,8 +540,8 @@ TEST(stream_socket_impl_test, shutdown_read_and_write_edges) {
                            w0.error()};
       EXPECT_EQ(*w0, 0U);
 
-      auto shut_r_ec = s.shutdown(iocoro::shutdown_type::read);
-      auto shut_w_ec = s.shutdown(iocoro::shutdown_type::write);
+      auto shut_r_ec = s.shutdown(iocoro::shutdown_type::receive);
+      auto shut_w_ec = s.shutdown(iocoro::shutdown_type::send);
 
       auto rr = co_await s.async_read_some(buf);
       if (!rr) co_return result_t{connect_ec, shut_r_ec, shut_w_ec, std::size_t{123}, rr.error()};

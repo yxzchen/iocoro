@@ -4,10 +4,7 @@
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/ip/address.hpp>
-#include <iocoro/ip/tcp/acceptor.hpp>
-#include <iocoro/ip/tcp/endpoint.hpp>
-#include <iocoro/ip/tcp/socket.hpp>
+#include <iocoro/ip.hpp>
 #include <iocoro/socket_option.hpp>
 
 #include "test_util.hpp"
@@ -231,7 +228,8 @@ TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
 
       char got[2]{};
       if (!read_exact(c.fd, got, 2)) co_return std::error_code(errno, std::generic_category());
-      if (got[0] != 'o' || got[1] != 'k') co_return iocoro::make_error_code(iocoro::error::invalid_argument);
+      if (got[0] != 'o' || got[1] != 'k')
+        co_return iocoro::make_error_code(iocoro::error::invalid_argument);
     }
 
     co_return std::error_code{};
@@ -246,7 +244,8 @@ TEST(tcp_acceptor_test, cancel_aborts_waiting_accept) {
   auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
     if (auto ec = a.open(AF_INET)) co_return ec;
-    if (auto ec = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0})) co_return ec;
+    if (auto ec = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0}))
+      co_return ec;
     if (auto ec = a.listen(16)) co_return ec;
 
     std::error_code out{};
@@ -280,7 +279,8 @@ TEST(tcp_acceptor_test, close_aborts_waiting_accept) {
   auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
     if (auto ec = a.open(AF_INET)) co_return ec;
-    if (auto ec = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0})) co_return ec;
+    if (auto ec = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0}))
+      co_return ec;
     if (auto ec = a.listen(16)) co_return ec;
 
     std::error_code out{};
@@ -313,7 +313,8 @@ TEST(tcp_acceptor_test, multiple_async_accept_are_queued_and_all_succeed) {
   auto ec = iocoro::sync_wait_for(ctx, 2s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
     if (auto e = a.open(AF_INET)) co_return e;
-    if (auto e = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0})) co_return e;
+    if (auto e = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0}))
+      co_return e;
     if (auto e = a.listen(16)) co_return e;
 
     auto le = a.local_endpoint();
@@ -373,7 +374,8 @@ TEST(tcp_acceptor_test, multiple_async_accept_are_queued_and_all_succeed) {
 
     if (e1) co_return e1;
     if (e2) co_return e2;
-    if (!r1.has_value() || !r2.has_value()) co_return iocoro::make_error_code(iocoro::error::invalid_argument);
+    if (!r1.has_value() || !r2.has_value())
+      co_return iocoro::make_error_code(iocoro::error::invalid_argument);
     if (*r1 == 0 || *r2 == 0) co_return iocoro::make_error_code(iocoro::error::invalid_argument);
     if (*r1 == *r2) co_return iocoro::make_error_code(iocoro::error::invalid_argument);
 
@@ -383,5 +385,3 @@ TEST(tcp_acceptor_test, multiple_async_accept_are_queued_and_all_succeed) {
 }
 
 }  // namespace
-
-

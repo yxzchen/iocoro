@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/impl.hpp>
-#include <iocoro/ip/tcp/endpoint.hpp>
+#include <iocoro/iocoro.hpp>
+#include <iocoro/ip.hpp>
 
 #include <system_error>
 
