@@ -7,11 +7,11 @@
 #include <iocoro/io_context.hpp>
 
 #include <iocoro/detail/net/basic_acceptor_impl.hpp>
-#include <iocoro/ip/basic_stream_socket.hpp>
+#include <iocoro/net/basic_stream_socket.hpp>
 
 #include <system_error>
 
-namespace iocoro::ip {
+namespace iocoro::net {
 
 /// Protocol-typed acceptor facade (network semantic layer).
 ///
@@ -22,6 +22,7 @@ namespace iocoro::ip {
 ///
 /// Important:
 /// - This type is protocol-typed (via `Protocol` template parameter).
+/// - `open(family)` takes an explicit family, while Protocol decides type/protocol.
 /// - `async_accept()` returns a connected `basic_stream_socket<Protocol>` and adopts the
 ///   accepted native fd internally.
 template <class Protocol>
@@ -90,6 +91,6 @@ class basic_acceptor
   using base_type::set_option;
 };
 
-}  // namespace iocoro::ip
+}  // namespace iocoro::net
 
 

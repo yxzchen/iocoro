@@ -13,17 +13,17 @@
 #include <span>
 #include <system_error>
 
-namespace iocoro::ip {
+namespace iocoro::net {
 
 /// Protocol-typed stream socket facade (network semantic layer).
 ///
 /// Layering / responsibilities (important):
 /// - `iocoro::detail::basic_io_handle<Impl>` is a small protocol-agnostic PImpl wrapper
 ///   (fd lifecycle, cancel/close, socket options, native_handle).
-/// - `iocoro::ip::basic_stream_socket<Protocol>` is the protocol-typed *network facade*
+/// - `iocoro::net::basic_stream_socket<Protocol>` is the protocol-typed *network facade*
 ///   providing connect/read/write/endpoint/shutdown semantics.
-/// - The protocol-injected implementation is `detail::net::basic_stream_socket_impl<Protocol>`,
-///   built on top of `detail::socket::stream_socket_impl` (protocol-agnostic stream IO).
+/// - The protocol-injected implementation is `iocoro::detail::net::basic_stream_socket_impl<Protocol>`,
+///   built on top of `iocoro::detail::socket::stream_socket_impl` (protocol-agnostic stream IO).
 ///
 /// Construction:
 /// - No default constructor: a socket must be bound to an executor (or io_context) up-front.
@@ -95,6 +95,6 @@ class basic_stream_socket
   auto assign(int fd) -> std::error_code { return this->impl_->assign(fd); }
 };
 
-}  // namespace iocoro::ip
+}  // namespace iocoro::net
 
 
