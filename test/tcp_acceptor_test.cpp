@@ -4,8 +4,7 @@
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/ip/address.hpp>
-#include <iocoro/ip/tcp.hpp>
+#include <iocoro/ip.hpp>
 #include <iocoro/socket_option.hpp>
 
 #include "test_util.hpp"

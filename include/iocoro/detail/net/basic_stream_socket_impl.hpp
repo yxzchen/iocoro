@@ -28,7 +28,7 @@ class basic_stream_socket_impl {
  public:
   using endpoint_type = typename Protocol::endpoint;
 
-  basic_stream_socket_impl() noexcept = default;
+  basic_stream_socket_impl() noexcept = delete;
   explicit basic_stream_socket_impl(executor ex) noexcept : stream_(ex) {}
 
   basic_stream_socket_impl(basic_stream_socket_impl const&) = delete;
@@ -81,7 +81,7 @@ class basic_stream_socket_impl {
   auto assign(int fd) noexcept -> std::error_code { return stream_.assign(fd); }
 
  private:
-  socket::stream_socket_impl stream_{};
+  socket::stream_socket_impl stream_;
 };
 
 }  // namespace iocoro::detail::net

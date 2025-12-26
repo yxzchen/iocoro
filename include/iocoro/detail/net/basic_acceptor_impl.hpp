@@ -33,7 +33,7 @@ class basic_acceptor_impl {
  public:
   using endpoint_type = typename Protocol::endpoint;
 
-  basic_acceptor_impl() noexcept = default;
+  basic_acceptor_impl() noexcept = delete;
   explicit basic_acceptor_impl(executor ex) noexcept : base_(ex) {}
 
   basic_acceptor_impl(basic_acceptor_impl const&) = delete;
@@ -126,7 +126,8 @@ class basic_acceptor_impl {
     return final_action<F>(std::move(f));
   }
 
-  socket::socket_impl_base base_{};
+  socket::socket_impl_base base_;
+
   mutable std::mutex mtx_{};
   bool listening_{false};
   bool accept_active_{false};

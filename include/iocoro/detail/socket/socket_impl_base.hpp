@@ -40,7 +40,7 @@ class socket_impl_base {
  public:
   using fd_event_handle = io_context_impl::fd_event_handle;
 
-  socket_impl_base() noexcept = default;
+  socket_impl_base() noexcept = delete;
   explicit socket_impl_base(executor ex) noexcept : ex_(ex) {}
 
   socket_impl_base(socket_impl_base const&) = delete;

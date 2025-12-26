@@ -34,7 +34,7 @@ namespace iocoro::detail::socket {
 ///   per direction (read/write).
 class stream_socket_impl {
  public:
-  stream_socket_impl() noexcept = default;
+  stream_socket_impl() noexcept = delete;
   explicit stream_socket_impl(executor ex) noexcept : base_(ex) {}
 
   stream_socket_impl(stream_socket_impl const&) = delete;
@@ -179,7 +179,7 @@ class stream_socket_impl {
     return final_action<F>(std::move(f));
   }
 
-  socket_impl_base base_{};
+  socket_impl_base base_;
 
   mutable std::mutex mtx_{};
 

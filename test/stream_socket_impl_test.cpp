@@ -7,7 +7,7 @@
 #include <iocoro/io/async_read_until.hpp>
 #include <iocoro/io/async_write.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/ip/tcp.hpp>
+#include <iocoro/ip.hpp>
 
 #include "test_util.hpp"
 
