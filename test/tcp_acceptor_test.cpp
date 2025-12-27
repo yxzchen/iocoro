@@ -126,43 +126,6 @@ TEST(tcp_acceptor_test, async_accept_without_open_returns_not_open) {
   EXPECT_EQ(r.error(), iocoro::error::not_open);
 }
 
-TEST(tcp_acceptor_test, open_without_listen_async_accept_returns_not_listening) {
-  iocoro::io_context ctx;
-  iocoro::ip::tcp::acceptor a{ctx};
-
-  auto ec = a.open(AF_INET);
-  ASSERT_FALSE(ec) << ec.message();
-
-  auto r = iocoro::sync_wait_for(ctx, 200ms, a.async_accept());
-  ASSERT_FALSE(r);
-  EXPECT_EQ(r.error(), iocoro::error::not_listening);
-}
-
-TEST(tcp_acceptor_test, bind_listen_local_endpoint_errors_when_not_open) {
-  iocoro::io_context ctx;
-  iocoro::ip::tcp::acceptor a{ctx};
-
-  iocoro::ip::tcp::endpoint ep{iocoro::ip::address_v4::loopback(), 0};
-
-  auto ec = a.bind(ep);
-  EXPECT_EQ(ec, iocoro::error::not_open);
-
-  ec = a.listen(16);
-  EXPECT_EQ(ec, iocoro::error::not_open);
-
-  auto le = a.local_endpoint();
-  EXPECT_FALSE(le);
-  EXPECT_EQ(le.error(), iocoro::error::not_open);
-}
-
-TEST(tcp_acceptor_test, open_invalid_family_returns_error) {
-  iocoro::io_context ctx;
-  iocoro::ip::tcp::acceptor a{ctx};
-
-  auto ec = a.open(-1);
-  EXPECT_TRUE(static_cast<bool>(ec));
-}
-
 TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
@@ -170,13 +133,12 @@ TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   auto ec = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
 
-    if (auto e = a.open(AF_INET)) co_return e;
-    (void)a.set_option(iocoro::socket_option::reuse_address{true});
-
-    if (auto e = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0})) {
+    auto ep = iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0};
+    if (auto e = a.listen(ep, 16, [&](auto& acc) {
+          (void)acc.set_option(iocoro::socket_option::reuse_address{true});
+        })) {
       co_return e;
     }
-    if (auto e = a.listen(16)) co_return e;
 
     auto le = a.local_endpoint();
     if (!le) co_return le.error();
@@ -243,10 +205,10 @@ TEST(tcp_acceptor_test, cancel_aborts_waiting_accept) {
 
   auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
-    if (auto ec = a.open(AF_INET)) co_return ec;
-    if (auto ec = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0}))
+    auto ep = iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0};
+    if (auto ec = a.listen(ep, 16)) {
       co_return ec;
-    if (auto ec = a.listen(16)) co_return ec;
+    }
 
     std::error_code out{};
     auto task = iocoro::co_spawn(
@@ -278,10 +240,10 @@ TEST(tcp_acceptor_test, close_aborts_waiting_accept) {
 
   auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
-    if (auto ec = a.open(AF_INET)) co_return ec;
-    if (auto ec = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0}))
+    auto ep = iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0};
+    if (auto ec = a.listen(ep, 16)) {
       co_return ec;
-    if (auto ec = a.listen(16)) co_return ec;
+    }
 
     std::error_code out{};
     auto task = iocoro::co_spawn(
@@ -312,10 +274,10 @@ TEST(tcp_acceptor_test, multiple_async_accept_are_queued_and_all_succeed) {
 
   auto ec = iocoro::sync_wait_for(ctx, 2s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
-    if (auto e = a.open(AF_INET)) co_return e;
-    if (auto e = a.bind(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0}))
+    auto ep = iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0};
+    if (auto e = a.listen(ep, 16)) {
       co_return e;
-    if (auto e = a.listen(16)) co_return e;
+    }
 
     auto le = a.local_endpoint();
     if (!le) co_return le.error();

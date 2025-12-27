@@ -145,27 +145,6 @@ TEST(local_stream_acceptor_test, async_accept_without_open_returns_not_open) {
   EXPECT_EQ(r.error(), iocoro::error::not_open);
 }
 
-TEST(local_stream_acceptor_test, bind_listen_local_endpoint_errors_when_not_open) {
-  iocoro::io_context ctx;
-  iocoro::local::stream::acceptor a{ctx};
-
-  auto path = make_temp_unix_path();
-  unlink_guard g{path};
-  auto ep_r = iocoro::local::endpoint::from_path(path);
-  ASSERT_TRUE(ep_r) << ep_r.error().message();
-  auto ep = *ep_r;
-
-  auto ec = a.bind(ep);
-  EXPECT_EQ(ec, iocoro::error::not_open);
-
-  ec = a.listen(16);
-  EXPECT_EQ(ec, iocoro::error::not_open);
-
-  auto le = a.local_endpoint();
-  EXPECT_FALSE(le);
-  EXPECT_EQ(le.error(), iocoro::error::not_open);
-}
-
 TEST(local_stream_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
@@ -179,13 +158,7 @@ TEST(local_stream_acceptor_test, open_bind_listen_accept_and_exchange_data) {
 
   auto ec = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::local::stream::acceptor a{ex};
-    if (auto e = a.open(AF_UNIX)) {
-      co_return e;
-    }
-    if (auto e = a.bind(ep)) {
-      co_return e;
-    }
-    if (auto e = a.listen(16)) {
+    if (auto e = a.listen(ep, 16)) {
       co_return e;
     }
 
@@ -268,13 +241,7 @@ TEST(local_stream_acceptor_test, cancel_aborts_waiting_accept) {
 
   auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::local::stream::acceptor a{ex};
-    if (auto ec = a.open(AF_UNIX)) {
-      co_return ec;
-    }
-    if (auto ec = a.bind(ep)) {
-      co_return ec;
-    }
-    if (auto ec = a.listen(16)) {
+    if (auto ec = a.listen(ep, 16)) {
       co_return ec;
     }
 
@@ -315,13 +282,7 @@ TEST(local_stream_acceptor_test, close_aborts_waiting_accept) {
 
   auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::local::stream::acceptor a{ex};
-    if (auto ec = a.open(AF_UNIX)) {
-      co_return ec;
-    }
-    if (auto ec = a.bind(ep)) {
-      co_return ec;
-    }
-    if (auto ec = a.listen(16)) {
+    if (auto ec = a.listen(ep, 16)) {
       co_return ec;
     }
 
@@ -362,13 +323,7 @@ TEST(local_stream_socket_test, async_connect_and_exchange_data) {
 
   auto ec = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::local::stream::acceptor a{ex};
-    if (auto e = a.open(AF_UNIX)) {
-      co_return e;
-    }
-    if (auto e = a.bind(ep)) {
-      co_return e;
-    }
-    if (auto e = a.listen(16)) {
+    if (auto e = a.listen(ep, 16)) {
       co_return e;
     }
 
