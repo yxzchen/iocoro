@@ -63,6 +63,18 @@ struct spawn_state {
   Function function_;
 };
 
+/// State stored in the unified co_spawn entry point coroutine frame (completion-callback mode).
+template <typename Executor, typename Function, typename Completion>
+struct spawn_state_with_completion {
+  template <typename F, typename C>
+  spawn_state_with_completion(Executor ex, F&& f, C&& c)
+    : ex_(std::move(ex)), function_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
+
+  Executor ex_;
+  Function function_;
+  Completion completion_;
+};
+
 /// Wrap an awaitable<T> as a nullary callable returning awaitable<T>.
 /// This lets awaitables and callables share the same spawn_entry_point code path.
 template <typename T>
@@ -91,6 +103,36 @@ auto spawn_entry_point(spawn_state<Executor, Function> state) -> awaitable<T> {
   }
 }
 
+template <typename T, typename Executor, typename Function, typename Completion>
+auto spawn_entry_point_with_completion(spawn_state_with_completion<Executor, Function, Completion> state)
+  -> awaitable<void> {
+  try {
+    if constexpr (std::is_void_v<T>) {
+      co_await state.function_();
+      try {
+        state.completion_(spawn_expected<void>{});
+      } catch (...) {
+        // Completion callback exceptions are swallowed (detached semantics).
+      }
+    } else {
+      auto v = co_await state.function_();
+      try {
+        state.completion_(spawn_expected<T>{std::move(v)});
+      } catch (...) {
+        // Completion callback exceptions are swallowed (detached semantics).
+      }
+    }
+  } catch (...) {
+    auto ep = std::current_exception();
+    try {
+      state.completion_(spawn_expected<T>{unexpected(ep)});
+    } catch (...) {
+      // Completion callback exceptions are swallowed (detached semantics).
+    }
+  }
+  co_return;
+}
+
 template <typename T>
 auto bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {
   auto h = a.release();
@@ -113,37 +155,6 @@ void spawn_detached_impl(executor ex, awaitable<T> a) {
       // Detached mode: swallow exceptions
     }
   });
-}
-
-template <typename T, typename Completion>
-auto completion_wrapper(executor ex, awaitable<T> a, Completion completion) -> awaitable<void> {
-  // Ensure the task itself is bound to `ex` before it starts.
-  auto bound = bind_executor<T>(ex, std::move(a));
-
-  try {
-    if constexpr (std::is_void_v<T>) {
-      co_await std::move(bound);
-      try {
-        completion(spawn_expected<void>{});
-      } catch (...) {
-        // Completion callback exceptions are swallowed (detached semantics).
-      }
-    } else {
-      auto v = co_await std::move(bound);
-      try {
-        completion(spawn_expected<T>{std::move(v)});
-      } catch (...) {
-        // Completion callback exceptions are swallowed (detached semantics).
-      }
-    }
-  } catch (...) {
-    auto ep = std::current_exception();
-    try {
-      completion(spawn_expected<T>{unexpected(ep)});
-    } catch (...) {
-      // Completion callback exceptions are swallowed (detached semantics).
-    }
-  }
 }
 
 template <typename T>
