@@ -12,19 +12,13 @@ namespace iocoro {
 /// the frame will be destroyed at final_suspend.
 template <typename T>
 void co_spawn(executor ex, awaitable<T> a, detached_t) {
-  auto h = a.release();
+  detail::awaitable_as_function<T> wrapper(std::move(a));
+  using wrapper_type = detail::awaitable_as_function<T>;
 
-  h.promise().set_executor(ex);
-  h.promise().detach();
+  auto state = detail::spawn_state<executor, wrapper_type>(ex, std::move(wrapper));
+  auto entry = detail::spawn_entry_point<T>(std::move(state));
 
-  ex.post([h, ex]() mutable {
-    detail::executor_guard g{ex};
-    try {
-      h.resume();
-    } catch (...) {
-      // Detached mode: swallow exceptions
-    }
-  });
+  detail::spawn_detached_impl(ex, std::move(entry));
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor (detached).
@@ -35,17 +29,13 @@ void co_spawn(executor ex, awaitable<T> a, detached_t) {
 template <typename F>
   requires detail::awaitable_factory<std::remove_cvref_t<F>>
 void co_spawn(executor ex, F&& f, detached_t) {
-  co_spawn(ex, detail::invoke_and_await(std::remove_cvref_t<F>(std::forward<F>(f))), detached);
-}
+  using function_type = std::decay_t<F>;
+  using value_type = detail::awaitable_value_t<function_type>;
 
-/// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
-/// awaitable that can be awaited to obtain the result.
-template <typename F>
-  requires detail::awaitable_factory<std::remove_cvref_t<F>>
-auto co_spawn(executor ex, F&& f, use_awaitable_t)
-  -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
-  return co_spawn(ex, detail::invoke_and_await(std::remove_cvref_t<F>(std::forward<F>(f))),
-                  use_awaitable);
+  auto state = detail::spawn_state<executor, function_type>(ex, std::forward<F>(f));
+  auto entry = detail::spawn_entry_point<value_type>(std::move(state));
+
+  detail::spawn_detached_impl(ex, std::move(entry));
 }
 
 /// Start an awaitable on the given executor, returning an awaitable that can be awaited
@@ -54,10 +44,30 @@ template <typename T>
 auto co_spawn(executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
   // Hot-start: start running immediately (via detached runner), and return an awaitable
   // that only waits for completion and yields the result.
-  auto st = std::make_shared<detail::spawn_state<T>>(ex);
+  auto st = std::make_shared<detail::spawn_wait_state<T>>(ex);
 
   co_spawn(ex, detail::run_to_state<T>(ex, st, std::move(a)), detached);
   return detail::await_state<T>(std::move(st));
+}
+
+/// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
+/// awaitable that can be awaited to obtain the result.
+template <typename F>
+  requires detail::awaitable_factory<std::remove_cvref_t<F>>
+auto co_spawn(executor ex, F&& f, use_awaitable_t)
+  -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
+  using function_type = std::decay_t<F>;
+  using value_type = detail::awaitable_value_t<function_type>;
+
+  // Preserve hot-start semantics (tests rely on it): start immediately (once the context runs),
+  // and return an awaitable that only waits for completion and yields the result.
+  auto st = std::make_shared<detail::spawn_wait_state<value_type>>(ex);
+
+  auto state = detail::spawn_state<executor, function_type>(ex, std::forward<F>(f));
+  auto entry = detail::spawn_entry_point<value_type>(std::move(state));
+
+  co_spawn(ex, detail::run_to_state<value_type>(ex, st, std::move(entry)), detached);
+  return detail::await_state<value_type>(std::move(st));
 }
 
 /// Start an awaitable on the given executor, invoking a completion callback with either
@@ -79,8 +89,13 @@ template <typename Factory, typename Completion>
            detail::completion_callback_for<std::remove_cvref_t<Completion>,
                                            detail::awaitable_value_t<std::remove_cvref_t<Factory>>>
 void co_spawn(executor ex, Factory&& f, Completion&& completion) {
-  co_spawn(ex, detail::invoke_and_await(std::remove_cvref_t<Factory>(std::forward<Factory>(f))),
-           std::forward<Completion>(completion));
+  using function_type = std::decay_t<Factory>;
+  using value_type = detail::awaitable_value_t<function_type>;
+
+  auto state = detail::spawn_state<executor, function_type>(ex, std::forward<Factory>(f));
+  auto entry = detail::spawn_entry_point<value_type>(std::move(state));
+
+  co_spawn(ex, std::move(entry), std::forward<Completion>(completion));
 }
 
 }  // namespace iocoro
