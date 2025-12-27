@@ -38,7 +38,10 @@ struct awaitable_promise_base {
         // If detached, the coroutine owns its own lifetime.
         if (self->detached_) {
           // Detached coroutines must not have a continuation.
-          self->ex_.post([h] { h.destroy(); });
+          self->ex_.post([h, ex = self->ex_]() mutable {
+            detail::executor_guard g{ex};
+            h.destroy();
+          });
           return;
         }
 

@@ -257,7 +257,10 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_
 
   // Resume next waiter (if it actually suspended).
   if (next_h) {
-    ex.post([h = next_h] { h.resume(); });
+    ex.post([h = next_h, ex] {
+      detail::executor_guard g{ex};
+      h.resume();
+    });
   }
 }
 
