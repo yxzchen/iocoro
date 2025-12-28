@@ -261,7 +261,6 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expec
   auto ex = ctx.get_executor();
   ctx.restart();
 
-  std::atomic<bool> on_timeout_called{false};
   std::atomic<bool> op_completed{false};
 
   std::atomic<bool> done{false};
@@ -275,7 +274,7 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expec
         op_completed.store(true, std::memory_order_release);
         co_return 7;
       }(),
-      5ms, [&]() { on_timeout_called.store(true, std::memory_order_release); });
+      5ms);
   };
 
   iocoro::co_spawn(
@@ -299,7 +298,6 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expec
   ASSERT_TRUE(out.has_value());
   ASSERT_FALSE(*out);
   EXPECT_EQ(out->error(), iocoro::error::timed_out);
-  EXPECT_TRUE(on_timeout_called.load(std::memory_order_acquire));
   EXPECT_FALSE(op_completed.load(std::memory_order_acquire));
 }
 
@@ -310,7 +308,6 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
   auto ex = ctx.get_executor();
   ctx.restart();
 
-  std::atomic<bool> on_timeout_called{false};
   std::atomic<bool> op_completed{false};
 
   std::atomic<bool> done{false};
@@ -324,7 +321,7 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
         op_completed.store(true, std::memory_order_release);
         co_return std::error_code{};
       }(),
-      5ms, [&]() { on_timeout_called.store(true, std::memory_order_release); });
+      5ms);
   };
 
   iocoro::co_spawn(ex, main(), [&](iocoro::expected<std::error_code, std::exception_ptr> r) mutable {
@@ -345,7 +342,6 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
   }
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(*out, iocoro::error::timed_out);
-  EXPECT_TRUE(on_timeout_called.load(std::memory_order_acquire));
   EXPECT_FALSE(op_completed.load(std::memory_order_acquire));
 }
 

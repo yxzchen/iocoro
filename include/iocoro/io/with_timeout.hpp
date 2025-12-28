@@ -110,10 +110,9 @@ auto with_timeout_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> 
   co_return r;
 }
 
-template <class Result, class Rep, class Period, class OnTimeout>
-  requires std::invocable<OnTimeout&>
-auto with_timeout_detached_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout,
-                                OnTimeout&& on_timeout) -> awaitable<Result> {
+template <class Result, class Rep, class Period>
+auto with_timeout_detached_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout)
+  -> awaitable<Result> {
   using traits = timeout_result_traits<Result>;
 
   auto ex = co_await this_coro::executor;
@@ -137,7 +136,6 @@ auto with_timeout_detached_impl(awaitable<Result> op, std::chrono::duration<Rep,
 
   auto ec = std::get<1>(std::move(v));
   if (!ec) {
-    on_timeout();
     co_return traits::timed_out();
   }
 
@@ -185,14 +183,12 @@ auto with_timeout(awaitable<Result> op, std::chrono::duration<Rep, Period> timeo
 ///
 /// Semantics:
 /// - Races `op` against a timer.
-/// - If the timer fires first, calls `on_timeout()` (best-effort) and returns `error::timed_out`.
+/// - If the timer fires first, returns `error::timed_out` and does not attempt to cancel `op`.
 /// - If `op` finishes first, returns its result and does not call `on_timeout()`.
-template <class Result, class Rep, class Period, class OnTimeout>
-  requires std::invocable<OnTimeout&>
-auto with_timeout_detached(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout,
-                           OnTimeout&& on_timeout) -> awaitable<Result> {
-  co_return co_await detail::with_timeout_detached_impl(std::move(op), timeout,
-                                                        std::forward<OnTimeout>(on_timeout));
+template <class Result, class Rep, class Period>
+auto with_timeout_detached(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout)
+  -> awaitable<Result> {
+  co_return co_await detail::with_timeout_detached_impl(std::move(op), timeout);
 }
 
 /// Convenience overload that uses `Stream::cancel()` on timeout.
