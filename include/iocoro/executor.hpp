@@ -1,11 +1,10 @@
 #pragma once
 
-#include <chrono>
 #include <functional>
 
 namespace iocoro {
 
-class timer_handle;
+class steady_timer;
 
 namespace detail {
 class io_context_impl;
@@ -44,15 +43,6 @@ class executor {
   /// Dispatch the function (inline if in context thread, otherwise queued)
   void dispatch(std::function<void()> f) const;
 
-  /// Low-level timer registration primitive for using outside of coroutine.
-  /// Schedule a timer on the associated context.
-  ///
-  /// Notes:
-  /// - Timeout is clamped to >= 0.
-  /// - Callback is invoked on the context thread (via the context event loop).
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback) const
-    -> timer_handle;
-
   /// Returns true if the associated context is stopped (or executor is empty).
   auto stopped() const noexcept -> bool;
 
@@ -70,6 +60,7 @@ class executor {
   template <typename>
   friend class work_guard;
 
+  friend class steady_timer;
   friend struct detail::operation_base;
   friend class detail::socket::socket_impl_base;
 

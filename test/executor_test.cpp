@@ -3,7 +3,6 @@
 #include <iocoro/executor.hpp>
 #include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/timer_handle.hpp>
 #include <iocoro/work_guard.hpp>
 
 #include <atomic>
@@ -119,44 +118,6 @@ TEST(executor_operations, stopped_reflects_context_state) {
 
   ctx.restart();
   EXPECT_FALSE(ex.stopped());
-}
-
-// Test schedule_timer
-TEST(executor_timer, schedule_timer_creates_valid_handle) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-
-  auto handle = ex.schedule_timer(100ms, [] {});
-  EXPECT_TRUE(handle);
-  EXPECT_TRUE(handle.pending());
-}
-
-TEST(executor_timer, schedule_timer_executes_callback) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  std::atomic<bool> fired{false};
-
-  auto handle = ex.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
-
-  ctx.run_for(200ms);
-  EXPECT_TRUE(fired.load(std::memory_order_relaxed));
-  EXPECT_TRUE(handle.fired());
-}
-
-TEST(executor_timer, cancelled_timer_does_not_execute) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  std::atomic<bool> fired{false};
-
-  auto handle =
-    ex.schedule_timer(100ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
-
-  // cancel() returns the number of waiters notified, which is 0 if there are no waiters
-  handle.cancel();
-  EXPECT_TRUE(handle.cancelled());
-
-  ctx.run_for(200ms);
-  EXPECT_FALSE(fired.load(std::memory_order_relaxed));
 }
 
 // Test work_guard

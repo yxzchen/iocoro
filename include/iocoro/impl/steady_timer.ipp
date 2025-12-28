@@ -1,4 +1,5 @@
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/steady_timer.hpp>
@@ -46,7 +47,8 @@ inline void steady_timer::reschedule() {
 
   // Schedule a timer entry owned by this executor/context. We use an empty callback:
   // completion is observed via timer_entry waiter notification.
-  th_ = ex_.schedule_timer(ms, [] {});
+  auto entry = ex_.ensure_impl().schedule_timer(ms, [] {});
+  th_ = timer_handle(std::move(entry));
 }
 
 inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
