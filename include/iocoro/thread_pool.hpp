@@ -60,8 +60,11 @@ class thread_pool {
     join();
   }
 
+  auto stopped() const noexcept -> bool { return stopped_.load(std::memory_order_acquire); }
+
   /// Stop all shards (best-effort, idempotent).
   void stop() noexcept {
+    stopped_.store(true, std::memory_order_release);
     for (auto& ctx : contexts_) {
       if (ctx) {
         ctx->stop();
@@ -93,6 +96,7 @@ class thread_pool {
   std::vector<std::thread> threads_{};
 
   std::atomic<std::size_t> rr_{0};
+  std::atomic<bool> stopped_{false};
 };
 
 }  // namespace iocoro
