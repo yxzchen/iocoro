@@ -9,6 +9,7 @@
 #include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
+#include <iocoro/when_any.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -36,6 +37,8 @@ struct timeout_result_traits<iocoro::expected<T, std::error_code>> {
     return false;
   }
 
+  static auto from_error(std::error_code ec) -> result_type { return unexpected(ec); }
+
   static auto timed_out() -> result_type { return unexpected(error::timed_out); }
 };
 
@@ -49,6 +52,8 @@ struct timeout_result_traits<std::error_code> {
     }
     return false;
   }
+
+  static auto from_error(std::error_code ec) -> result_type { return ec; }
 
   static auto timed_out() -> result_type { return error::timed_out; }
 };
@@ -105,6 +110,42 @@ auto with_timeout_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> 
   co_return r;
 }
 
+template <class Result, class Rep, class Period, class OnTimeout>
+  requires std::invocable<OnTimeout&>
+auto with_timeout_detached_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout,
+                                OnTimeout&& on_timeout) -> awaitable<Result> {
+  using traits = timeout_result_traits<Result>;
+
+  auto ex = co_await this_coro::executor;
+  IOCORO_ENSURE(ex, "with_timeout_detached: requires a bound executor");
+
+  auto timer = std::make_shared<steady_timer>(ex);
+  (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
+
+  auto timer_wait = [timer]() -> awaitable<std::error_code> {
+    co_return co_await timer->async_wait(use_awaitable);
+  };
+
+  // Start both concurrently; whichever finishes first determines the result.
+  // NOTE: when_any does not cancel the losing task.
+  auto [index, v] = co_await when_any(std::move(op), timer_wait());
+
+  if (index == 0) {
+    (void)timer->cancel();
+    co_return std::get<0>(std::move(v));
+  }
+
+  auto ec = std::get<1>(std::move(v));
+  if (!ec) {
+    on_timeout();
+    co_return traits::timed_out();
+  }
+
+  // Timer wait completed due to cancellation/executor shutdown.
+  // Treat it as a timer error rather than a timeout.
+  co_return traits::from_error(ec);
+}
+
 }  // namespace detail
 
 /// Await an I/O awaitable with a deadline.
@@ -132,6 +173,26 @@ auto with_timeout(awaitable<Result> op, std::chrono::duration<Rep, Period> timeo
                   OnTimeout&& on_timeout) -> awaitable<Result> {
   co_return co_await detail::with_timeout_impl(std::move(op), timeout,
                                                std::forward<OnTimeout>(on_timeout));
+}
+
+/// Await an I/O awaitable with a deadline (detached semantics).
+///
+/// Contract:
+/// - Unlike `with_timeout`, this function may return on timeout without waiting for `op` to finish.
+///   The underlying operation may continue in the background after this returns.
+/// - This is only safe when `op` does not hold references to memory that may be freed after timeout
+///   (e.g. user buffers). Prefer `with_timeout` for buffer-based I/O.
+///
+/// Semantics:
+/// - Races `op` against a timer.
+/// - If the timer fires first, calls `on_timeout()` (best-effort) and returns `error::timed_out`.
+/// - If `op` finishes first, returns its result and does not call `on_timeout()`.
+template <class Result, class Rep, class Period, class OnTimeout>
+  requires std::invocable<OnTimeout&>
+auto with_timeout_detached(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout,
+                           OnTimeout&& on_timeout) -> awaitable<Result> {
+  co_return co_await detail::with_timeout_detached_impl(std::move(op), timeout,
+                                                        std::forward<OnTimeout>(on_timeout));
 }
 
 /// Convenience overload that uses `Stream::cancel()` on timeout.

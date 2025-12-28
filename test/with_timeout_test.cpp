@@ -254,4 +254,99 @@ TEST(with_timeout_test, with_timeout_write_prefers_cancel_write) {
   EXPECT_EQ(s.cancel_read_calls.load(std::memory_order_relaxed), 0);
 }
 
+TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expected) {
+  using namespace std::chrono_literals;
+
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+  ctx.restart();
+
+  std::atomic<bool> on_timeout_called{false};
+  std::atomic<bool> op_completed{false};
+
+  std::atomic<bool> done{false};
+  std::optional<iocoro::expected<int, std::error_code>> out{};
+  std::exception_ptr ep{};
+
+  auto main = [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+    co_return co_await iocoro::io::with_timeout_detached(
+      [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+        co_await iocoro::co_sleep(200ms);
+        op_completed.store(true, std::memory_order_release);
+        co_return 7;
+      }(),
+      5ms, [&]() { on_timeout_called.store(true, std::memory_order_release); });
+  };
+
+  iocoro::co_spawn(
+    ex, main(),
+    [&](iocoro::expected<iocoro::expected<int, std::error_code>, std::exception_ptr> r) mutable {
+      done.store(true, std::memory_order_release);
+      if (!r) {
+        ep = std::move(r).error();
+      } else {
+        out.emplace(std::move(*r));
+      }
+      ctx.stop();  // don't drain detached background work
+    });
+
+  (void)ctx.run_for(50ms);
+
+  ASSERT_TRUE(done.load(std::memory_order_acquire));
+  if (ep) {
+    std::rethrow_exception(ep);
+  }
+  ASSERT_TRUE(out.has_value());
+  ASSERT_FALSE(*out);
+  EXPECT_EQ(out->error(), iocoro::error::timed_out);
+  EXPECT_TRUE(on_timeout_called.load(std::memory_order_acquire));
+  EXPECT_FALSE(op_completed.load(std::memory_order_acquire));
+}
+
+TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error_code) {
+  using namespace std::chrono_literals;
+
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+  ctx.restart();
+
+  std::atomic<bool> on_timeout_called{false};
+  std::atomic<bool> op_completed{false};
+
+  std::atomic<bool> done{false};
+  std::optional<std::error_code> out{};
+  std::exception_ptr ep{};
+
+  auto main = [&]() -> iocoro::awaitable<std::error_code> {
+    co_return co_await iocoro::io::with_timeout_detached(
+      [&]() -> iocoro::awaitable<std::error_code> {
+        co_await iocoro::co_sleep(200ms);
+        op_completed.store(true, std::memory_order_release);
+        co_return std::error_code{};
+      }(),
+      5ms, [&]() { on_timeout_called.store(true, std::memory_order_release); });
+  };
+
+  iocoro::co_spawn(ex, main(), [&](iocoro::expected<std::error_code, std::exception_ptr> r) mutable {
+    done.store(true, std::memory_order_release);
+    if (!r) {
+      ep = std::move(r).error();
+    } else {
+      out.emplace(std::move(*r));
+    }
+    ctx.stop();  // don't drain detached background work
+  });
+
+  (void)ctx.run_for(50ms);
+
+  ASSERT_TRUE(done.load(std::memory_order_acquire));
+  if (ep) {
+    std::rethrow_exception(ep);
+  }
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(*out, iocoro::error::timed_out);
+  EXPECT_TRUE(on_timeout_called.load(std::memory_order_acquire));
+  EXPECT_FALSE(op_completed.load(std::memory_order_acquire));
+}
+
 }  // namespace
