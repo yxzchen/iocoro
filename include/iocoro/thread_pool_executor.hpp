@@ -32,6 +32,11 @@ class thread_pool_executor {
     pool_->pick_executor().dispatch(std::move(f));
   }
 
+  auto pick_executor() const -> executor {
+    IOCORO_ENSURE(pool_ != nullptr, "thread_pool_executor: empty pool_");
+    return pool_->pick_executor();
+  }
+
   auto stopped() const noexcept -> bool { return pool_ == nullptr; }
 
   explicit operator bool() const noexcept { return pool_ != nullptr; }
