@@ -40,8 +40,4 @@ class thread_pool_executor {
   thread_pool* pool_ = nullptr;
 };
 
-inline auto thread_pool::get_executor() noexcept -> thread_pool_executor {
-  return thread_pool_executor{*this};
-}
-
 }  // namespace iocoro

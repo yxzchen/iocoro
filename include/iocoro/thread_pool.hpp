@@ -28,66 +28,25 @@ class thread_pool_executor;
 ///   policies. It is primarily a building block for higher-level executors.
 class thread_pool {
  public:
-  explicit thread_pool(std::size_t n_threads) {
-    IOCORO_ENSURE(n_threads > 0, "thread_pool: n_threads must be > 0");
-
-    contexts_.reserve(n_threads);
-    guards_.reserve(n_threads);
-    threads_.reserve(n_threads);
-
-    for (std::size_t i = 0; i < n_threads; ++i) {
-      contexts_.push_back(std::make_unique<io_context>());
-    }
-
-    // Keep each shard alive until the pool is stopped/joined.
-    for (auto& ctx : contexts_) {
-      guards_.push_back(make_work_guard(*ctx));
-    }
-
-    // Start one thread per shard. Each thread sets the shard's thread id internally.
-    for (std::size_t i = 0; i < contexts_.size(); ++i) {
-      threads_.emplace_back([this, i] {
-        (void)contexts_[i]->run();
-      });
-    }
-  }
+  explicit thread_pool(std::size_t n_threads);
 
   thread_pool(thread_pool const&) = delete;
   auto operator=(thread_pool const&) -> thread_pool& = delete;
   thread_pool(thread_pool&&) = delete;
   auto operator=(thread_pool&&) -> thread_pool& = delete;
 
-  ~thread_pool() {
-    stop();
-    join();
-  }
+  ~thread_pool();
 
   auto get_executor() noexcept -> thread_pool_executor;
 
   /// Stop all shards (best-effort, idempotent).
-  void stop() noexcept {
-    for (auto& ctx : contexts_) {
-      if (ctx) {
-        ctx->stop();
-      }
-    }
-  }
+  void stop() noexcept;
 
   /// Join all worker threads (best-effort, idempotent).
-  void join() noexcept {
-    for (auto& t : threads_) {
-      if (t.joinable()) {
-        t.join();
-      }
-    }
-  }
+  void join() noexcept;
 
   /// Select a shard executor (round-robin).
-  auto pick_executor() noexcept -> executor {
-    IOCORO_ENSURE(!contexts_.empty(), "thread_pool: no shards");
-    auto const i = rr_.fetch_add(1, std::memory_order_relaxed);
-    return contexts_[i % contexts_.size()]->get_executor();
-  }
+  auto pick_executor() noexcept -> executor;
 
   auto size() const noexcept -> std::size_t { return contexts_.size(); }
 

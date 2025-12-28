@@ -6,6 +6,7 @@
 #include <iocoro/impl/executor.ipp>
 #include <iocoro/impl/io_context.ipp>
 #include <iocoro/impl/io_context_impl.ipp>
+#include <iocoro/impl/thread_pool.ipp>
 
 #include <iocoro/impl/steady_timer.ipp>
 #include <iocoro/impl/timer_handle.ipp>
