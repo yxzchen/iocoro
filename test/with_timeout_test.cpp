@@ -74,7 +74,7 @@ TEST(with_timeout_test, completes_before_timeout_returns_value_and_does_not_call
   std::atomic<bool> called{false};
   auto r =
     iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::io::with_timeout<int>(
+      co_return co_await iocoro::io::with_timeout(
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           co_await iocoro::co_sleep(5ms);
           co_return 42;
@@ -112,7 +112,7 @@ TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on
 
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::io::with_timeout<int>(
+      co_return co_await iocoro::io::with_timeout(
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           // Wait until cancelled, then surface operation_aborted.
           for (int i = 0; i < 200; ++i) {
@@ -172,7 +172,7 @@ TEST(with_timeout_test, external_operation_aborted_is_not_mapped_to_timed_out) {
 
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::io::with_timeout<int>(
+      co_return co_await iocoro::io::with_timeout(
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           // External cancellation: complete with operation_aborted before timeout can fire.
           co_return iocoro::unexpected(iocoro::error::operation_aborted);
@@ -191,7 +191,7 @@ TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
   std::atomic<bool> called{false};
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::io::with_timeout<int>(
+      co_return co_await iocoro::io::with_timeout(
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           co_await iocoro::co_sleep(20ms);  // ensure the timer has time to fire
           co_return iocoro::unexpected(iocoro::error::broken_pipe);
@@ -212,7 +212,7 @@ TEST(with_timeout_test, with_timeout_stream_overload_uses_cancel) {
 
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      return iocoro::io::with_timeout<std::size_t>(s, s.async_read_some(buf), 5ms);
+      return iocoro::io::with_timeout(s, s.async_read_some(buf), 5ms);
     }());
 
   ASSERT_FALSE(r);
@@ -228,7 +228,7 @@ TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
 
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      return iocoro::io::with_timeout_read<std::size_t>(s, s.async_read_some(buf), 5ms);
+      return iocoro::io::with_timeout_read(s, s.async_read_some(buf), 5ms);
     }());
 
   ASSERT_FALSE(r);
@@ -245,7 +245,7 @@ TEST(with_timeout_test, with_timeout_write_prefers_cancel_write) {
 
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      return iocoro::io::with_timeout_write<std::size_t>(s, s.async_write_some(buf), 5ms);
+      return iocoro::io::with_timeout_write(s, s.async_write_some(buf), 5ms);
     }());
 
   ASSERT_FALSE(r);

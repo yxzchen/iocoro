@@ -126,44 +126,21 @@ auto with_timeout_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> 
 ///   operation completes with `error::operation_aborted` and the timeout actually fired.
 /// - If the operation is cancelled externally (not by this timer), the original
 ///   `error::operation_aborted` is propagated.
-template <class T, class Rep, class Period, class OnTimeout>
+template <class Result, class Rep, class Period, class OnTimeout>
   requires std::invocable<OnTimeout&>
-auto with_timeout(awaitable<expected<T, std::error_code>> op,
+auto with_timeout(awaitable<Result> op,
                   std::chrono::duration<Rep, Period> timeout, OnTimeout&& on_timeout)
-  -> awaitable<expected<T, std::error_code>> {
-  co_return co_await detail::with_timeout_impl<expected<T, std::error_code>>(
-    std::move(op), timeout, std::forward<OnTimeout>(on_timeout));
-}
-
-/// Await an I/O awaitable with a deadline.
-///
-/// Semantics:
-/// - On timeout, calls `on_timeout()` (best-effort) and returns `error::timed_out` iff the
-///   operation completes with `error::operation_aborted` and the timeout actually fired.
-/// - If the operation is cancelled externally (not by this timer), the original
-///   `error::operation_aborted` is propagated.
-template <class Rep, class Period, class OnTimeout>
-  requires std::invocable<OnTimeout&>
-auto with_timeout(awaitable<std::error_code> op, std::chrono::duration<Rep, Period> timeout,
-                  OnTimeout&& on_timeout) -> awaitable<std::error_code> {
-  co_return co_await detail::with_timeout_impl<std::error_code>(
+  -> awaitable<Result> {
+  co_return co_await detail::with_timeout_impl(
     std::move(op), timeout, std::forward<OnTimeout>(on_timeout));
 }
 
 /// Convenience overload that uses `Stream::cancel()` on timeout.
-template <class T, class Rep, class Period, class Stream>
+template <class Result, class Rep, class Period, class Stream>
   requires cancellable_stream<Stream>
-auto with_timeout(Stream& s, awaitable<expected<T, std::error_code>> op,
+auto with_timeout(Stream& s, awaitable<Result> op,
                   std::chrono::duration<Rep, Period> timeout)
-  -> awaitable<expected<T, std::error_code>> {
-  co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
-}
-
-/// Convenience overload that uses `Stream::cancel()` on timeout.
-template <class Rep, class Period, class Stream>
-  requires cancellable_stream<Stream>
-auto with_timeout(Stream& s, awaitable<std::error_code> op, std::chrono::duration<Rep, Period> timeout)
-  -> awaitable<std::error_code> {
+  -> awaitable<Result> {
   co_return co_await with_timeout(std::move(op), timeout, [&]() { s.cancel(); });
 }
 
@@ -171,23 +148,11 @@ auto with_timeout(Stream& s, awaitable<std::error_code> op, std::chrono::duratio
 ///
 /// If the stream supports `cancel_read()`, only the read side is cancelled on timeout.
 /// Otherwise, falls back to `cancel()`.
-template <class T, class Rep, class Period, class Stream>
+template <class Result, class Rep, class Period, class Stream>
   requires cancellable_stream<Stream>
-auto with_timeout_read(Stream& s, awaitable<expected<T, std::error_code>> op,
+auto with_timeout_read(Stream& s, awaitable<Result> op,
                        std::chrono::duration<Rep, Period> timeout)
-  -> awaitable<expected<T, std::error_code>> {
-  if constexpr (cancel_readable_stream<Stream>) {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_read(); });
-  } else {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
-  }
-}
-
-/// Convenience overload for read-side operations.
-template <class Rep, class Period, class Stream>
-  requires cancellable_stream<Stream>
-auto with_timeout_read(Stream& s, awaitable<std::error_code> op,
-                       std::chrono::duration<Rep, Period> timeout) -> awaitable<std::error_code> {
+  -> awaitable<Result> {
   if constexpr (cancel_readable_stream<Stream>) {
     co_return co_await with_timeout(std::move(op), timeout, [&]() { s.cancel_read(); });
   } else {
@@ -199,23 +164,11 @@ auto with_timeout_read(Stream& s, awaitable<std::error_code> op,
 ///
 /// If the stream supports `cancel_write()`, only the write side is cancelled on timeout.
 /// Otherwise, falls back to `cancel()`.
-template <class T, class Rep, class Period, class Stream>
+template <class Result, class Rep, class Period, class Stream>
   requires cancellable_stream<Stream>
-auto with_timeout_write(Stream& s, awaitable<expected<T, std::error_code>> op,
+auto with_timeout_write(Stream& s, awaitable<Result> op,
                         std::chrono::duration<Rep, Period> timeout)
-  -> awaitable<expected<T, std::error_code>> {
-  if constexpr (cancel_writable_stream<Stream>) {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel_write(); });
-  } else {
-    co_return co_await with_timeout<T>(std::move(op), timeout, [&]() { s.cancel(); });
-  }
-}
-
-/// Convenience overload for write-side operations.
-template <class Rep, class Period, class Stream>
-  requires cancellable_stream<Stream>
-auto with_timeout_write(Stream& s, awaitable<std::error_code> op,
-                        std::chrono::duration<Rep, Period> timeout) -> awaitable<std::error_code> {
+  -> awaitable<Result> {
   if constexpr (cancel_writable_stream<Stream>) {
     co_return co_await with_timeout(std::move(op), timeout, [&]() { s.cancel_write(); });
   } else {
