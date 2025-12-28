@@ -42,9 +42,13 @@ template <typename T>
 auto co_spawn(executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
   // Hot-start: start running immediately (via detached runner), and return an awaitable
   // that only waits for completion and yields the result.
+  detail::awaitable_as_function<T> wrapper(std::move(a));
   auto st = std::make_shared<detail::spawn_wait_state<T>>(ex);
 
-  co_spawn(ex, detail::run_to_state<T>(ex, st, std::move(a)), detached);
+  auto state = std::make_shared<detail::spawn_state<T>>(std::move(wrapper));
+  auto entry = detail::spawn_entry_point<T>(std::move(state));
+
+  co_spawn(ex, detail::run_to_state<T>(ex, st, std::move(entry)), detached);
   return detail::await_state<T>(std::move(st));
 }
 
