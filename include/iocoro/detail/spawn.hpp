@@ -4,6 +4,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
 
@@ -51,28 +52,30 @@ concept completion_callback_for =
   std::invocable<F&, spawn_expected<T>> && (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
   (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
 
-/// State stored in the unified co_spawn entry point coroutine frame.
-///
-/// This is intentionally separate from the shared state used by co_spawn(use_awaitable).
-template <typename Executor, typename Function>
+/// State for detached/use_awaitable mode (no completion handler).
+/// Uses type-erased unique_function to avoid storing lambda types directly.
+template <typename T>
 struct spawn_state {
-  template <typename F>
-  explicit spawn_state(Executor ex, F&& f) : ex_(std::move(ex)), function_(std::forward<F>(f)) {}
+  executor ex_{};
+  unique_function<awaitable<T>()> factory_{};
 
-  Executor ex_;
-  Function function_;
+  template <typename F>
+    requires std::is_invocable_r_v<awaitable<T>, F&>
+  explicit spawn_state(executor ex, F&& f) : ex_(std::move(ex)), factory_(std::forward<F>(f)) {}
 };
 
-/// State stored in the unified co_spawn entry point coroutine frame (completion-callback mode).
-template <typename Executor, typename Function, typename Completion>
+/// State for completion callback mode.
+/// Both factory and completion are type-erased.
+template <typename T>
 struct spawn_state_with_completion {
-  template <typename F, typename C>
-  spawn_state_with_completion(Executor ex, F&& f, C&& c)
-    : ex_(std::move(ex)), function_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
+  executor ex_{};
+  unique_function<awaitable<T>()> factory_{};
+  unique_function<void(spawn_expected<T>)> completion_{};
 
-  Executor ex_;
-  Function function_;
-  Completion completion_;
+  template <typename F, typename C>
+    requires std::is_invocable_r_v<awaitable<T>, F&> && std::is_invocable_v<C&, spawn_expected<T>>
+  spawn_state_with_completion(executor ex, F&& f, C&& c)
+    : ex_(std::move(ex)), factory_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
 };
 
 /// Wrap an awaitable<T> as a nullary callable returning awaitable<T>.
@@ -92,32 +95,31 @@ class awaitable_as_function {
 ///
 /// This is the only coroutine wrapper responsible for owning and invoking the user-supplied
 /// callable (or an awaitable wrapped as a callable).
-template <typename T, typename Executor, typename Function>
-auto spawn_entry_point(spawn_state<Executor, Function> state) -> awaitable<T> {
-  (void)state.ex_;
+template <typename T>
+auto spawn_entry_point(std::shared_ptr<spawn_state<T>> state) -> awaitable<T> {
   if constexpr (std::is_void_v<T>) {
-    co_await state.function_();
+    co_await state->factory_();
     co_return;
   } else {
-    co_return co_await state.function_();
+    co_return co_await state->factory_();
   }
 }
 
-template <typename T, typename Executor, typename Function, typename Completion>
-auto spawn_entry_point_with_completion(spawn_state_with_completion<Executor, Function, Completion> state)
+template <typename T>
+auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completion<T>> state)
   -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
-      co_await state.function_();
+      co_await state->factory_();
       try {
-        state.completion_(spawn_expected<void>{});
+        state->completion_(spawn_expected<void>{});
       } catch (...) {
         // Completion callback exceptions are swallowed (detached semantics).
       }
     } else {
-      auto v = co_await state.function_();
+      auto v = co_await state->factory_();
       try {
-        state.completion_(spawn_expected<T>{std::move(v)});
+        state->completion_(spawn_expected<T>{std::move(v)});
       } catch (...) {
         // Completion callback exceptions are swallowed (detached semantics).
       }
@@ -125,7 +127,7 @@ auto spawn_entry_point_with_completion(spawn_state_with_completion<Executor, Fun
   } catch (...) {
     auto ep = std::current_exception();
     try {
-      state.completion_(spawn_expected<T>{unexpected(ep)});
+      state->completion_(spawn_expected<T>{unexpected(ep)});
     } catch (...) {
       // Completion callback exceptions are swallowed (detached semantics).
     }
