@@ -14,7 +14,7 @@ template <typename T>
 void co_spawn(executor ex, awaitable<T> a, detached_t) {
   detail::awaitable_as_function<T> wrapper(std::move(a));
 
-  auto state = std::make_shared<detail::spawn_state<T>>(ex, std::move(wrapper));
+  auto state = std::make_shared<detail::spawn_state<T>>(std::move(wrapper));
   auto entry = detail::spawn_entry_point<T>(std::move(state));
 
   detail::spawn_detached_impl(ex, std::move(entry));
@@ -30,7 +30,7 @@ template <typename F>
 void co_spawn(executor ex, F&& f, detached_t) {
   using value_type = detail::awaitable_value_t<std::remove_cvref_t<F>>;
 
-  auto state = std::make_shared<detail::spawn_state<value_type>>(ex, std::forward<F>(f));
+  auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
   auto entry = detail::spawn_entry_point<value_type>(std::move(state));
 
   detail::spawn_detached_impl(ex, std::move(entry));
@@ -60,7 +60,7 @@ auto co_spawn(executor ex, F&& f, use_awaitable_t)
   // and return an awaitable that only waits for completion and yields the result.
   auto st = std::make_shared<detail::spawn_wait_state<value_type>>(ex);
 
-  auto state = std::make_shared<detail::spawn_state<value_type>>(ex, std::forward<F>(f));
+  auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
   auto entry = detail::spawn_entry_point<value_type>(std::move(state));
 
   co_spawn(ex, detail::run_to_state<value_type>(ex, st, std::move(entry)), detached);
@@ -75,7 +75,7 @@ void co_spawn(executor ex, awaitable<T> a, F&& completion) {
   detail::awaitable_as_function<T> wrapper(std::move(a));
 
   auto state =
-    std::make_shared<detail::spawn_state_with_completion<T>>(ex, std::move(wrapper),
+    std::make_shared<detail::spawn_state_with_completion<T>>(std::move(wrapper),
                                                             std::forward<F>(completion));
   auto entry = detail::spawn_entry_point_with_completion<T>(std::move(state));
 
@@ -92,7 +92,7 @@ void co_spawn(executor ex, Factory&& f, Completion&& completion) {
   using value_type = detail::awaitable_value_t<std::remove_cvref_t<Factory>>;
 
   auto state = std::make_shared<detail::spawn_state_with_completion<value_type>>(
-    ex, std::forward<Factory>(f), std::forward<Completion>(completion));
+    std::forward<Factory>(f), std::forward<Completion>(completion));
   auto entry = detail::spawn_entry_point_with_completion<value_type>(std::move(state));
 
   detail::spawn_detached_impl(ex, std::move(entry));
