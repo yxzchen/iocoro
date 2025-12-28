@@ -128,18 +128,16 @@ auto with_timeout_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> 
 ///   `error::operation_aborted` is propagated.
 template <class Result, class Rep, class Period, class OnTimeout>
   requires std::invocable<OnTimeout&>
-auto with_timeout(awaitable<Result> op,
-                  std::chrono::duration<Rep, Period> timeout, OnTimeout&& on_timeout)
-  -> awaitable<Result> {
-  co_return co_await detail::with_timeout_impl(
-    std::move(op), timeout, std::forward<OnTimeout>(on_timeout));
+auto with_timeout(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout,
+                  OnTimeout&& on_timeout) -> awaitable<Result> {
+  co_return co_await detail::with_timeout_impl(std::move(op), timeout,
+                                               std::forward<OnTimeout>(on_timeout));
 }
 
 /// Convenience overload that uses `Stream::cancel()` on timeout.
 template <class Result, class Rep, class Period, class Stream>
   requires cancellable_stream<Stream>
-auto with_timeout(Stream& s, awaitable<Result> op,
-                  std::chrono::duration<Rep, Period> timeout)
+auto with_timeout(Stream& s, awaitable<Result> op, std::chrono::duration<Rep, Period> timeout)
   -> awaitable<Result> {
   co_return co_await with_timeout(std::move(op), timeout, [&]() { s.cancel(); });
 }
@@ -150,8 +148,7 @@ auto with_timeout(Stream& s, awaitable<Result> op,
 /// Otherwise, falls back to `cancel()`.
 template <class Result, class Rep, class Period, class Stream>
   requires cancellable_stream<Stream>
-auto with_timeout_read(Stream& s, awaitable<Result> op,
-                       std::chrono::duration<Rep, Period> timeout)
+auto with_timeout_read(Stream& s, awaitable<Result> op, std::chrono::duration<Rep, Period> timeout)
   -> awaitable<Result> {
   if constexpr (cancel_readable_stream<Stream>) {
     co_return co_await with_timeout(std::move(op), timeout, [&]() { s.cancel_read(); });
@@ -166,8 +163,7 @@ auto with_timeout_read(Stream& s, awaitable<Result> op,
 /// Otherwise, falls back to `cancel()`.
 template <class Result, class Rep, class Period, class Stream>
   requires cancellable_stream<Stream>
-auto with_timeout_write(Stream& s, awaitable<Result> op,
-                        std::chrono::duration<Rep, Period> timeout)
+auto with_timeout_write(Stream& s, awaitable<Result> op, std::chrono::duration<Rep, Period> timeout)
   -> awaitable<Result> {
   if constexpr (cancel_writable_stream<Stream>) {
     co_return co_await with_timeout(std::move(op), timeout, [&]() { s.cancel_write(); });
