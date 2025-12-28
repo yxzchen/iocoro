@@ -163,7 +163,7 @@ template <typename T>
 struct spawn_wait_state {
   executor ex{};
   std::mutex m;
-  std::atomic<bool> done{false};
+  bool done{false};
   std::coroutine_handle<> waiter{};
   std::exception_ptr ep{};
   std::optional<T> value{};
@@ -184,7 +184,7 @@ struct spawn_wait_state {
     std::coroutine_handle<> w{};
     {
       std::scoped_lock lk{m};
-      done.store(true, std::memory_order_release);
+      done = true;
       w = waiter;
       waiter = {};
     }
@@ -201,7 +201,7 @@ template <>
 struct spawn_wait_state<void> {
   executor ex{};
   std::mutex m;
-  std::atomic<bool> done{false};
+  bool done{false};
   std::coroutine_handle<> waiter{};
   std::exception_ptr ep{};
 
@@ -218,7 +218,7 @@ struct spawn_wait_state<void> {
     std::coroutine_handle<> w{};
     {
       std::scoped_lock lk{m};
-      done.store(true, std::memory_order_release);
+      done = true;
       w = waiter;
       waiter = {};
     }
@@ -266,7 +266,7 @@ struct state_awaiter {
     {
       std::scoped_lock lk{st->m};
       IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters are not supported");
-      ready = st->done.load(std::memory_order_acquire);
+      ready = st->done;
       if (!ready) {
         st->waiter = h;
       }
@@ -310,7 +310,7 @@ struct state_awaiter<void> {
     {
       std::scoped_lock lk{st->m};
       IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters are not supported");
-      ready = st->done.load(std::memory_order_acquire);
+      ready = st->done;
       if (!ready) {
         st->waiter = h;
       }
