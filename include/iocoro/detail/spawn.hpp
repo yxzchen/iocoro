@@ -60,7 +60,7 @@ struct spawn_state {
 
   template <typename F>
     requires std::is_invocable_r_v<awaitable<T>, F&>
-  explicit spawn_state(executor ex, F&& f) : factory_(std::forward<F>(f)) {}
+  explicit spawn_state(F&& f) : factory_(std::forward<F>(f)) {}
 };
 
 /// State for completion callback mode.
@@ -72,7 +72,7 @@ struct spawn_state_with_completion {
 
   template <typename F, typename C>
     requires std::is_invocable_r_v<awaitable<T>, F&> && std::is_invocable_v<C&, spawn_expected<T>>
-  spawn_state_with_completion(executor ex, F&& f, C&& c)
+  spawn_state_with_completion(F&& f, C&& c)
     : factory_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
 };
 
