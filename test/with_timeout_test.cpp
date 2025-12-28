@@ -87,6 +87,23 @@ TEST(with_timeout_test, completes_before_timeout_returns_value_and_does_not_call
   EXPECT_FALSE(called.load(std::memory_order_relaxed));
 }
 
+TEST(with_timeout_test, error_code_completes_before_timeout_returns_success_and_does_not_call_on_timeout) {
+  iocoro::io_context ctx;
+
+  std::atomic<bool> called{false};
+  auto r = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::error_code> {
+    co_return co_await iocoro::io::with_timeout(
+      [&]() -> iocoro::awaitable<std::error_code> {
+        co_await iocoro::co_sleep(5ms);
+        co_return std::error_code{};
+      }(),
+      200ms, [&]() { called = true; });
+  }());
+
+  EXPECT_FALSE(static_cast<bool>(r)) << r.message();
+  EXPECT_FALSE(called.load(std::memory_order_relaxed));
+}
+
 TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
   iocoro::io_context ctx;
 
@@ -116,6 +133,36 @@ TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on
   ASSERT_FALSE(r);
   EXPECT_TRUE(called.load(std::memory_order_acquire));
   EXPECT_EQ(r.error(), iocoro::error::timed_out);
+}
+
+TEST(with_timeout_test, error_code_timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
+  iocoro::io_context ctx;
+
+  std::atomic<bool> cancelled{false};
+  std::atomic<bool> called{false};
+
+  auto r = iocoro::sync_wait_for(ctx, 500ms, [&]() -> iocoro::awaitable<std::error_code> {
+    co_return co_await iocoro::io::with_timeout(
+      [&]() -> iocoro::awaitable<std::error_code> {
+        // Wait until cancelled, then surface operation_aborted.
+        for (int i = 0; i < 200; ++i) {
+          if (cancelled.load(std::memory_order_acquire)) {
+            co_return iocoro::error::operation_aborted;
+          }
+          co_await iocoro::co_sleep(1ms);
+        }
+        co_return iocoro::error::timed_out;
+      }(),
+      10ms,
+      [&]() {
+        called.store(true, std::memory_order_release);
+        cancelled.store(true, std::memory_order_release);
+      });
+  }());
+
+  EXPECT_TRUE(static_cast<bool>(r)) << r.message();
+  EXPECT_TRUE(called.load(std::memory_order_acquire));
+  EXPECT_EQ(r, iocoro::error::timed_out);
 }
 
 TEST(with_timeout_test, external_operation_aborted_is_not_mapped_to_timed_out) {
