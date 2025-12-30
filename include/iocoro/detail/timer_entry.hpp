@@ -33,14 +33,12 @@ struct timer_entry {
   std::chrono::steady_clock::time_point expiry;
   unique_function<void()> callback;
 
-  // Executor that owns this timer (context thread affinity).
-  iocoro::io_executor ex{};
-
   std::atomic<timer_state> state{timer_state::pending};
 
   // Waiters are completion hooks (e.g. async_wait(use_awaitable)).
   // They should never resume inline; they are expected to post/dispatch as needed.
   bool completion_notified = false;
+
   std::mutex waiters_mutex{};
   std::vector<unique_function<void()>> waiters{};
 
@@ -76,29 +74,23 @@ struct timer_entry {
                                          std::memory_order_acq_rel, std::memory_order_acquire);
   }
 
-  void post_waiter(unique_function<void()> w) {
-    IOCORO_ENSURE(ex, "timer_entry: missing executor for waiter dispatch");
-    // Never execute waiters inline: always schedule via the owning executor.
-    ex.post([w = std::move(w)]() mutable { w(); });
-  }
-
   void add_waiter(unique_function<void()> w) {
     if (!w) {
       return;
     }
 
-    bool post_now = false;
+    bool run_now = false;
     {
       std::scoped_lock lk{waiters_mutex};
       if (completion_notified) {
-        post_now = true;
+        run_now = true;
       } else {
         waiters.push_back(std::move(w));
       }
     }
 
-    if (post_now) {
-      post_waiter(std::move(w));
+    if (run_now) {
+      w();
     }
   }
 
@@ -117,15 +109,10 @@ struct timer_entry {
       return 0;
     }
 
-    IOCORO_ENSURE(ex, "timer_entry: missing executor for completion notification");
-    // Never execute waiters inline: always schedule via the owning executor.
-    auto const n = local.size();
-    ex.post([local = std::move(local)]() mutable {
-      for (auto& w : local) {
-        w();
-      }
-    });
-    return n;
+    for (auto& w : local) {
+      w();
+    }
+    return local.size();
   }
 };
 

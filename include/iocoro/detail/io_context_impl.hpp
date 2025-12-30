@@ -47,6 +47,12 @@ class io_context_impl {
     /// Lifetime: the referenced io_context_impl must outlive this handle; calling cancel()
     /// after destruction is undefined behavior.
     void cancel() const noexcept;
+
+    static constexpr auto invalid_handle() {
+      fd_event_handle h;
+      h.token = invalid_fd_token;
+      return h;
+    }
   };
 
   io_context_impl();
@@ -93,7 +99,7 @@ class io_context_impl {
   auto process_timers() -> std::size_t;
   auto process_posted() -> std::size_t;
 
-  auto get_timeout() -> std::chrono::milliseconds;
+  auto get_timeout() -> std::optional<std::chrono::milliseconds>;
   void wakeup();
 
   auto has_work() -> bool;
@@ -117,19 +123,19 @@ class io_context_impl {
     std::uint64_t write_token = 0;
   };
 
-  std::unordered_map<int, fd_ops> fd_operations_;
   std::mutex fd_mutex_;
+  std::unordered_map<int, fd_ops> fd_operations_;
   std::uint64_t next_fd_token_ = 1;
   static constexpr std::uint64_t invalid_fd_token = 0;
 
+  mutable std::mutex timer_mutex_;
   std::priority_queue<std::shared_ptr<timer_entry>, std::vector<std::shared_ptr<timer_entry>>,
                       timer_entry_compare>
     timers_;
   std::uint64_t next_timer_id_ = 1;
-  mutable std::mutex timer_mutex_;
 
-  std::queue<unique_function<void()>> posted_operations_;
   std::mutex posted_mutex_;
+  std::queue<unique_function<void()>> posted_operations_;
 
   std::atomic<std::size_t> work_guard_counter_{0};
 

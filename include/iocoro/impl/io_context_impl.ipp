@@ -24,6 +24,14 @@ inline auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
   return reinterpret_cast<std::uintptr_t>(&tls_anchor);
 }
 
+inline void io_context_impl::set_thread_id() noexcept {
+  thread_token_.store(this_thread_token(), std::memory_order_release);
+}
+
+inline auto io_context_impl::running_in_this_thread() const noexcept -> bool {
+  return thread_token_.load(std::memory_order_acquire) == this_thread_token();
+}
+
 inline auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
@@ -37,9 +45,7 @@ inline auto io_context_impl::run() -> std::size_t {
       break;
     }
 
-    auto const timeout = get_timeout();
-    auto const wait = (timeout.count() < 0) ? std::nullopt : std::optional{timeout};
-    count += process_events(wait);
+    count += process_events(get_timeout());
   }
 
   return count;
@@ -64,9 +70,7 @@ inline auto io_context_impl::run_one() -> std::size_t {
     return 0;
   }
 
-  auto const timeout = get_timeout();
-  auto const wait = (timeout.count() < 0) ? std::nullopt : std::optional{timeout};
-  return process_events(wait);
+  return process_events(get_timeout());
 }
 
 inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
@@ -91,10 +95,10 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
     auto const remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::max(deadline - now, std::chrono::steady_clock::duration::zero()));
 
-    auto const timer_timeout = get_timeout();
     std::chrono::milliseconds wait_ms = remaining;
-    if (timer_timeout.count() >= 0) {
-      wait_ms = std::min(wait_ms, timer_timeout);
+    auto const timer_timeout = get_timeout();
+    if (timer_timeout) {
+      wait_ms = std::min(wait_ms, *timer_timeout);
     }
 
     count += process_events(wait_ms);
@@ -120,8 +124,6 @@ inline void io_context_impl::post(unique_function<void()> f) {
 
 inline void io_context_impl::dispatch(unique_function<void()> f) {
   if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
-    // Ensure awaitables that inherit the "current executor" see the right executor.
-    executor_guard g{any_executor{io_executor{*this}}};
     f();
   } else {
     post(std::move(f));
@@ -139,7 +141,6 @@ inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = std::chrono::steady_clock::now() + timeout;
   entry->callback = std::move(callback);
-  entry->ex = io_executor{*this};
   entry->state.store(timer_state::pending, std::memory_order_release);
 
   {
@@ -161,7 +162,7 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::read, invalid_fd_token};
+      return fd_event_handle::invalid_handle();
     }
 
     if (it == fd_operations_.end()) {
@@ -198,7 +199,7 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::write, invalid_fd_token};
+      return fd_event_handle::invalid_handle();
     }
 
     if (it == fd_operations_.end()) {
@@ -266,14 +267,6 @@ inline void io_context_impl::remove_work_guard() noexcept {
   }
 }
 
-inline void io_context_impl::set_thread_id() noexcept {
-  thread_token_.store(this_thread_token(), std::memory_order_release);
-}
-
-inline auto io_context_impl::running_in_this_thread() const noexcept -> bool {
-  return thread_token_.load(std::memory_order_acquire) == this_thread_token();
-}
-
 inline auto io_context_impl::process_timers() -> std::size_t {
   std::unique_lock lk{timer_mutex_};
   auto const now = std::chrono::steady_clock::now();
@@ -307,7 +300,6 @@ inline auto io_context_impl::process_timers() -> std::size_t {
 
     auto cb = std::move(entry->callback);
     if (cb) {
-      executor_guard g{io_executor{*this}};
       cb();
     }
     try {
@@ -336,8 +328,6 @@ inline auto io_context_impl::process_posted() -> std::size_t {
     return 0;
   }
 
-  executor_guard g{io_executor{*this}};
-
   while (!local.empty()) {
     if (stopped_.load(std::memory_order_acquire)) {
       // Preserve remaining work so a later restart() can still run it.
@@ -359,7 +349,7 @@ inline auto io_context_impl::process_posted() -> std::size_t {
   return n;
 }
 
-inline auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
+inline auto io_context_impl::get_timeout() -> std::optional<std::chrono::milliseconds> {
   std::scoped_lock lk{timer_mutex_};
 
   while (!timers_.empty() && timers_.top()->is_cancelled()) {
@@ -367,7 +357,7 @@ inline auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
   }
 
   if (timers_.empty()) {
-    return std::chrono::milliseconds(-1);
+    return std::nullopt;
   }
 
   auto const now = std::chrono::steady_clock::now();
@@ -430,9 +420,9 @@ inline void io_context_impl::reconcile_fd_interest(int fd) {
 }
 
 inline void io_context_impl::reconcile_fd_interest_async(int fd) {
-  // If we're on the context thread and not stopped, update immediately so the backend
-  // state is consistent before we go back to waiting for events.
-  if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
+  // If we're on the context thread, update immediately so the backend state is
+  // consistent before we go back to waiting for events.
+  if (running_in_this_thread()) {
     reconcile_fd_interest(fd);
     return;
   }
@@ -442,10 +432,6 @@ inline void io_context_impl::reconcile_fd_interest_async(int fd) {
 
 inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
                                              std::uint64_t token) noexcept {
-  if (fd < 0 || token == 0) {
-    return;
-  }
-
   std::unique_ptr<operation_base> removed;
   bool matched = false;
 
@@ -495,7 +481,7 @@ inline void io_context_impl::fd_event_handle::cancel() const noexcept {
   }
 
   auto* p = impl;
-  int const local_fd = fd;
+  auto const local_fd = fd;
   auto const local_kind = kind;
   auto const local_token = token;
 
