@@ -206,14 +206,12 @@ auto with_timeout_write(Stream& s, Awaitable&& op, std::chrono::steady_clock::du
 /// Detached variant.
 ///
 /// Semantics:
-/// - On timeout, executes on_timeout and returns timed_out without waiting op to complete.
+/// - On timeout, returns timed_out without waiting op to complete.
 /// - op may continue running on ex after this returns.
-template <class Awaitable, class OnTimeout = decltype([] {})>
-  requires std::invocable<OnTimeout&> &&
-           requires { typename detail::with_timeout_result_t<Awaitable>; }
+template <class Awaitable>
+  requires requires { typename detail::with_timeout_result_t<Awaitable>; }
 auto with_timeout_detached(io_executor ex, Awaitable&& op,
-                           std::chrono::steady_clock::duration timeout,
-                           OnTimeout&& on_timeout = OnTimeout{})
+                           std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
   using traits = detail::with_timeout_result_traits<result_t>;
@@ -221,20 +219,14 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op,
   IOCORO_ENSURE(ex, "with_timeout_detached: requires a non-empty io_executor");
 
   if (timeout <= std::chrono::steady_clock::duration::zero()) {
-    on_timeout();
     co_return traits::timed_out();
   }
 
   auto timer = std::make_shared<steady_timer>(ex);
   (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
 
-  auto timer_wait = [timer, on_timeout = std::forward<OnTimeout>(
-                              on_timeout)]() mutable -> awaitable<std::error_code> {
-    auto ec = co_await timer->async_wait(use_awaitable);
-    if (!ec) {
-      on_timeout();
-    }
-    co_return ec;
+  auto timer_wait = [timer]() -> awaitable<std::error_code> {
+    co_return co_await timer->async_wait(use_awaitable);
   };
 
   // Start both concurrently; whichever finishes first determines the result.
@@ -256,17 +248,14 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op,
   co_return traits::from_error(ec);
 }
 
-template <class Awaitable, class OnTimeout = decltype([] {})>
-  requires std::invocable<OnTimeout&> &&
-           requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout_detached(Awaitable&& op, std::chrono::steady_clock::duration timeout,
-                           OnTimeout&& on_timeout = OnTimeout{})
+template <class Awaitable>
+  requires requires { typename detail::with_timeout_result_t<Awaitable>; }
+auto with_timeout_detached(Awaitable&& op, std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout_detached: requires a bound executor");
   auto ex = ::iocoro::detail::require_io_executor(ex_any);
-  co_return co_await with_timeout_detached(ex, std::forward<Awaitable>(op), timeout,
-                                           std::forward<OnTimeout>(on_timeout));
+  co_return co_await with_timeout_detached(ex, std::forward<Awaitable>(op), timeout);
 }
 
 }  // namespace iocoro::io
