@@ -16,9 +16,8 @@ TEST(co_sleep_test, co_sleep_resumes_via_timer_and_executor) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
   auto done = iocoro::sync_wait_for(ctx, 200ms, [&]() -> iocoro::awaitable<bool> {
-    co_await iocoro::co_sleep(ex, 10ms);
+    co_await iocoro::co_sleep(10ms);
     co_return true;
   }());
 

@@ -287,9 +287,9 @@ TEST(tcp_socket_test, cancel_read_aborts_pending_read) {
       iocoro::use_awaitable);
 
     for (int i = 0; i < 50 && !started.load(std::memory_order_acquire); ++i) {
-      (void)co_await iocoro::co_sleep(ex, 1ms);
+      (void)co_await iocoro::co_sleep(1ms);
     }
-    (void)co_await iocoro::co_sleep(ex, 5ms);
+    (void)co_await iocoro::co_sleep(5ms);
 
     s.cancel_read();
 
@@ -365,7 +365,7 @@ TEST(tcp_socket_test, cancel_write_aborts_pending_write) {
       },
       iocoro::use_awaitable);
 
-    (void)co_await iocoro::co_sleep(ex, 10ms);
+    (void)co_await iocoro::co_sleep(10ms);
     s.cancel_write();
 
     try {

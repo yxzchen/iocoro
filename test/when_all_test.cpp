@@ -45,7 +45,6 @@ TEST(when_all_test, rethrows_first_exception_after_all_tasks_complete) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   // Note: must be a coroutine (contain co_await/co_return) so the exception is observed on await.
   auto boom = []() -> iocoro::awaitable<void> {
@@ -54,7 +53,7 @@ TEST(when_all_test, rethrows_first_exception_after_all_tasks_complete) {
   };
 
   auto slow = [&]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(ex, 10ms);
+    co_await iocoro::co_sleep(10ms);
     co_return 7;
   };
 

@@ -27,12 +27,6 @@ struct slow_cancellable_stream {
   std::atomic<bool> in_read{false};
   std::atomic<bool> in_write{false};
 
-  iocoro::io_executor ex{};
-
-  explicit slow_cancellable_stream(iocoro::io_executor ex_) : ex(ex_) {}
-
-  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
-
   void cancel() noexcept {
     cancelled_read.store(true, std::memory_order_release);
     cancelled_write.store(true, std::memory_order_release);
@@ -52,7 +46,7 @@ struct slow_cancellable_stream {
         guard();
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }
-      co_await iocoro::co_sleep(ex, 1ms);
+      co_await iocoro::co_sleep(1ms);
     }
 
     guard();
@@ -71,7 +65,7 @@ struct slow_cancellable_stream {
         guard();
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }
-      co_await iocoro::co_sleep(ex, 1ms);
+      co_await iocoro::co_sleep(1ms);
     }
 
     guard();
@@ -81,8 +75,7 @@ struct slow_cancellable_stream {
 
 TEST(async_timeout_test, async_read_some_timeout_returns_timed_out_and_cleans_up) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  slow_cancellable_stream s{ex};
+  slow_cancellable_stream s{};
 
   std::array<std::byte, 1> buf{};
 
@@ -99,8 +92,7 @@ TEST(async_timeout_test, async_read_some_timeout_returns_timed_out_and_cleans_up
 
 TEST(async_timeout_test, async_read_timeout_returns_timed_out_and_cleans_up) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  slow_cancellable_stream s{ex};
+  slow_cancellable_stream s{};
 
   std::array<std::byte, 8> buf{};
 
@@ -117,8 +109,7 @@ TEST(async_timeout_test, async_read_timeout_returns_timed_out_and_cleans_up) {
 
 TEST(async_timeout_test, async_write_some_timeout_returns_timed_out_and_cleans_up) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  slow_cancellable_stream s{ex};
+  slow_cancellable_stream s{};
 
   std::array<std::byte, 1> buf{};
 
@@ -135,8 +126,7 @@ TEST(async_timeout_test, async_write_some_timeout_returns_timed_out_and_cleans_u
 
 TEST(async_timeout_test, async_write_timeout_returns_timed_out_and_cleans_up) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  slow_cancellable_stream s{ex};
+  slow_cancellable_stream s{};
 
   std::array<std::byte, 8> buf{};
 
@@ -153,8 +143,7 @@ TEST(async_timeout_test, async_write_timeout_returns_timed_out_and_cleans_up) {
 
 TEST(async_timeout_test, external_cancel_is_propagated_not_mapped_to_timed_out) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  slow_cancellable_stream s{ex};
+  slow_cancellable_stream s{};
   s.cancel_read();  // external cancellation (read-side)
 
   std::array<std::byte, 1> buf{};

@@ -28,12 +28,6 @@ struct cancellable_test_stream {
   std::atomic<bool> cancelled_read{false};
   std::atomic<bool> cancelled_write{false};
 
-  iocoro::io_executor ex{};
-
-  explicit cancellable_test_stream(iocoro::io_executor ex_) : ex(ex_) {}
-
-  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
-
   void cancel() noexcept {
     cancel_calls.fetch_add(1, std::memory_order_relaxed);
     cancelled.store(true, std::memory_order_release);
@@ -55,7 +49,7 @@ struct cancellable_test_stream {
           cancelled_read.load(std::memory_order_acquire)) {
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }
-      co_await iocoro::co_sleep(ex, 1ms);
+      co_await iocoro::co_sleep(1ms);
     }
     co_return iocoro::unexpected(iocoro::error::timed_out);
   }
@@ -68,7 +62,7 @@ struct cancellable_test_stream {
           cancelled_write.load(std::memory_order_acquire)) {
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }
-      co_await iocoro::co_sleep(ex, 1ms);
+      co_await iocoro::co_sleep(1ms);
     }
     co_return iocoro::unexpected(iocoro::error::timed_out);
   }
@@ -76,15 +70,13 @@ struct cancellable_test_stream {
 
 TEST(with_timeout_test, completes_before_timeout_returns_value_and_does_not_call_on_timeout) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   std::atomic<bool> called{false};
   auto r =
     iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::io::with_timeout(
-        ex,
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-          co_await iocoro::co_sleep(ex, 5ms);
+          co_await iocoro::co_sleep(5ms);
           co_return 42;
         }(),
         200ms, [&]() { called = true; });
@@ -97,14 +89,12 @@ TEST(with_timeout_test, completes_before_timeout_returns_value_and_does_not_call
 
 TEST(with_timeout_test, error_code_completes_before_timeout_returns_success_and_does_not_call_on_timeout) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   std::atomic<bool> called{false};
   auto r = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::error_code> {
     co_return co_await iocoro::io::with_timeout(
-      ex,
       [&]() -> iocoro::awaitable<std::error_code> {
-        co_await iocoro::co_sleep(ex, 5ms);
+        co_await iocoro::co_sleep(5ms);
         co_return std::error_code{};
       }(),
       200ms, [&]() { called = true; });
@@ -116,7 +106,6 @@ TEST(with_timeout_test, error_code_completes_before_timeout_returns_success_and_
 
 TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   std::atomic<bool> cancelled{false};
   std::atomic<bool> called{false};
@@ -124,14 +113,13 @@ TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::io::with_timeout(
-        ex,
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           // Wait until cancelled, then surface operation_aborted.
           for (int i = 0; i < 200; ++i) {
             if (cancelled.load(std::memory_order_acquire)) {
               co_return iocoro::unexpected(iocoro::error::operation_aborted);
             }
-            co_await iocoro::co_sleep(ex, 1ms);
+            co_await iocoro::co_sleep(1ms);
           }
           co_return iocoro::unexpected(iocoro::error::timed_out);
         }(),
@@ -149,21 +137,19 @@ TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on
 
 TEST(with_timeout_test, error_code_timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   std::atomic<bool> cancelled{false};
   std::atomic<bool> called{false};
 
   auto r = iocoro::sync_wait_for(ctx, 500ms, [&]() -> iocoro::awaitable<std::error_code> {
     co_return co_await iocoro::io::with_timeout(
-      ex,
       [&]() -> iocoro::awaitable<std::error_code> {
         // Wait until cancelled, then surface operation_aborted.
         for (int i = 0; i < 200; ++i) {
           if (cancelled.load(std::memory_order_acquire)) {
             co_return iocoro::error::operation_aborted;
           }
-          co_await iocoro::co_sleep(ex, 1ms);
+          co_await iocoro::co_sleep(1ms);
         }
         co_return iocoro::error::timed_out;
       }(),
@@ -181,14 +167,12 @@ TEST(with_timeout_test, error_code_timeout_maps_operation_aborted_to_timed_out_a
 
 TEST(with_timeout_test, external_operation_aborted_is_not_mapped_to_timed_out) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   std::atomic<bool> called{false};
 
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::io::with_timeout(
-        ex,
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           // External cancellation: complete with operation_aborted before timeout can fire.
           co_return iocoro::unexpected(iocoro::error::operation_aborted);
@@ -203,15 +187,13 @@ TEST(with_timeout_test, external_operation_aborted_is_not_mapped_to_timed_out) {
 
 TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   std::atomic<bool> called{false};
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::io::with_timeout(
-        ex,
         [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-          co_await iocoro::co_sleep(ex, 20ms);  // ensure the timer has time to fire
+          co_await iocoro::co_sleep(20ms);  // ensure the timer has time to fire
           co_return iocoro::unexpected(iocoro::error::broken_pipe);
         }(),
         5ms, [&]() { called = true; });
@@ -224,7 +206,7 @@ TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
 
 TEST(with_timeout_test, with_timeout_stream_overload_uses_cancel) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{ctx.get_executor()};
+  cancellable_test_stream s{};
 
   std::array<std::byte, 1> buf{};
 
@@ -240,7 +222,7 @@ TEST(with_timeout_test, with_timeout_stream_overload_uses_cancel) {
 
 TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{ctx.get_executor()};
+  cancellable_test_stream s{};
 
   std::array<std::byte, 1> buf{};
 
@@ -257,7 +239,7 @@ TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
 
 TEST(with_timeout_test, with_timeout_write_prefers_cancel_write) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{ctx.get_executor()};
+  cancellable_test_stream s{};
 
   std::array<std::byte, 1> buf{};
 
@@ -287,9 +269,8 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expec
 
   auto main = [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
     co_return co_await iocoro::io::with_timeout_detached(
-      ex,
       [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-        co_await iocoro::co_sleep(ex, 200ms);
+        co_await iocoro::co_sleep(200ms);
         op_completed.store(true, std::memory_order_release);
         co_return 7;
       }(),
@@ -335,9 +316,8 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
 
   auto main = [&]() -> iocoro::awaitable<std::error_code> {
     co_return co_await iocoro::io::with_timeout_detached(
-      ex,
       [&]() -> iocoro::awaitable<std::error_code> {
-        co_await iocoro::co_sleep(ex, 200ms);
+        co_await iocoro::co_sleep(200ms);
         op_completed.store(true, std::memory_order_release);
         co_return std::error_code{};
       }(),

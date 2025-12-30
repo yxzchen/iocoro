@@ -28,24 +28,6 @@ TEST(co_spawn_test, co_spawn_factory_detached_runs) {
   EXPECT_TRUE(ran);
 }
 
-TEST(co_spawn_test, co_spawn_factory_use_awaitable_returns_value) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-
-  auto v = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<int> {
-    return iocoro::co_spawn(
-      ex,
-      [ex]() -> iocoro::awaitable<int> {
-        auto cur = co_await iocoro::this_coro::executor;
-        EXPECT_TRUE(static_cast<bool>(cur));
-        co_return 42;
-      },
-      iocoro::use_awaitable);
-  }());
-
-  EXPECT_EQ(v, 42);
-}
-
 TEST(co_spawn_test, co_spawn_factory_completion_callback_receives_value) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
@@ -86,30 +68,11 @@ TEST(co_spawn_test, co_spawn_use_awaitable_hot_starts_without_await) {
   EXPECT_TRUE(ran.load(std::memory_order_relaxed));
 }
 
-TEST(co_spawn_test, co_spawn_use_awaitable_returns_value) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-
-  auto child = [ex]() -> iocoro::awaitable<int> {
-    auto cur = co_await iocoro::this_coro::executor;
-    EXPECT_TRUE(static_cast<bool>(cur));
-    co_return 42;
-  };
-
-  auto v = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<int> {
-    return iocoro::co_spawn(ex, child(), iocoro::use_awaitable);
-  }());
-
-  EXPECT_EQ(v, 42);
-}
-
 TEST(co_spawn_test, co_spawn_use_awaitable_rethrows_exception) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
   auto child = [ex]() -> iocoro::awaitable<int> {
-    auto cur = co_await iocoro::this_coro::executor;
-    EXPECT_TRUE(static_cast<bool>(cur));
     throw std::runtime_error("boom");
   };
 
@@ -133,7 +96,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_waits_for_timer_based_child) {
   auto ex = ctx.get_executor();
 
   auto slow = [&]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(ex, 10ms);
+    co_await iocoro::co_sleep(10ms);
     co_return 7;
   };
 
