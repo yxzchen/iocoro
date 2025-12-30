@@ -1,5 +1,8 @@
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
+#include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/executor.hpp>
+
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -231,7 +234,10 @@ inline void socket_impl_base::fd_wait_operation::complete(std::error_code ec) {
     return;
   }
   st_->ec = ec;
-  ex_.post([s = st_] { s->h.resume(); });
+  ex_.post([s = st_, ex = ex_]() mutable {
+    detail::executor_guard g{ex};
+    s->h.resume();
+  });
 }
 
 }  // namespace iocoro::detail::socket
