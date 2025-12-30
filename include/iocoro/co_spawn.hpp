@@ -19,22 +19,6 @@ void co_spawn(any_executor ex, awaitable<T> a, detached_t) {
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
 }
 
-/// Start an awaitable on the given executor (detached / fire-and-forget).
-///
-/// Ownership of the coroutine frame is detached from the passed awaitable:
-/// the frame will be destroyed at final_suspend.
-template <typename T>
-void co_spawn(io_executor ex, awaitable<T> a, detached_t) {
-  co_spawn(any_executor{ex}, std::move(a), detached);
-}
-
-/// Start an awaitable on the given thread_pool_executor (detached / fire-and-forget).
-template <typename T>
-void co_spawn(thread_pool_executor pex, awaitable<T> a, detached_t) {
-  auto ex = pex.pick_executor();
-  co_spawn(ex, std::move(a), detached);
-}
-
 /// Start a callable that returns iocoro::awaitable<T> on the given executor (detached).
 ///
 /// This overload is the safe/idiomatic way to spawn coroutine lambdas with captures:
@@ -51,20 +35,6 @@ void co_spawn(any_executor ex, F&& f, detached_t) {
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
 }
 
-template <typename F>
-  requires detail::awaitable_factory<std::remove_cvref_t<F>>
-void co_spawn(io_executor ex, F&& f, detached_t) {
-  co_spawn(any_executor{ex}, std::forward<F>(f), detached);
-}
-
-/// Start a callable that returns iocoro::awaitable<T> on the given thread_pool_executor (detached).
-template <typename F>
-  requires detail::awaitable_factory<std::remove_cvref_t<F>>
-void co_spawn(thread_pool_executor pex, F&& f, detached_t) {
-  auto ex = pex.pick_executor();
-  co_spawn(ex, std::forward<F>(f), detached);
-}
-
 /// Start an awaitable on the given executor, returning an awaitable that can be awaited
 /// to obtain the result (exception is rethrown on await_resume()).
 template <typename T>
@@ -77,18 +47,6 @@ auto co_spawn(any_executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> 
 
   co_spawn(ex, detail::run_to_state<T>(ex, st, std::move(entry)), detached);
   return detail::await_state<T>(std::move(st));
-}
-
-template <typename T>
-auto co_spawn(io_executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
-  return co_spawn(any_executor{ex}, std::move(a), use_awaitable);
-}
-
-/// Start an awaitable on the given thread_pool_executor, returning an awaitable.
-template <typename T>
-auto co_spawn(thread_pool_executor pex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
-  auto ex = pex.pick_executor();
-  return co_spawn(ex, std::move(a), use_awaitable);
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
@@ -108,23 +66,6 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   return detail::await_state<value_type>(std::move(st));
 }
 
-template <typename F>
-  requires detail::awaitable_factory<std::remove_cvref_t<F>>
-auto co_spawn(io_executor ex, F&& f, use_awaitable_t)
-  -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
-  return co_spawn(any_executor{ex}, std::forward<F>(f), use_awaitable);
-}
-
-/// Start a callable that returns iocoro::awaitable<T> on the given thread_pool_executor,
-/// returning an awaitable that can be awaited to obtain the result.
-template <typename F>
-  requires detail::awaitable_factory<std::remove_cvref_t<F>>
-auto co_spawn(thread_pool_executor pex, F&& f, use_awaitable_t)
-  -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
-  auto ex = pex.pick_executor();
-  return co_spawn(ex, std::forward<F>(f), use_awaitable);
-}
-
 /// Start an awaitable on the given executor, invoking a completion callback with either
 /// the result or an exception.
 template <typename T, typename F>
@@ -138,20 +79,6 @@ void co_spawn(any_executor ex, awaitable<T> a, F&& completion) {
   auto entry = detail::spawn_entry_point_with_completion<T>(std::move(state));
 
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
-}
-
-template <typename T, typename F>
-  requires detail::completion_callback_for<F, T>
-void co_spawn(io_executor ex, awaitable<T> a, F&& completion) {
-  co_spawn(any_executor{ex}, std::move(a), std::forward<F>(completion));
-}
-
-/// Start an awaitable on the given thread_pool_executor, invoking a completion callback.
-template <typename T, typename F>
-  requires detail::completion_callback_for<F, T>
-void co_spawn(thread_pool_executor pex, awaitable<T> a, F&& completion) {
-  auto ex = pex.pick_executor();
-  co_spawn(ex, std::move(a), std::forward<F>(completion));
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, invoking a
@@ -170,23 +97,20 @@ void co_spawn(any_executor ex, Factory&& f, Completion&& completion) {
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
 }
 
-template <typename Factory, typename Completion>
-  requires detail::awaitable_factory<std::remove_cvref_t<Factory>> &&
-           detail::completion_callback_for<std::remove_cvref_t<Completion>,
-                                           detail::awaitable_value_t<std::remove_cvref_t<Factory>>>
-void co_spawn(io_executor ex, Factory&& f, Completion&& completion) {
-  co_spawn(any_executor{ex}, std::forward<Factory>(f), std::forward<Completion>(completion));
+/// Generic forwarding overload for io_executor: converts to any_executor and forwards all arguments.
+template <typename... Args>
+auto co_spawn(io_executor ex, Args&&... args)
+  -> decltype(co_spawn(std::declval<any_executor>(), std::declval<Args>()...))
+{
+  return co_spawn(any_executor{ex}, std::forward<Args>(args)...);
 }
 
-/// Start a callable that returns iocoro::awaitable<T> on the given thread_pool_executor,
-/// invoking a completion callback with either the result or an exception.
-template <typename Factory, typename Completion>
-  requires detail::awaitable_factory<std::remove_cvref_t<Factory>> &&
-           detail::completion_callback_for<std::remove_cvref_t<Completion>,
-                                           detail::awaitable_value_t<std::remove_cvref_t<Factory>>>
-void co_spawn(thread_pool_executor pex, Factory&& f, Completion&& completion) {
-  auto ex = pex.pick_executor();
-  co_spawn(ex, std::forward<Factory>(f), std::forward<Completion>(completion));
+/// Generic forwarding overload for thread_pool_executor: picks an executor and forwards all arguments.
+template <typename... Args>
+auto co_spawn(thread_pool_executor pex, Args&&... args)
+  -> decltype(co_spawn(std::declval<io_executor>(), std::declval<Args>()...))
+{
+  return co_spawn(pex.pick_executor(), std::forward<Args>(args)...);
 }
 
 }  // namespace iocoro
