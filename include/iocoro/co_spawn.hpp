@@ -8,17 +8,6 @@
 
 namespace iocoro {
 
-/// Start an awaitable on the given executor (detached / fire-and-forget).
-template <typename T>
-void co_spawn(any_executor ex, awaitable<T> a, detached_t) {
-  detail::awaitable_as_function<T> wrapper(std::move(a));
-
-  auto state = std::make_shared<detail::spawn_state<T>>(std::move(wrapper));
-  auto entry = detail::spawn_entry_point<T>(std::move(state));
-
-  detail::spawn_detached_impl(std::move(ex), std::move(entry));
-}
-
 /// Start a callable that returns iocoro::awaitable<T> on the given executor (detached).
 ///
 /// This overload is the safe/idiomatic way to spawn coroutine lambdas with captures:
@@ -33,20 +22,6 @@ void co_spawn(any_executor ex, F&& f, detached_t) {
   auto entry = detail::spawn_entry_point<value_type>(std::move(state));
 
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
-}
-
-/// Start an awaitable on the given executor, returning an awaitable that can be awaited
-/// to obtain the result (exception is rethrown on await_resume()).
-template <typename T>
-auto co_spawn(any_executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
-  detail::awaitable_as_function<T> wrapper(std::move(a));
-  auto st = std::make_shared<detail::spawn_wait_state<T>>(ex);
-
-  auto state = std::make_shared<detail::spawn_state<T>>(std::move(wrapper));
-  auto entry = detail::spawn_entry_point<T>(std::move(state));
-
-  co_spawn(ex, detail::run_to_state<T>(ex, st, std::move(entry)), detached);
-  return detail::await_state<T>(std::move(st));
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
@@ -66,21 +41,6 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   return detail::await_state<value_type>(std::move(st));
 }
 
-/// Start an awaitable on the given executor, invoking a completion callback with either
-/// the result or an exception.
-template <typename T, typename F>
-  requires detail::completion_callback_for<F, T>
-void co_spawn(any_executor ex, awaitable<T> a, F&& completion) {
-  detail::awaitable_as_function<T> wrapper(std::move(a));
-
-  auto state =
-    std::make_shared<detail::spawn_state_with_completion<T>>(std::move(wrapper),
-                                                            std::forward<F>(completion));
-  auto entry = detail::spawn_entry_point_with_completion<T>(std::move(state));
-
-  detail::spawn_detached_impl(std::move(ex), std::move(entry));
-}
-
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, invoking a
 /// completion callback with either the result or an exception.
 template <typename Factory, typename Completion>
@@ -95,6 +55,13 @@ void co_spawn(any_executor ex, Factory&& f, Completion&& completion) {
   auto entry = detail::spawn_entry_point_with_completion<value_type>(std::move(state));
 
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
+}
+
+/// Overload for awaitable<T>: converts to factory and forwards to unified implementation.
+template <typename T, typename Token>
+auto co_spawn(any_executor ex, awaitable<T> a, Token&& token) {
+  detail::awaitable_as_function<T> factory(std::move(a));
+  return co_spawn(ex, std::move(factory), std::forward<Token>(token));
 }
 
 /// Generic forwarding overload for io_executor: converts to any_executor and forwards all arguments.
