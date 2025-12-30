@@ -8,7 +8,6 @@
 namespace iocoro {
 
 class io_executor;
-class timer_handle;
 
 namespace detail {
 class io_context_impl;
