@@ -3,8 +3,10 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
+#include <iocoro/detail/require_io_executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/steady_timer.hpp>
+#include <iocoro/this_coro.hpp>
 
 #include <chrono>
 #include <utility>
@@ -23,6 +25,12 @@ inline auto co_sleep(io_executor ex, std::chrono::steady_clock::duration d) -> a
   steady_timer t{ex};
   (void)t.expires_after(d);
   (void)co_await t.async_wait(use_awaitable);
+}
+
+inline auto co_sleep(std::chrono::steady_clock::duration d) -> awaitable<void> {
+  auto ex = co_await this_coro::executor;
+  IOCORO_ENSURE(ex, "co_sleep: requires a bound executor");
+  co_return co_await co_sleep(detail::require_io_executor(ex), d);
 }
 
 }  // namespace iocoro

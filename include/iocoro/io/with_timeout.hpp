@@ -4,11 +4,13 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
+#include <iocoro/detail/require_io_executor.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/steady_timer.hpp>
+#include <iocoro/this_coro.hpp>
 #include <iocoro/when_any.hpp>
 
 #include <atomic>
@@ -172,6 +174,16 @@ auto with_timeout(io_executor ex, awaitable<Result> op, std::chrono::duration<Re
                                                std::forward<OnTimeout>(on_timeout));
 }
 
+template <class Result, class Rep, class Period, class OnTimeout>
+  requires std::invocable<OnTimeout&>
+auto with_timeout(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout,
+                  OnTimeout&& on_timeout) -> awaitable<Result> {
+  auto ex = co_await this_coro::executor;
+  IOCORO_ENSURE(ex, "with_timeout: requires a bound executor");
+  co_return co_await with_timeout(::iocoro::detail::require_io_executor(ex), std::move(op), timeout,
+                                  std::forward<OnTimeout>(on_timeout));
+}
+
 /// Await an I/O awaitable with a deadline (detached semantics).
 ///
 /// Contract:
@@ -188,6 +200,14 @@ template <class Result, class Rep, class Period>
 auto with_timeout_detached(io_executor ex, awaitable<Result> op, std::chrono::duration<Rep, Period> timeout)
   -> awaitable<Result> {
   co_return co_await detail::with_timeout_detached_impl(ex, std::move(op), timeout);
+}
+
+template <class Result, class Rep, class Period>
+auto with_timeout_detached(awaitable<Result> op, std::chrono::duration<Rep, Period> timeout)
+  -> awaitable<Result> {
+  auto ex = co_await this_coro::executor;
+  IOCORO_ENSURE(ex, "with_timeout_detached: requires a bound executor");
+  co_return co_await with_timeout_detached(::iocoro::detail::require_io_executor(ex), std::move(op), timeout);
 }
 
 /// Convenience overload that uses `Stream::cancel()` on timeout.
