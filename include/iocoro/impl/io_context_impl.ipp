@@ -120,8 +120,8 @@ inline void io_context_impl::post(std::function<void()> f) {
 
 inline void io_context_impl::dispatch(std::function<void()> f) {
   if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
-    // Ensure awaitables that inherit the "current executor" see the right executor.
-    auto const desired = executor{*this};
+    // Ensure awaitables that inherit the "current io_executor" see the right io_executor.
+    auto const desired = io_executor{*this};
     if (get_current_executor() == desired) {
       f();
     } else {
@@ -144,7 +144,7 @@ inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = std::chrono::steady_clock::now() + timeout;
   entry->callback = std::move(callback);
-  entry->ex = executor{*this};
+  entry->ex = io_executor{*this};
   entry->state.store(timer_state::pending, std::memory_order_release);
 
   {
@@ -312,7 +312,7 @@ inline auto io_context_impl::process_timers() -> std::size_t {
 
     auto cb = std::move(entry->callback);
     if (cb) {
-      executor_guard g{executor{*this}};
+      executor_guard g{io_executor{*this}};
       cb();
     }
     try {
@@ -341,7 +341,7 @@ inline auto io_context_impl::process_posted() -> std::size_t {
     return 0;
   }
 
-  executor_guard g{executor{*this}};
+  executor_guard g{io_executor{*this}};
 
   while (!local.empty()) {
     if (stopped_.load(std::memory_order_acquire)) {

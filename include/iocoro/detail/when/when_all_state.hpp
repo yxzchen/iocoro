@@ -23,7 +23,7 @@ struct when_all_variadic_state : when_state_base<when_all_variadic_state<Ts...>>
 
   values_tuple values{};
 
-  explicit when_all_variadic_state(executor ex_)
+  explicit when_all_variadic_state(io_executor ex_)
       : when_state_base<when_all_variadic_state<Ts...>>(ex_, sizeof...(Ts)) {}
 
   template <std::size_t I, class V>
@@ -40,7 +40,7 @@ struct when_all_container_state : when_state_base<when_all_container_state<T>> {
   // Only used for non-void T
   std::vector<std::optional<value_t>> values{};
 
-  explicit when_all_container_state(executor ex_, std::size_t n)
+  explicit when_all_container_state(io_executor ex_, std::size_t n)
       : when_state_base<when_all_container_state<T>>(ex_, n) {
     if constexpr (!std::is_void_v<T>) {
       values.resize(n);

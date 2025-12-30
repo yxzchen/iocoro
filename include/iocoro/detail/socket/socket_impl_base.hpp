@@ -3,7 +3,7 @@
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/socket_option.hpp>
 
 #include <atomic>
@@ -23,7 +23,7 @@ namespace iocoro::detail::socket {
 ///
 /// Responsibilities:
 /// - Own the native handle (fd) lifecycle (open/close/release).
-/// - Own executor binding (used to register reactor ops / post completions).
+/// - Own io_executor binding (used to register reactor ops / post completions).
 /// - Provide thread-safe cancel/close primitives.
 ///
 /// Concurrency contract (minimal; enforced by derived classes):
@@ -41,7 +41,7 @@ class socket_impl_base {
   using fd_event_handle = io_context_impl::fd_event_handle;
 
   socket_impl_base() noexcept = delete;
-  explicit socket_impl_base(executor ex) noexcept : ex_(ex) {}
+  explicit socket_impl_base(io_executor ex) noexcept : ex_(ex) {}
 
   socket_impl_base(socket_impl_base const&) = delete;
   auto operator=(socket_impl_base const&) -> socket_impl_base& = delete;
@@ -50,7 +50,7 @@ class socket_impl_base {
 
   ~socket_impl_base() { close(); }
 
-  auto get_executor() const noexcept -> executor { return ex_; }
+  auto get_executor() const noexcept -> io_executor { return ex_; }
 
   /// Native handle snapshot. Returns -1 if not open.
   ///
@@ -187,7 +187,7 @@ class socket_impl_base {
 
   class fd_wait_operation final : public operation_base {
    public:
-    fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base, executor ex,
+    fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
                       std::shared_ptr<wait_state> st) noexcept;
 
     void execute() override;
@@ -200,7 +200,7 @@ class socket_impl_base {
     fd_wait_kind kind_;
     int fd_;
     socket_impl_base* base_ = nullptr;
-    executor ex_{};
+    io_executor ex_{};
     std::shared_ptr<wait_state> st_{};
   };
 
@@ -208,10 +208,10 @@ class socket_impl_base {
   struct fd_awaiter {
     socket_impl_base* self;
     int fd;
-    executor ex;
+    io_executor ex;
     std::shared_ptr<wait_state> st;
 
-    fd_awaiter(socket_impl_base* self_, int fd_, executor ex_,
+    fd_awaiter(socket_impl_base* self_, int fd_, io_executor ex_,
                std::shared_ptr<wait_state> st_) noexcept
         : self(self_), fd(fd_), ex(ex_), st(st_) {}
 
@@ -235,7 +235,7 @@ class socket_impl_base {
     }
   };
 
-  executor ex_{};
+  io_executor ex_{};
 
   mutable std::mutex mtx_{};
 

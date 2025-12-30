@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool.hpp>
 
 #include <functional>
@@ -32,7 +32,7 @@ class thread_pool_executor {
     pool_->pick_executor().dispatch(std::move(f));
   }
 
-  auto pick_executor() const -> executor {
+  auto pick_executor() const -> io_executor {
     IOCORO_ENSURE(pool_ != nullptr, "thread_pool_executor: empty pool_");
     return pool_->pick_executor();
   }

@@ -2,7 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_guard.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
 
 #include <cassert>
@@ -19,7 +19,7 @@ class awaitable;
 namespace iocoro::detail {
 
 struct awaitable_promise_base {
-  executor ex_{};
+  io_executor ex_{};
   std::coroutine_handle<> continuation_{};
   std::exception_ptr exception_{};
   bool detached_{false};
@@ -54,7 +54,7 @@ struct awaitable_promise_base {
     return final_awaiter{this};
   }
 
-  void set_executor(executor ex) noexcept { ex_ = ex; }
+  void set_executor(io_executor ex) noexcept { ex_ = ex; }
 
   void detach() noexcept {
     IOCORO_ENSURE(ex_, "awaitable_promise: detach() requires executor");
@@ -98,9 +98,9 @@ struct awaitable_promise_base {
 
   auto await_transform(this_coro::executor_t) noexcept {
     struct awaiter {
-      executor ex;
+      io_executor ex;
       bool await_ready() noexcept { return true; }
-      executor await_resume() noexcept { return ex; }
+      io_executor await_resume() noexcept { return ex; }
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
     return awaiter{ex_};

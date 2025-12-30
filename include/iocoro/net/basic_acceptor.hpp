@@ -2,7 +2,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/basic_io_handle.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 
@@ -40,7 +40,7 @@ class basic_acceptor : public ::iocoro::detail::basic_io_handle<
 
   basic_acceptor() = delete;
 
-  explicit basic_acceptor(executor ex) : base_type(ex) {}
+  explicit basic_acceptor(io_executor ex) : base_type(ex) {}
   explicit basic_acceptor(io_context& ctx) : base_type(ctx) {}
 
   basic_acceptor(basic_acceptor const&) = delete;
@@ -87,7 +87,7 @@ class basic_acceptor : public ::iocoro::detail::basic_io_handle<
   /// Accept and return a connected `socket`.
   ///
   /// Notes:
-  /// - The returned socket is bound to the same executor as this acceptor.
+  /// - The returned socket is bound to the same io_executor as this acceptor.
   /// - The accepted native fd is adopted atomically; no fd leaks occur on failure.
   auto async_accept() -> awaitable<expected<socket, std::error_code>> {
     auto r = co_await async_accept_fd();

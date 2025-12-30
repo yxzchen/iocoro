@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -34,7 +34,7 @@ struct timer_entry {
   std::function<void()> callback;
 
   // Executor that owns this timer (context thread affinity).
-  iocoro::executor ex{};
+  iocoro::io_executor ex{};
 
   std::atomic<timer_state> state{timer_state::pending};
 

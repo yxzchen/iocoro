@@ -12,11 +12,11 @@
 
 namespace iocoro {
 
-inline steady_timer::steady_timer(executor ex) noexcept : ex_(ex), expiry_(clock::now()) {}
+inline steady_timer::steady_timer(io_executor ex) noexcept : ex_(ex), expiry_(clock::now()) {}
 
-inline steady_timer::steady_timer(executor ex, time_point at) noexcept : ex_(ex), expiry_(at) {}
+inline steady_timer::steady_timer(io_executor ex, time_point at) noexcept : ex_(ex), expiry_(at) {}
 
-inline steady_timer::steady_timer(executor ex, duration after) noexcept
+inline steady_timer::steady_timer(io_executor ex, duration after) noexcept
     : ex_(ex), expiry_(clock::now() + after) {}
 
 inline steady_timer::~steady_timer() { (void)cancel(); }
@@ -45,16 +45,16 @@ inline void steady_timer::reschedule() {
     ms = milliseconds{0};
   }
 
-  // Schedule a timer entry owned by this executor/context. We use an empty callback:
+  // Schedule a timer entry owned by this io_executor/context. We use an empty callback:
   // completion is observed via timer_entry waiter notification.
   auto entry = ex_.ensure_impl().schedule_timer(ms, [] {});
   th_ = timer_handle(std::move(entry));
 }
 
 inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
-  IOCORO_ENSURE(ex_, "steady_timer::async_wait: requires a bound executor");
+  IOCORO_ENSURE(ex_, "steady_timer::async_wait: requires a bound io_executor");
 
-  // If the executor is stopped, complete synchronously to avoid hanging.
+  // If the io_executor is stopped, complete synchronously to avoid hanging.
   if (ex_.stopped()) {
     if (h) {
       h(error::operation_aborted);
@@ -88,9 +88,9 @@ inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
 }
 
 inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_code> {
-  IOCORO_ENSURE(ex_, "steady_timer::async_wait: requires a bound executor");
+  IOCORO_ENSURE(ex_, "steady_timer::async_wait: requires a bound io_executor");
 
-  // If the executor is stopped, complete synchronously to avoid hanging.
+  // If the io_executor is stopped, complete synchronously to avoid hanging.
   if (ex_.stopped()) {
     co_return error::operation_aborted;
   }
@@ -104,16 +104,16 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
   }
 
   struct state final {
-    executor ex{};
+    io_executor ex{};
     std::coroutine_handle<> h{};
     std::error_code ec{};
   };
 
   struct awaiter final {
     // Explicit constructor to ensure proper move semantics
-    explicit awaiter(executor ex_, timer_handle th_) : ex(ex_), th(std::move(th_)) {}
+    explicit awaiter(io_executor ex_, timer_handle th_) : ex(ex_), th(std::move(th_)) {}
 
-    executor ex{};
+    io_executor ex{};
     timer_handle th{};
     std::shared_ptr<state> st{};
 

@@ -2,7 +2,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/basic_io_handle.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/shutdown.hpp>
@@ -27,7 +27,7 @@ namespace iocoro::net {
 ///   built on top of `iocoro::detail::socket::stream_socket_impl` (protocol-agnostic stream IO).
 ///
 /// Construction:
-/// - No default constructor: a socket must be bound to an executor (or io_context) up-front.
+/// - No default constructor: a socket must be bound to an io_executor (or io_context) up-front.
 /// - Protocol is fixed by the template parameter; there is no "rebind protocol" behavior.
 template <class Protocol>
 class basic_stream_socket : public ::iocoro::detail::basic_io_handle<
@@ -40,7 +40,7 @@ class basic_stream_socket : public ::iocoro::detail::basic_io_handle<
 
   basic_stream_socket() = delete;
 
-  explicit basic_stream_socket(executor ex) : base_type(ex) {}
+  explicit basic_stream_socket(io_executor ex) : base_type(ex) {}
   explicit basic_stream_socket(io_context& ctx) : base_type(ctx) {}
 
   basic_stream_socket(basic_stream_socket const&) = delete;

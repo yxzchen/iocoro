@@ -298,7 +298,7 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
   -> std::size_t {
-  executor_guard g{executor{*this}};
+  executor_guard g{io_executor{*this}};
 
   // Ensure any previously prepared SQEs are submitted before we wait.
   int const submitted = ::io_uring_submit(&backend_->ring);

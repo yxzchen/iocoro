@@ -21,7 +21,7 @@ namespace detail {
 
 // Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-auto when_all_run_one(executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st,
+auto when_all_run_one(io_executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st,
                       awaitable<T> a) -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {
@@ -40,7 +40,7 @@ auto when_all_run_one(executor ex, std::shared_ptr<when_all_variadic_state<Ts...
 }
 
 template <class... Ts, std::size_t... Is>
-void when_all_start_variadic([[maybe_unused]] executor ex,
+void when_all_start_variadic([[maybe_unused]] io_executor ex,
                              [[maybe_unused]] std::shared_ptr<when_all_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
@@ -65,7 +65,7 @@ auto when_all_collect_variadic([[maybe_unused]]
 
 // Runner coroutine for container when_all
 template <class T>
-auto when_all_container_run_one(executor ex, std::shared_ptr<when_all_container_state<T>> st,
+auto when_all_container_run_one(io_executor ex, std::shared_ptr<when_all_container_state<T>> st,
                                 std::size_t i, awaitable<T> a) -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {

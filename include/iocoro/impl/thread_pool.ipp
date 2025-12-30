@@ -49,7 +49,7 @@ inline void thread_pool::join() noexcept {
   }
 }
 
-inline auto thread_pool::pick_executor() noexcept -> executor {
+inline auto thread_pool::pick_executor() noexcept -> io_executor {
   IOCORO_ENSURE(!contexts_.empty(), "thread_pool: no shards");
   auto const i = rr_.fetch_add(1, std::memory_order_relaxed);
   return contexts_[i % contexts_.size()]->get_executor();

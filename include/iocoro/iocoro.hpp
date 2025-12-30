@@ -16,7 +16,7 @@
 #include <iocoro/co_spawn.hpp>
 
 // Execution & lifetime
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/thread_pool.hpp>
 #include <iocoro/thread_pool_executor.hpp>

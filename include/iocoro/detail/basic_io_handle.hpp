@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/socket_option.hpp>
 
@@ -12,7 +12,7 @@ namespace iocoro::detail {
 ///
 /// Responsibilities:
 /// - Own and share an implementation object (`Impl`) via `std::shared_ptr`.
-/// - Provide common "handle" operations: executor access, open state, cancel/close,
+/// - Provide common "handle" operations: io_executor access, open state, cancel/close,
 ///   socket options, and native_handle.
 ///
 /// Non-responsibilities:
@@ -23,10 +23,10 @@ class basic_io_handle {
  public:
   using impl_type = Impl;
 
-  /// Handles must be bound to an executor at construction time.
+  /// Handles must be bound to an io_executor at construction time.
   basic_io_handle() = delete;
 
-  explicit basic_io_handle(executor ex) : impl_(std::make_shared<Impl>(ex)) {}
+  explicit basic_io_handle(io_executor ex) : impl_(std::make_shared<Impl>(ex)) {}
   explicit basic_io_handle(io_context& ctx) : basic_io_handle(ctx.get_executor()) {}
 
   basic_io_handle(basic_io_handle const&) = delete;
@@ -44,7 +44,7 @@ class basic_io_handle {
     return *this;
   }
 
-  auto get_executor() const noexcept -> executor { return impl_->get_executor(); }
+  auto get_executor() const noexcept -> io_executor { return impl_->get_executor(); }
 
   auto is_open() const noexcept -> bool { return impl_->is_open(); }
 

@@ -3,7 +3,7 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
@@ -34,7 +34,7 @@ class basic_acceptor_impl {
   using endpoint_type = typename Protocol::endpoint;
 
   basic_acceptor_impl() noexcept = delete;
-  explicit basic_acceptor_impl(executor ex) noexcept : base_(ex) {}
+  explicit basic_acceptor_impl(io_executor ex) noexcept : base_(ex) {}
 
   basic_acceptor_impl(basic_acceptor_impl const&) = delete;
   auto operator=(basic_acceptor_impl const&) -> basic_acceptor_impl& = delete;
@@ -43,7 +43,7 @@ class basic_acceptor_impl {
 
   ~basic_acceptor_impl() = default;
 
-  auto get_executor() const noexcept -> executor { return base_.get_executor(); }
+  auto get_executor() const noexcept -> io_executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
   auto is_open() const noexcept -> bool { return base_.is_open(); }
 

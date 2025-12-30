@@ -1,17 +1,17 @@
 #pragma once
 
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 
 namespace iocoro::detail {
 
-inline thread_local executor current_executor{};
+inline thread_local io_executor current_executor{};
 
-inline auto get_current_executor() noexcept -> executor { return current_executor; }
+inline auto get_current_executor() noexcept -> io_executor { return current_executor; }
 
 struct executor_guard {
-  executor prev;
+  io_executor prev;
 
-  explicit executor_guard(executor ex) noexcept : prev(current_executor) { current_executor = ex; }
+  explicit executor_guard(io_executor ex) noexcept : prev(current_executor) { current_executor = ex; }
   ~executor_guard() { current_executor = prev; }
 
   executor_guard(executor_guard const&) = delete;

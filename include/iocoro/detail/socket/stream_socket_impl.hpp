@@ -35,7 +35,7 @@ namespace iocoro::detail::socket {
 class stream_socket_impl {
  public:
   stream_socket_impl() noexcept = delete;
-  explicit stream_socket_impl(executor ex) noexcept : base_(ex) {}
+  explicit stream_socket_impl(io_executor ex) noexcept : base_(ex) {}
 
   stream_socket_impl(stream_socket_impl const&) = delete;
   auto operator=(stream_socket_impl const&) -> stream_socket_impl& = delete;
@@ -44,7 +44,7 @@ class stream_socket_impl {
 
   ~stream_socket_impl() = default;
 
-  auto get_executor() const noexcept -> executor { return base_.get_executor(); }
+  auto get_executor() const noexcept -> io_executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
 
   /// Open a new native socket (best-effort, non-blocking).

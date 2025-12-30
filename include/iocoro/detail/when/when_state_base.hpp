@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/detail/executor_guard.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -25,13 +25,13 @@ using when_value_t = typename when_value<T>::type;
 // - when_any: remaining = 1 (only one completion needed)
 template <class Derived>
 struct when_state_base {
-  executor ex{};
+  io_executor ex{};
   std::mutex m;
   std::atomic<std::size_t> remaining{0};
   std::coroutine_handle<> waiter{};
   std::exception_ptr first_ep{};
 
-  explicit when_state_base(executor ex_, std::size_t n) : ex(ex_) {
+  explicit when_state_base(io_executor ex_, std::size_t n) : ex(ex_) {
     remaining.store(n, std::memory_order_relaxed);
   }
 
