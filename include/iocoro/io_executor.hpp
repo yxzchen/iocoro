@@ -2,6 +2,10 @@
 
 #include <iocoro/detail/unique_function.hpp>
 
+#include <exception>
+#include <type_traits>
+#include <utility>
+
 namespace iocoro {
 
 class steady_timer;
@@ -33,13 +37,33 @@ class io_executor {
   /// Execute the given function (queued for later execution, never inline).
   ///
   /// This is an alias of post().
-  void execute(detail::unique_function<void()> f) const noexcept { post(std::move(f)); }
+  template <class F>
+    requires std::is_invocable_v<F&>
+  void execute(F&& f) const noexcept {
+    post(std::forward<F>(f));
+  }
 
   /// Post the function for later execution (never inline).
-  void post(detail::unique_function<void()> f) const noexcept;
+  template <class F>
+    requires std::is_invocable_v<F&>
+  void post(F&& f) const noexcept {
+    try {
+      post_impl(detail::unique_function<void()>(std::forward<F>(f)));
+    } catch (...) {
+      std::terminate();
+    }
+  }
 
   /// Dispatch the function (inline if in context thread, otherwise queued).
-  void dispatch(detail::unique_function<void()> f) const noexcept;
+  template <class F>
+    requires std::is_invocable_v<F&>
+  void dispatch(F&& f) const noexcept {
+    try {
+      dispatch_impl(detail::unique_function<void()>(std::forward<F>(f)));
+    } catch (...) {
+      std::terminate();
+    }
+  }
 
   /// Returns true if the associated context is stopped (or io_executor is empty).
   auto stopped() const noexcept -> bool;
@@ -66,6 +90,9 @@ class io_executor {
   void remove_work_guard() const noexcept;
 
   auto ensure_impl() const -> detail::io_context_impl&;
+
+  void post_impl(detail::unique_function<void()> f) const;
+  void dispatch_impl(detail::unique_function<void()> f) const;
 
   // Non-owning pointer. The associated io_context_impl must outlive the io_executor.
   detail::io_context_impl* impl_;

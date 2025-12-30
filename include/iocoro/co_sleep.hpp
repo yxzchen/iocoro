@@ -3,6 +3,7 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
+#include <iocoro/detail/require_io_executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
@@ -19,10 +20,10 @@ namespace iocoro {
 /// - Completion is resumed via the timer's io_executor (never inline).
 /// - If the awaiting coroutine is destroyed, the timer is implicitly cancelled.
 inline auto co_sleep(std::chrono::steady_clock::duration d) -> awaitable<void> {
-  auto ex = co_await this_coro::io_executor;
+  auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "co_sleep: requires a bound executor");
 
-  steady_timer t{ex};
+  steady_timer t{detail::require_io_executor(ex)};
   (void)t.expires_after(d);
   (void)co_await t.async_wait(use_awaitable);
 }

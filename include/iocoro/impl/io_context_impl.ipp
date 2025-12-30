@@ -120,14 +120,9 @@ inline void io_context_impl::post(unique_function<void()> f) {
 
 inline void io_context_impl::dispatch(unique_function<void()> f) {
   if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
-    // Ensure awaitables that inherit the "current io_executor" see the right io_executor.
-    auto const desired = io_executor{*this};
-    if (get_current_io_executor() == desired) {
-      f();
-    } else {
-      executor_guard g{desired};
-      f();
-    }
+    // Ensure awaitables that inherit the "current executor" see the right executor.
+    executor_guard g{any_executor{io_executor{*this}}};
+    f();
   } else {
     post(std::move(f));
   }

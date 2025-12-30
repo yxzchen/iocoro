@@ -4,6 +4,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
+#include <iocoro/detail/require_io_executor.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
@@ -77,10 +78,10 @@ auto with_timeout_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> 
     co_return r;
   }
 
-  auto ex = co_await this_coro::io_executor;
+  auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "with_timeout: requires a bound executor");
 
-  auto timer = std::make_shared<steady_timer>(ex);
+  auto timer = std::make_shared<steady_timer>(::iocoro::detail::require_io_executor(ex));
   (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
 
   std::atomic<bool> fired{false};
@@ -115,10 +116,10 @@ auto with_timeout_detached_impl(awaitable<Result> op, std::chrono::duration<Rep,
   -> awaitable<Result> {
   using traits = timeout_result_traits<Result>;
 
-  auto ex = co_await this_coro::io_executor;
+  auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "with_timeout_detached: requires a bound executor");
 
-  auto timer = std::make_shared<steady_timer>(ex);
+  auto timer = std::make_shared<steady_timer>(::iocoro::detail::require_io_executor(ex));
   (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
 
   auto timer_wait = [timer]() -> awaitable<std::error_code> {

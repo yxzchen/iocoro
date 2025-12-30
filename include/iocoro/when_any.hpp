@@ -22,7 +22,7 @@ namespace detail {
 
 // Runner coroutine for variadic when_any
 template <std::size_t I, class T, class... Ts>
-auto when_any_run_one(io_executor ex, std::shared_ptr<when_any_variadic_state<Ts...>> st,
+auto when_any_run_one(any_executor ex, std::shared_ptr<when_any_variadic_state<Ts...>> st,
                       awaitable<T> a) -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {
@@ -48,7 +48,7 @@ auto when_any_run_one(io_executor ex, std::shared_ptr<when_any_variadic_state<Ts
 }
 
 template <class... Ts, std::size_t... Is>
-void when_any_start_variadic([[maybe_unused]] io_executor ex,
+void when_any_start_variadic([[maybe_unused]] any_executor ex,
                              [[maybe_unused]] std::shared_ptr<when_any_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
@@ -80,7 +80,7 @@ auto when_any_collect_variadic(std::size_t index,
 
 // Runner coroutine for container when_any
 template <class T>
-auto when_any_container_run_one(io_executor ex, std::shared_ptr<when_any_container_state<T>> st,
+auto when_any_container_run_one(any_executor ex, std::shared_ptr<when_any_container_state<T>> st,
                                 std::size_t i, awaitable<T> a) -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {
@@ -121,7 +121,7 @@ auto when_any(awaitable<Ts>... tasks)
   -> awaitable<std::pair<std::size_t, std::variant<detail::when_value_t<Ts>...>>> {
   static_assert(sizeof...(Ts) > 0, "when_any requires at least one task");
 
-  auto ex = co_await this_coro::io_executor;
+  auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "when_any: requires a bound executor");
 
   auto st = std::make_shared<detail::when_any_variadic_state<Ts...>>(ex);
@@ -157,7 +157,7 @@ auto when_any(awaitable<Ts>... tasks)
 template <class T>
 auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   std::size_t, std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>>> {
-  auto ex = co_await this_coro::io_executor;
+  auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "when_any(vector): requires a bound executor");
   IOCORO_ENSURE(!tasks.empty(), "when_any(vector): requires at least one task");
 
