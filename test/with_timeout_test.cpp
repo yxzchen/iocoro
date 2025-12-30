@@ -28,6 +28,12 @@ struct cancellable_test_stream {
   std::atomic<bool> cancelled_read{false};
   std::atomic<bool> cancelled_write{false};
 
+  iocoro::io_executor ex{};
+
+  explicit cancellable_test_stream(iocoro::io_executor ex_) : ex(ex_) {}
+
+  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
+
   void cancel() noexcept {
     cancel_calls.fetch_add(1, std::memory_order_relaxed);
     cancelled.store(true, std::memory_order_release);
@@ -206,7 +212,7 @@ TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
 
 TEST(with_timeout_test, with_timeout_stream_overload_uses_cancel) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{};
+  cancellable_test_stream s{ctx.get_executor()};
 
   std::array<std::byte, 1> buf{};
 
@@ -222,7 +228,7 @@ TEST(with_timeout_test, with_timeout_stream_overload_uses_cancel) {
 
 TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{};
+  cancellable_test_stream s{ctx.get_executor()};
 
   std::array<std::byte, 1> buf{};
 
@@ -239,7 +245,7 @@ TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
 
 TEST(with_timeout_test, with_timeout_write_prefers_cancel_write) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{};
+  cancellable_test_stream s{ctx.get_executor()};
 
   std::array<std::byte, 1> buf{};
 
@@ -269,6 +275,7 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expec
 
   auto main = [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
     co_return co_await iocoro::io::with_timeout_detached(
+      ex,
       [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
         co_await iocoro::co_sleep(200ms);
         op_completed.store(true, std::memory_order_release);
@@ -316,6 +323,7 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
 
   auto main = [&]() -> iocoro::awaitable<std::error_code> {
     co_return co_await iocoro::io::with_timeout_detached(
+      ex,
       [&]() -> iocoro::awaitable<std::error_code> {
         co_await iocoro::co_sleep(200ms);
         op_completed.store(true, std::memory_order_release);
