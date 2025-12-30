@@ -86,7 +86,7 @@ struct with_timeout_result_traits<std::error_code> {
 template <class Awaitable, class OnTimeout>
   requires std::invocable<OnTimeout&> &&
            requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout(io_executor ex, Awaitable&& op, std::chrono::steady_clock::duration timeout,
+auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::duration timeout,
                   OnTimeout&& on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
   using traits = detail::with_timeout_result_traits<result_t>;
@@ -143,12 +143,12 @@ auto with_timeout(io_executor ex, Awaitable&& op, std::chrono::steady_clock::dur
 template <class Awaitable, class OnTimeout>
   requires std::invocable<OnTimeout&> &&
            requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout(Awaitable&& op, std::chrono::steady_clock::duration timeout,
+auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout,
                   OnTimeout&& on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout: requires a bound executor");
   auto ex = ::iocoro::detail::require_io_executor(ex_any);
-  co_return co_await with_timeout(ex, std::forward<Awaitable>(op), timeout,
+  co_return co_await with_timeout(ex, std::move(op), timeout,
                                   std::forward<OnTimeout>(on_timeout));
 }
 
@@ -169,22 +169,22 @@ concept io_executor_stream = requires(Stream& s) {
 template <class Stream, class Awaitable>
   requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
            requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout(Stream& s, Awaitable&& op, std::chrono::steady_clock::duration timeout)
+auto with_timeout(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
-  co_return co_await with_timeout(s.get_executor(), std::forward<Awaitable>(op), timeout,
+  co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                   [&]() { s.cancel(); });
 }
 
 template <class Stream, class Awaitable>
   requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
            requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout_read(Stream& s, Awaitable&& op, std::chrono::steady_clock::duration timeout)
+auto with_timeout_read(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   if constexpr (cancel_readable_stream<Stream>) {
-    co_return co_await with_timeout(s.get_executor(), std::forward<Awaitable>(op), timeout,
+    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                     [&]() { s.cancel_read(); });
   } else {
-    co_return co_await with_timeout(s.get_executor(), std::forward<Awaitable>(op), timeout,
+    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                     [&]() { s.cancel(); });
   }
 }
@@ -192,13 +192,13 @@ auto with_timeout_read(Stream& s, Awaitable&& op, std::chrono::steady_clock::dur
 template <class Stream, class Awaitable>
   requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
            requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout_write(Stream& s, Awaitable&& op, std::chrono::steady_clock::duration timeout)
+auto with_timeout_write(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   if constexpr (cancel_writable_stream<Stream>) {
-    co_return co_await with_timeout(s.get_executor(), std::forward<Awaitable>(op), timeout,
+    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                     [&]() { s.cancel_write(); });
   } else {
-    co_return co_await with_timeout(s.get_executor(), std::forward<Awaitable>(op), timeout,
+    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                     [&]() { s.cancel(); });
   }
 }
@@ -210,7 +210,7 @@ auto with_timeout_write(Stream& s, Awaitable&& op, std::chrono::steady_clock::du
 /// - op may continue running on ex after this returns.
 template <class Awaitable>
   requires requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout_detached(io_executor ex, Awaitable&& op,
+auto with_timeout_detached(io_executor ex, Awaitable op,
                            std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
@@ -231,7 +231,7 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op,
 
   // Start both concurrently; whichever finishes first determines the result.
   // NOTE: when_any does not cancel the losing task.
-  auto [index, v] = co_await when_any(std::forward<Awaitable>(op), timer_wait());
+  auto [index, v] = co_await when_any(std::move(op), timer_wait());
 
   if (index == 0) {
     (void)timer->cancel();
@@ -250,12 +250,12 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op,
 
 template <class Awaitable>
   requires requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout_detached(Awaitable&& op, std::chrono::steady_clock::duration timeout)
+auto with_timeout_detached(Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout_detached: requires a bound executor");
   auto ex = ::iocoro::detail::require_io_executor(ex_any);
-  co_return co_await with_timeout_detached(ex, std::forward<Awaitable>(op), timeout);
+  co_return co_await with_timeout_detached(ex, std::move(op), timeout);
 }
 
 }  // namespace iocoro::io

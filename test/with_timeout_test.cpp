@@ -93,7 +93,8 @@ TEST(with_timeout_test, completes_before_timeout_returns_value_and_does_not_call
   EXPECT_FALSE(called.load(std::memory_order_relaxed));
 }
 
-TEST(with_timeout_test, error_code_completes_before_timeout_returns_success_and_does_not_call_on_timeout) {
+TEST(with_timeout_test,
+     error_code_completes_before_timeout_returns_success_and_does_not_call_on_timeout) {
   iocoro::io_context ctx;
 
   std::atomic<bool> called{false};
@@ -141,7 +142,8 @@ TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on
   EXPECT_EQ(r.error(), iocoro::error::timed_out);
 }
 
-TEST(with_timeout_test, error_code_timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
+TEST(with_timeout_test,
+     error_code_timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
   iocoro::io_context ctx;
 
   std::atomic<bool> cancelled{false};
@@ -332,15 +334,16 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
       5ms);
   };
 
-  iocoro::co_spawn(ex, main(), [&](iocoro::expected<std::error_code, std::exception_ptr> r) mutable {
-    done.store(true, std::memory_order_release);
-    if (!r) {
-      ep = std::move(r).error();
-    } else {
-      out.emplace(std::move(*r));
-    }
-    ctx.stop();  // don't drain detached background work
-  });
+  iocoro::co_spawn(ex, main(),
+                   [&](iocoro::expected<std::error_code, std::exception_ptr> r) mutable {
+                     done.store(true, std::memory_order_release);
+                     if (!r) {
+                       ep = std::move(r).error();
+                     } else {
+                       out.emplace(std::move(*r));
+                     }
+                     ctx.stop();  // don't drain detached background work
+                   });
 
   (void)ctx.run_for(50ms);
 
