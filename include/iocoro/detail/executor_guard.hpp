@@ -2,6 +2,8 @@
 
 #include <iocoro/executor.hpp>
 
+#include <coroutine>
+
 namespace iocoro::detail {
 
 inline thread_local any_executor current_executor{};
@@ -27,5 +29,14 @@ struct executor_guard {
   executor_guard(executor_guard&&) = delete;
   auto operator=(executor_guard&&) -> executor_guard& = delete;
 };
+
+/// Helper to resume a coroutine on a specific executor with proper guard.
+/// IMPORTANT: Copies executor to avoid leaving source empty.
+inline void resume_on_executor(any_executor ex, std::coroutine_handle<> h) {
+  ex.post([h, ex]() mutable {
+    executor_guard g{ex};
+    h.resume();
+  });
+}
 
 }  // namespace iocoro::detail

@@ -52,10 +52,7 @@ struct when_state_base {
       waiter = {};
     }
     if (w) {
-      ex.post([w, ex = ex]() mutable {
-        executor_guard g{ex};
-        w.resume();
-      });
+      resume_on_executor(ex, w);
     }
   }
 };
