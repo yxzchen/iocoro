@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/work_guard.hpp>
 
@@ -21,7 +21,7 @@ class thread_pool_executor;
 /// Design:
 /// - Owns N independent io_context shards.
 /// - Starts N worker threads, each running one shard's event loop.
-/// - Provides round-robin executor selection via pick_executor().
+/// - Provides round-robin io_executor selection via pick_executor().
 ///
 /// Notes:
 /// - This is intentionally minimal and does not attempt to provide advanced scheduling
@@ -45,14 +45,14 @@ class thread_pool {
   /// Join all worker threads (best-effort, idempotent).
   void join() noexcept;
 
-  /// Select a shard executor (round-robin).
-  auto pick_executor() noexcept -> executor;
+  /// Select a shard io_executor (round-robin).
+  auto pick_executor() noexcept -> io_executor;
 
   auto size() const noexcept -> std::size_t { return contexts_.size(); }
 
  private:
   std::vector<std::unique_ptr<io_context>> contexts_{};
-  std::vector<work_guard<executor>> guards_{};
+  std::vector<work_guard<io_executor>> guards_{};
   std::vector<std::thread> threads_{};
 
   std::atomic<std::size_t> rr_{0};

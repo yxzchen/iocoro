@@ -40,7 +40,7 @@ struct slow_cancellable_stream {
     in_read.store(true, std::memory_order_release);
     auto guard = [&]() { in_read.store(false, std::memory_order_release); };
 
-    // Wait until cancelled (yields to executor).
+    // Wait until cancelled (yields to io_executor).
     for (int i = 0; i < 200; ++i) {
       if (cancelled_read.load(std::memory_order_acquire)) {
         guard();
@@ -59,7 +59,7 @@ struct slow_cancellable_stream {
     in_write.store(true, std::memory_order_release);
     auto guard = [&]() { in_write.store(false, std::memory_order_release); };
 
-    // Wait until cancelled (yields to executor).
+    // Wait until cancelled (yields to io_executor).
     for (int i = 0; i < 200; ++i) {
       if (cancelled_write.load(std::memory_order_acquire)) {
         guard();

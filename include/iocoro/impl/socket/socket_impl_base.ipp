@@ -199,7 +199,7 @@ inline auto socket_impl_base::release() noexcept -> int {
 }
 
 inline socket_impl_base::fd_wait_operation::fd_wait_operation(
-  fd_wait_kind k, int fd, socket_impl_base* base, executor ex,
+  fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
   std::shared_ptr<wait_state> st) noexcept
     : operation_base(ex), kind_(k), fd_(fd), base_(base), ex_(ex), st_(std::move(st)) {}
 

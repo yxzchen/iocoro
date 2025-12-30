@@ -7,7 +7,7 @@
 
 namespace iocoro {
 
-class executor;
+class io_executor;
 class timer_handle;
 
 namespace detail {
@@ -33,8 +33,8 @@ class io_context {
   void restart();
   auto stopped() const noexcept -> bool;
 
-  /// Get an executor associated with this io_context
-  auto get_executor() noexcept -> executor;
+  /// Get an io_executor associated with this io_context
+  auto get_executor() noexcept -> io_executor;
 
  private:
   std::unique_ptr<detail::io_context_impl> impl_;

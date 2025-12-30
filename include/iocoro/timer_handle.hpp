@@ -6,7 +6,7 @@
 
 namespace iocoro {
 
-class executor;
+class io_executor;
 class steady_timer;
 
 namespace detail {
@@ -38,10 +38,10 @@ class timer_handle {
   explicit operator bool() const noexcept;
 
  private:
-  friend class executor;
+  friend class io_executor;
   friend class steady_timer;
 
-  /// Private constructor for executor to create handles.
+  /// Private constructor for io_executor to create handles.
   explicit timer_handle(std::shared_ptr<detail::timer_entry> entry) noexcept;
 
   // steady_timer hook: add a completion waiter without exposing timer_entry.

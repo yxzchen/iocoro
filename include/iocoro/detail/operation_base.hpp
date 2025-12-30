@@ -2,7 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 
 #include <memory>
 #include <system_error>
@@ -12,7 +12,7 @@ namespace iocoro::detail {
 /// Base class for low-level operations registered with an io_context_impl.
 ///
 /// Design intent:
-/// - `executor` is a construction-time "carrier" that grants access to the underlying
+/// - `io_executor` is a construction-time "carrier" that grants access to the underlying
 ///   `io_context_impl`.
 /// - During execution, operations talk directly to `io_context_impl` via `impl_`.
 class operation_base {
@@ -37,8 +37,8 @@ class operation_base {
   virtual void abort(std::error_code ec) = 0;
 
  protected:
-  explicit operation_base(executor const& ex) noexcept : impl_{ex.impl_} {
-    IOCORO_ENSURE(impl_ != nullptr, "operation_base: executor has null impl_");
+  explicit operation_base(io_executor const& ex) noexcept : impl_{ex.impl_} {
+    IOCORO_ENSURE(impl_ != nullptr, "operation_base: io_executor has null impl_");
   }
 
   io_context_impl* impl_;

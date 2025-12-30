@@ -2,7 +2,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/timer_handle.hpp>
 
 #include <chrono>
@@ -12,7 +12,7 @@
 
 namespace iocoro {
 
-/// A reusable timer resource bound to an executor.
+/// A reusable timer resource bound to an io_executor.
 ///
 /// Model:
 /// - Owns a "timer resource".
@@ -20,18 +20,18 @@ namespace iocoro {
 /// - cancel() cancels the underlying timer and completes pending waits.
 ///
 /// Notes:
-/// - Normal case: completion handlers / coroutine resumption are scheduled via the bound executor
+/// - Normal case: completion handlers / coroutine resumption are scheduled via the bound io_executor
 ///   (never inline).
-/// - Exception: if the bound executor is stopped, operations may complete inline to avoid hanging.
+/// - Exception: if the bound io_executor is stopped, operations may complete inline to avoid hanging.
 class steady_timer {
  public:
   using clock = std::chrono::steady_clock;
   using time_point = clock::time_point;
   using duration = clock::duration;
 
-  explicit steady_timer(executor ex) noexcept;
-  steady_timer(executor ex, time_point at) noexcept;
-  steady_timer(executor ex, duration after) noexcept;
+  explicit steady_timer(io_executor ex) noexcept;
+  steady_timer(io_executor ex, time_point at) noexcept;
+  steady_timer(io_executor ex, duration after) noexcept;
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
@@ -40,7 +40,7 @@ class steady_timer {
 
   ~steady_timer();
 
-  auto get_executor() const noexcept -> executor { return ex_; }
+  auto get_executor() const noexcept -> io_executor { return ex_; }
 
   auto expiry() const noexcept -> time_point { return expiry_; }
   /// Set the timer expiry time.
@@ -58,8 +58,8 @@ class steady_timer {
   /// Handler signature: void(std::error_code)
   ///
   /// Completion semantics:
-  /// - Normal case: handler is invoked via the timer's owning executor (never inline).
-  /// - Exception: if the owning executor is stopped (or handle is empty), completion may be inline.
+  /// - Normal case: handler is invoked via the timer's owning io_executor (never inline).
+  /// - Exception: if the owning io_executor is stopped (or handle is empty), completion may be inline.
   /// - `ec == operation_aborted` iff the timer was cancelled.
   void async_wait(std::function<void(std::error_code)> h);
 
@@ -69,8 +69,8 @@ class steady_timer {
   /// - `ec == operation_aborted` iff the timer was cancelled.
   ///
   /// Completion semantics:
-  /// - Normal case: coroutine resumption occurs via the timer's owning executor (never inline).
-  /// - Exception: if the owning executor is stopped (or handle is empty), it completes inline.
+  /// - Normal case: coroutine resumption occurs via the timer's owning io_executor (never inline).
+  /// - Exception: if the owning io_executor is stopped (or handle is empty), it completes inline.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code>;
 
   /// Cancel pending waits on the timer (best-effort).
@@ -81,7 +81,7 @@ class steady_timer {
  private:
   void reschedule();
 
-  executor ex_{};
+  io_executor ex_{};
   time_point expiry_{clock::now()};
   timer_handle th_{};
 };

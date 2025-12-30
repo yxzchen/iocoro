@@ -225,7 +225,7 @@ inline void basic_acceptor_impl<Protocol>::cleanup_expired_queue_front() noexcep
 template <class Protocol>
 inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
   std::coroutine_handle<> next_h{};
-  executor ex{};
+  io_executor ex{};
   {
     std::scoped_lock lk{mtx_};
 

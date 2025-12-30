@@ -2,7 +2,7 @@
 
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/spawn.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool_executor.hpp>
 
 namespace iocoro {
@@ -12,7 +12,7 @@ namespace iocoro {
 /// Ownership of the coroutine frame is detached from the passed awaitable:
 /// the frame will be destroyed at final_suspend.
 template <typename T>
-void co_spawn(executor ex, awaitable<T> a, detached_t) {
+void co_spawn(io_executor ex, awaitable<T> a, detached_t) {
   detail::awaitable_as_function<T> wrapper(std::move(a));
 
   auto state = std::make_shared<detail::spawn_state<T>>(std::move(wrapper));
@@ -35,7 +35,7 @@ void co_spawn(thread_pool_executor pex, awaitable<T> a, detached_t) {
 /// a dangling `this` pointer to a temporary closure object (GCC/ASan).
 template <typename F>
   requires detail::awaitable_factory<std::remove_cvref_t<F>>
-void co_spawn(executor ex, F&& f, detached_t) {
+void co_spawn(io_executor ex, F&& f, detached_t) {
   using value_type = detail::awaitable_value_t<std::remove_cvref_t<F>>;
 
   auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
@@ -55,7 +55,7 @@ void co_spawn(thread_pool_executor pex, F&& f, detached_t) {
 /// Start an awaitable on the given executor, returning an awaitable that can be awaited
 /// to obtain the result (exception is rethrown on await_resume()).
 template <typename T>
-auto co_spawn(executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
+auto co_spawn(io_executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
   // Hot-start: start running immediately (via detached runner), and return an awaitable
   // that only waits for completion and yields the result.
   detail::awaitable_as_function<T> wrapper(std::move(a));
@@ -79,7 +79,7 @@ auto co_spawn(thread_pool_executor pex, awaitable<T> a, use_awaitable_t) -> awai
 /// awaitable that can be awaited to obtain the result.
 template <typename F>
   requires detail::awaitable_factory<std::remove_cvref_t<F>>
-auto co_spawn(executor ex, F&& f, use_awaitable_t)
+auto co_spawn(io_executor ex, F&& f, use_awaitable_t)
   -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
   using value_type = detail::awaitable_value_t<std::remove_cvref_t<F>>;
 
@@ -108,7 +108,7 @@ auto co_spawn(thread_pool_executor pex, F&& f, use_awaitable_t)
 /// the result or an exception.
 template <typename T, typename F>
   requires detail::completion_callback_for<F, T>
-void co_spawn(executor ex, awaitable<T> a, F&& completion) {
+void co_spawn(io_executor ex, awaitable<T> a, F&& completion) {
   detail::awaitable_as_function<T> wrapper(std::move(a));
 
   auto state =
@@ -133,7 +133,7 @@ template <typename Factory, typename Completion>
   requires detail::awaitable_factory<std::remove_cvref_t<Factory>> &&
            detail::completion_callback_for<std::remove_cvref_t<Completion>,
                                            detail::awaitable_value_t<std::remove_cvref_t<Factory>>>
-void co_spawn(executor ex, Factory&& f, Completion&& completion) {
+void co_spawn(io_executor ex, Factory&& f, Completion&& completion) {
   using value_type = detail::awaitable_value_t<std::remove_cvref_t<Factory>>;
 
   auto state = std::make_shared<detail::spawn_state_with_completion<value_type>>(

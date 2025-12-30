@@ -2,7 +2,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
 
@@ -29,7 +29,7 @@ class basic_stream_socket_impl {
   using endpoint_type = typename Protocol::endpoint;
 
   basic_stream_socket_impl() noexcept = delete;
-  explicit basic_stream_socket_impl(executor ex) noexcept : stream_(ex) {}
+  explicit basic_stream_socket_impl(io_executor ex) noexcept : stream_(ex) {}
 
   basic_stream_socket_impl(basic_stream_socket_impl const&) = delete;
   auto operator=(basic_stream_socket_impl const&) -> basic_stream_socket_impl& = delete;
@@ -38,7 +38,7 @@ class basic_stream_socket_impl {
 
   ~basic_stream_socket_impl() = default;
 
-  auto get_executor() const noexcept -> executor { return stream_.get_executor(); }
+  auto get_executor() const noexcept -> io_executor { return stream_.get_executor(); }
   auto native_handle() const noexcept -> int { return stream_.native_handle(); }
   auto is_open() const noexcept -> bool { return stream_.is_open(); }
 

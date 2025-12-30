@@ -5,7 +5,7 @@
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 
 #include <atomic>
@@ -134,14 +134,14 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
 }
 
 template <typename T>
-auto bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {
+auto bind_executor(io_executor ex, awaitable<T> a) -> awaitable<T> {
   auto h = a.release();
   h.promise().set_executor(ex);
   return awaitable<T>{h};
 }
 
 template <typename T>
-void spawn_detached_impl(executor ex, awaitable<T> a) {
+void spawn_detached_impl(io_executor ex, awaitable<T> a) {
   auto h = a.release();
 
   h.promise().set_executor(ex);
@@ -159,14 +159,14 @@ void spawn_detached_impl(executor ex, awaitable<T> a) {
 
 template <typename T>
 struct spawn_wait_state {
-  executor ex{};
+  io_executor ex{};
   std::mutex m;
   bool done{false};
   std::coroutine_handle<> waiter{};
   std::exception_ptr ep{};
   std::optional<T> value{};
 
-  explicit spawn_wait_state(executor ex_) : ex(ex_) {}
+  explicit spawn_wait_state(io_executor ex_) : ex(ex_) {}
 
   void set_value(T v) {
     std::scoped_lock lk{m};
@@ -197,13 +197,13 @@ struct spawn_wait_state {
 
 template <>
 struct spawn_wait_state<void> {
-  executor ex{};
+  io_executor ex{};
   std::mutex m;
   bool done{false};
   std::coroutine_handle<> waiter{};
   std::exception_ptr ep{};
 
-  explicit spawn_wait_state(executor ex_) : ex(ex_) {}
+  explicit spawn_wait_state(io_executor ex_) : ex(ex_) {}
 
   void set_value() noexcept {}
 
@@ -344,7 +344,7 @@ auto await_state(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
 }
 
 template <typename T>
-auto run_to_state(executor ex, std::shared_ptr<spawn_wait_state<T>> st, awaitable<T> a)
+auto run_to_state(io_executor ex, std::shared_ptr<spawn_wait_state<T>> st, awaitable<T> a)
   -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {

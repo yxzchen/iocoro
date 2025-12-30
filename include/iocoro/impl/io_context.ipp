@@ -1,5 +1,5 @@
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/timer_handle.hpp>
 
@@ -25,6 +25,6 @@ inline void io_context::restart() { impl_->restart(); }
 
 inline auto io_context::stopped() const noexcept -> bool { return impl_->stopped(); }
 
-inline auto io_context::get_executor() noexcept -> executor { return executor{*impl_}; }
+inline auto io_context::get_executor() noexcept -> io_executor { return io_executor{*impl_}; }
 
 }  // namespace iocoro
