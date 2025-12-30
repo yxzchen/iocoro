@@ -9,6 +9,9 @@
 #include <iocoro/detail/net/basic_acceptor_impl.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
 
+#include <concepts>
+#include <utility>
+#include <functional>
 #include <system_error>
 
 namespace iocoro::net {
@@ -22,7 +25,7 @@ namespace iocoro::net {
 ///
 /// Important:
 /// - This type is protocol-typed (via `Protocol` template parameter).
-/// - `open(family)` takes an explicit family, while Protocol decides type/protocol.
+/// - Protocol decides type/protocol; endpoint (or caller) decides family.
 /// - `async_accept()` returns a connected `basic_stream_socket<Protocol>` and adopts the
 ///   accepted native fd internally.
 template <class Protocol>
@@ -46,11 +49,31 @@ class basic_acceptor : public ::iocoro::detail::basic_io_handle<
   basic_acceptor(basic_acceptor&&) = default;
   auto operator=(basic_acceptor&&) -> basic_acceptor& = default;
 
-  auto open(int family) -> std::error_code { return this->impl_->open(family); }
+  /// Open + bind + listen in one step.
+  ///
+  /// This is the recommended user-facing entry point for acceptors.
+  auto listen(endpoint const& ep, int backlog = 0) -> std::error_code {
+    return listen(ep, backlog, [](basic_acceptor&) {});
+  }
 
-  auto bind(endpoint const& ep) -> std::error_code { return this->impl_->bind(ep); }
-
-  auto listen(int backlog = 0) -> std::error_code { return this->impl_->listen(backlog); }
+  /// Open + (configure) + bind + listen in one step.
+  ///
+  /// `configure` runs after open() succeeds and before bind() is called.
+  /// This enables pre-bind socket options like SO_REUSEADDR.
+  template <class Configure>
+    requires std::invocable<Configure, basic_acceptor&>
+  auto listen(endpoint const& ep, int backlog, Configure&& configure) -> std::error_code {
+    if (!this->is_open()) {
+      if (auto ec = this->impl_->open(ep.family())) {
+        return ec;
+      }
+    }
+    std::invoke(std::forward<Configure>(configure), *this);
+    if (auto ec = this->impl_->bind(ep)) {
+      return ec;
+    }
+    return this->impl_->listen(backlog);
+  }
 
   auto local_endpoint() const -> expected<endpoint, std::error_code> {
     return this->impl_->local_endpoint();

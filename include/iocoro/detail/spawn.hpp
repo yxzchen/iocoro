@@ -4,6 +4,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
 
@@ -51,20 +52,85 @@ concept completion_callback_for =
   std::invocable<F&, spawn_expected<T>> && (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
   (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
 
-/// Wrap a callable that returns iocoro::awaitable<T> into an awaitable<T> whose coroutine
-/// frame *owns* the callable.
+/// State for detached/use_awaitable mode (no completion handler).
+/// Uses type-erased unique_function to avoid storing lambda types directly.
+template <typename T>
+struct spawn_state {
+  unique_function<awaitable<T>()> factory_{};
+
+  template <typename F>
+    requires std::is_invocable_r_v<awaitable<T>, F&>
+  explicit spawn_state(F&& f) : factory_(std::forward<F>(f)) {}
+};
+
+/// State for completion callback mode.
+/// Both factory and completion are type-erased.
+template <typename T>
+struct spawn_state_with_completion {
+  unique_function<awaitable<T>()> factory_{};
+  unique_function<void(spawn_expected<T>)> completion_{};
+
+  template <typename F, typename C>
+    requires std::is_invocable_r_v<awaitable<T>, F&> && std::is_invocable_v<C&, spawn_expected<T>>
+  spawn_state_with_completion(F&& f, C&& c)
+    : factory_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
+};
+
+/// Wrap an awaitable<T> as a nullary callable returning awaitable<T>.
+/// This lets awaitables and callables share the same spawn_entry_point code path.
+template <typename T>
+class awaitable_as_function {
+ public:
+  explicit awaitable_as_function(awaitable<T>&& a) : awaitable_(std::move(a)) {}
+
+  auto operator()() -> awaitable<T> { return std::move(awaitable_); }
+
+ private:
+  awaitable<T> awaitable_;
+};
+
+/// Unified coroutine entry point for co_spawn.
 ///
-/// This avoids GCC/ASan issues where invoking a coroutine lambda on a temporary closure object
-/// can leave the coroutine holding a dangling `this` pointer to the closure.
-template <typename Fn>
-  requires awaitable_factory<Fn>
-auto invoke_and_await(Fn fn) -> awaitable<awaitable_value_t<Fn>> {
-  if constexpr (std::is_void_v<awaitable_value_t<Fn>>) {
-    co_await fn();
+/// This is the only coroutine wrapper responsible for owning and invoking the user-supplied
+/// callable (or an awaitable wrapped as a callable).
+template <typename T>
+auto spawn_entry_point(std::shared_ptr<spawn_state<T>> state) -> awaitable<T> {
+  if constexpr (std::is_void_v<T>) {
+    co_await state->factory_();
     co_return;
   } else {
-    co_return co_await fn();
+    co_return co_await state->factory_();
   }
+}
+
+template <typename T>
+auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completion<T>> state)
+  -> awaitable<void> {
+  try {
+    if constexpr (std::is_void_v<T>) {
+      co_await state->factory_();
+      try {
+        state->completion_(spawn_expected<void>{});
+      } catch (...) {
+        // Completion callback exceptions are swallowed (detached semantics).
+      }
+    } else {
+      auto v = co_await state->factory_();
+      try {
+        state->completion_(spawn_expected<T>{std::move(v)});
+      } catch (...) {
+        // Completion callback exceptions are swallowed (detached semantics).
+      }
+    }
+  } catch (...) {
+    auto ep = std::current_exception();
+    try {
+      state->completion_(spawn_expected<T>{unexpected(ep)});
+    } catch (...) {
+      // Completion callback exceptions are swallowed (detached semantics).
+    }
+  }
+  co_return;
 }
 
 template <typename T>
@@ -74,47 +140,33 @@ auto bind_executor(executor ex, awaitable<T> a) -> awaitable<T> {
   return awaitable<T>{h};
 }
 
-template <typename T, typename Completion>
-auto completion_wrapper(executor ex, awaitable<T> a, Completion completion) -> awaitable<void> {
-  // Ensure the task itself is bound to `ex` before it starts.
-  auto bound = bind_executor<T>(ex, std::move(a));
+template <typename T>
+void spawn_detached_impl(executor ex, awaitable<T> a) {
+  auto h = a.release();
 
-  try {
-    if constexpr (std::is_void_v<T>) {
-      co_await std::move(bound);
-      try {
-        completion(spawn_expected<void>{});
-      } catch (...) {
-        // Completion callback exceptions are swallowed (detached semantics).
-      }
-    } else {
-      auto v = co_await std::move(bound);
-      try {
-        completion(spawn_expected<T>{std::move(v)});
-      } catch (...) {
-        // Completion callback exceptions are swallowed (detached semantics).
-      }
-    }
-  } catch (...) {
-    auto ep = std::current_exception();
+  h.promise().set_executor(ex);
+  h.promise().detach();
+
+  ex.post([h, ex]() mutable {
+    executor_guard g{ex};
     try {
-      completion(spawn_expected<T>{unexpected(ep)});
+      h.resume();
     } catch (...) {
-      // Completion callback exceptions are swallowed (detached semantics).
+      // Detached mode: swallow exceptions
     }
-  }
+  });
 }
 
 template <typename T>
-struct spawn_state {
+struct spawn_wait_state {
   executor ex{};
   std::mutex m;
-  std::atomic<bool> done{false};
+  bool done{false};
   std::coroutine_handle<> waiter{};
   std::exception_ptr ep{};
   std::optional<T> value{};
 
-  explicit spawn_state(executor ex_) : ex(ex_) {}
+  explicit spawn_wait_state(executor ex_) : ex(ex_) {}
 
   void set_value(T v) {
     std::scoped_lock lk{m};
@@ -130,7 +182,7 @@ struct spawn_state {
     std::coroutine_handle<> w{};
     {
       std::scoped_lock lk{m};
-      done.store(true, std::memory_order_release);
+      done = true;
       w = waiter;
       waiter = {};
     }
@@ -144,14 +196,14 @@ struct spawn_state {
 };
 
 template <>
-struct spawn_state<void> {
+struct spawn_wait_state<void> {
   executor ex{};
   std::mutex m;
-  std::atomic<bool> done{false};
+  bool done{false};
   std::coroutine_handle<> waiter{};
   std::exception_ptr ep{};
 
-  explicit spawn_state(executor ex_) : ex(ex_) {}
+  explicit spawn_wait_state(executor ex_) : ex(ex_) {}
 
   void set_value() noexcept {}
 
@@ -164,7 +216,7 @@ struct spawn_state<void> {
     std::coroutine_handle<> w{};
     {
       std::scoped_lock lk{m};
-      done.store(true, std::memory_order_release);
+      done = true;
       w = waiter;
       waiter = {};
     }
@@ -200,9 +252,9 @@ struct state_awaiter {
   // - C++17/20 aggregate initialization rules changes
   // - Compiler-specific temporary materialization behavior
   // - Interaction between move semantics and aggregate members
-  explicit state_awaiter(std::shared_ptr<spawn_state<T>> st_) : st(std::move(st_)) {}
+  explicit state_awaiter(std::shared_ptr<spawn_wait_state<T>> st_) : st(std::move(st_)) {}
 
-  std::shared_ptr<spawn_state<T>> st;
+  std::shared_ptr<spawn_wait_state<T>> st;
 
   // Always suspend and resume via executor to match the library's "never inline" policy.
   bool await_ready() const noexcept { return false; }
@@ -212,8 +264,10 @@ struct state_awaiter {
     {
       std::scoped_lock lk{st->m};
       IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters are not supported");
-      ready = st->done.load(std::memory_order_acquire);
-      if (!ready) st->waiter = h;
+      ready = st->done;
+      if (!ready) {
+        st->waiter = h;
+      }
     }
     if (ready) {
       st->ex.post([h, ex = st->ex]() mutable {
@@ -232,7 +286,9 @@ struct state_awaiter {
       v = std::move(st->value);
       st->value.reset();
     }
-    if (ep) std::rethrow_exception(ep);
+    if (ep) {
+      std::rethrow_exception(ep);
+    }
     IOCORO_ENSURE(v.has_value(), "co_spawn(use_awaitable): missing value");
     return std::move(*v);
   }
@@ -240,9 +296,9 @@ struct state_awaiter {
 
 template <>
 struct state_awaiter<void> {
-  explicit state_awaiter(std::shared_ptr<spawn_state<void>> st_) : st(std::move(st_)) {}
+  explicit state_awaiter(std::shared_ptr<spawn_wait_state<void>> st_) : st(std::move(st_)) {}
 
-  std::shared_ptr<spawn_state<void>> st;
+  std::shared_ptr<spawn_wait_state<void>> st;
 
   // Always suspend and resume via executor to match the library's "never inline" policy.
   bool await_ready() const noexcept { return false; }
@@ -252,8 +308,10 @@ struct state_awaiter<void> {
     {
       std::scoped_lock lk{st->m};
       IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters are not supported");
-      ready = st->done.load(std::memory_order_acquire);
-      if (!ready) st->waiter = h;
+      ready = st->done;
+      if (!ready) {
+        st->waiter = h;
+      }
     }
     if (ready) {
       st->ex.post([h, ex = st->ex]() mutable {
@@ -269,12 +327,14 @@ struct state_awaiter<void> {
       std::scoped_lock lk{st->m};
       ep = st->ep;
     }
-    if (ep) std::rethrow_exception(ep);
+    if (ep) {
+      std::rethrow_exception(ep);
+    }
   }
 };
 
 template <typename T>
-auto await_state(std::shared_ptr<spawn_state<T>> st) -> awaitable<T> {
+auto await_state(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
   if constexpr (std::is_void_v<T>) {
     co_await state_awaiter<void>{std::move(st)};
     co_return;
@@ -284,7 +344,7 @@ auto await_state(std::shared_ptr<spawn_state<T>> st) -> awaitable<T> {
 }
 
 template <typename T>
-auto run_to_state(executor ex, std::shared_ptr<spawn_state<T>> st, awaitable<T> a)
+auto run_to_state(executor ex, std::shared_ptr<spawn_wait_state<T>> st, awaitable<T> a)
   -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {

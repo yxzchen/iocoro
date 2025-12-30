@@ -1,7 +1,6 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/executor.hpp>
-#include <iocoro/timer_handle.hpp>
 
 #include <stdexcept>
 
@@ -19,12 +18,6 @@ inline void executor::dispatch(std::function<void()> f) const {
 
 inline auto executor::stopped() const noexcept -> bool {
   return impl_ == nullptr || impl_->stopped();
-}
-
-inline auto executor::schedule_timer(std::chrono::milliseconds timeout,
-                                     std::function<void()> callback) const -> timer_handle {
-  auto entry = ensure_impl().schedule_timer(timeout, std::move(callback));
-  return timer_handle(std::move(entry));
 }
 
 inline void executor::add_work_guard() const noexcept {
