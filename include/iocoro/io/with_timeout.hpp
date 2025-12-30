@@ -7,19 +7,18 @@
 #include <iocoro/detail/require_io_executor.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
-#include <iocoro/executor.hpp>
 #include <iocoro/when_any.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <concepts>
 #include <memory>
-#include <optional>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -53,13 +52,9 @@ struct with_timeout_result_traits<iocoro::expected<T, std::error_code>> {
     return false;
   }
 
-  static auto from_error(std::error_code ec) -> result_type {
-    return unexpected(ec);
-  }
+  static auto from_error(std::error_code ec) -> result_type { return unexpected(ec); }
 
-  static auto timed_out() -> result_type {
-    return unexpected(error::timed_out);
-  }
+  static auto timed_out() -> result_type { return unexpected(error::timed_out); }
 };
 
 template <>
@@ -73,13 +68,9 @@ struct with_timeout_result_traits<std::error_code> {
     return false;
   }
 
-  static auto from_error(std::error_code ec) -> result_type {
-    return ec;
-  }
+  static auto from_error(std::error_code ec) -> result_type { return ec; }
 
-  static auto timed_out() -> result_type {
-    return error::timed_out;
-  }
+  static auto timed_out() -> result_type { return error::timed_out; }
 };
 
 }  // namespace detail
@@ -93,7 +84,8 @@ struct with_timeout_result_traits<std::error_code> {
 ///   - executes `on_timeout()` first
 ///   - then waits for `op` to finish (typically by being cancelled by `on_timeout()`).
 template <class Awaitable, class OnTimeout>
-  requires std::invocable<OnTimeout&> && requires { typename detail::with_timeout_result_t<Awaitable>; }
+  requires std::invocable<OnTimeout&> &&
+           requires { typename detail::with_timeout_result_t<Awaitable>; }
 auto with_timeout(io_executor ex, Awaitable&& op, std::chrono::steady_clock::duration timeout,
                   OnTimeout&& on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
@@ -149,13 +141,15 @@ auto with_timeout(io_executor ex, Awaitable&& op, std::chrono::steady_clock::dur
 /// - with_timeout(co_await this_coro::executor, ...)
 /// and does not introduce any new semantics.
 template <class Awaitable, class OnTimeout>
-  requires std::invocable<OnTimeout&> && requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout(Awaitable&& op, std::chrono::steady_clock::duration timeout, OnTimeout&& on_timeout)
-  -> awaitable<detail::with_timeout_result_t<Awaitable>> {
+  requires std::invocable<OnTimeout&> &&
+           requires { typename detail::with_timeout_result_t<Awaitable>; }
+auto with_timeout(Awaitable&& op, std::chrono::steady_clock::duration timeout,
+                  OnTimeout&& on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout: requires a bound executor");
   auto ex = ::iocoro::detail::require_io_executor(ex_any);
-  co_return co_await with_timeout(ex, std::forward<Awaitable>(op), timeout, std::forward<OnTimeout>(on_timeout));
+  co_return co_await with_timeout(ex, std::forward<Awaitable>(op), timeout,
+                                  std::forward<OnTimeout>(on_timeout));
 }
 
 namespace detail {
@@ -215,8 +209,10 @@ auto with_timeout_write(Stream& s, Awaitable&& op, std::chrono::steady_clock::du
 /// - On timeout, executes on_timeout and returns timed_out without waiting op to complete.
 /// - op may continue running on ex after this returns.
 template <class Awaitable, class OnTimeout = decltype([] {})>
-  requires std::invocable<OnTimeout&> && requires { typename detail::with_timeout_result_t<Awaitable>; }
-auto with_timeout_detached(io_executor ex, Awaitable&& op, std::chrono::steady_clock::duration timeout,
+  requires std::invocable<OnTimeout&> &&
+           requires { typename detail::with_timeout_result_t<Awaitable>; }
+auto with_timeout_detached(io_executor ex, Awaitable&& op,
+                           std::chrono::steady_clock::duration timeout,
                            OnTimeout&& on_timeout = OnTimeout{})
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
@@ -232,8 +228,8 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op, std::chrono::steady_c
   auto timer = std::make_shared<steady_timer>(ex);
   (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
 
-  auto timer_wait = [timer, on_timeout = std::forward<OnTimeout>(on_timeout)]() mutable
-    -> awaitable<std::error_code> {
+  auto timer_wait = [timer, on_timeout = std::forward<OnTimeout>(
+                              on_timeout)]() mutable -> awaitable<std::error_code> {
     auto ec = co_await timer->async_wait(use_awaitable);
     if (!ec) {
       on_timeout();
@@ -243,8 +239,7 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op, std::chrono::steady_c
 
   // Start both concurrently; whichever finishes first determines the result.
   // NOTE: when_any does not cancel the losing task.
-  auto [index, v] = co_await when_any(std::forward<Awaitable>(op),
-                                      timer_wait());
+  auto [index, v] = co_await when_any(std::forward<Awaitable>(op), timer_wait());
 
   if (index == 0) {
     (void)timer->cancel();
@@ -262,14 +257,16 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op, std::chrono::steady_c
 }
 
 template <class Awaitable, class OnTimeout = decltype([] {})>
-  requires std::invocable<OnTimeout&> && requires { typename detail::with_timeout_result_t<Awaitable>; }
+  requires std::invocable<OnTimeout&> &&
+           requires { typename detail::with_timeout_result_t<Awaitable>; }
 auto with_timeout_detached(Awaitable&& op, std::chrono::steady_clock::duration timeout,
                            OnTimeout&& on_timeout = OnTimeout{})
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout_detached: requires a bound executor");
   auto ex = ::iocoro::detail::require_io_executor(ex_any);
-  co_return co_await with_timeout_detached(ex, std::forward<Awaitable>(op), timeout, std::forward<OnTimeout>(on_timeout));
+  co_return co_await with_timeout_detached(ex, std::forward<Awaitable>(op), timeout,
+                                           std::forward<OnTimeout>(on_timeout));
 }
 
 }  // namespace iocoro::io
