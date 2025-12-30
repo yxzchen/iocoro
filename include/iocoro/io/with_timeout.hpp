@@ -87,7 +87,7 @@ template <class Awaitable, class OnTimeout>
   requires std::invocable<OnTimeout&> &&
            requires { typename detail::with_timeout_result_t<Awaitable>; }
 auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::duration timeout,
-                  OnTimeout&& on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
+                  OnTimeout on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
   using traits = detail::with_timeout_result_traits<result_t>;
 
@@ -109,7 +109,7 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 
   auto watcher = co_spawn(
     ex,
-    [timer, &fired, on_timeout = std::forward<OnTimeout>(on_timeout)]() mutable -> awaitable<void> {
+    [timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
         fired.store(true, std::memory_order_release);
@@ -144,12 +144,12 @@ template <class Awaitable, class OnTimeout>
   requires std::invocable<OnTimeout&> &&
            requires { typename detail::with_timeout_result_t<Awaitable>; }
 auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout,
-                  OnTimeout&& on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
+                  OnTimeout on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout: requires a bound executor");
   auto ex = ::iocoro::detail::require_io_executor(ex_any);
   co_return co_await with_timeout(ex, std::move(op), timeout,
-                                  std::forward<OnTimeout>(on_timeout));
+                                  std::move(on_timeout));
 }
 
 namespace detail {
