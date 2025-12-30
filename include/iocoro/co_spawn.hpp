@@ -81,14 +81,14 @@ auto co_spawn(any_executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> 
 
 template <typename T>
 auto co_spawn(io_executor ex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
-  co_return co_await co_spawn(any_executor{ex}, std::move(a), use_awaitable);
+  return co_spawn(any_executor{ex}, std::move(a), use_awaitable);
 }
 
 /// Start an awaitable on the given thread_pool_executor, returning an awaitable.
 template <typename T>
 auto co_spawn(thread_pool_executor pex, awaitable<T> a, use_awaitable_t) -> awaitable<T> {
   auto ex = pex.pick_executor();
-  co_return co_await co_spawn(ex, std::move(a), use_awaitable);
+  return co_spawn(ex, std::move(a), use_awaitable);
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
@@ -112,7 +112,7 @@ template <typename F>
   requires detail::awaitable_factory<std::remove_cvref_t<F>>
 auto co_spawn(io_executor ex, F&& f, use_awaitable_t)
   -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
-  co_return co_await co_spawn(any_executor{ex}, std::forward<F>(f), use_awaitable);
+  return co_spawn(any_executor{ex}, std::forward<F>(f), use_awaitable);
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given thread_pool_executor,
@@ -122,7 +122,7 @@ template <typename F>
 auto co_spawn(thread_pool_executor pex, F&& f, use_awaitable_t)
   -> awaitable<detail::awaitable_value_t<std::remove_cvref_t<F>>> {
   auto ex = pex.pick_executor();
-  co_return co_await co_spawn(ex, std::forward<F>(f), use_awaitable);
+  return co_spawn(ex, std::forward<F>(f), use_awaitable);
 }
 
 /// Start an awaitable on the given executor, invoking a completion callback with either
