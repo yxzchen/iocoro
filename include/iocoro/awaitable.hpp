@@ -42,8 +42,8 @@ class awaitable {
   auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
 
   bool await_ready() const noexcept { return false; }
-  auto await_suspend(std::coroutine_handle<> cont) noexcept -> std::coroutine_handle<> {
-    coro_.promise().set_continuation(cont);
+  auto await_suspend(std::coroutine_handle<> h) noexcept -> std::coroutine_handle<> {
+    coro_.promise().set_continuation(h);
     return coro_;
   }
   auto await_resume() -> T {
@@ -86,8 +86,8 @@ class awaitable<void> {
   auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
 
   bool await_ready() const noexcept { return false; }
-  auto await_suspend(std::coroutine_handle<> cont) noexcept -> std::coroutine_handle<> {
-    coro_.promise().set_continuation(cont);
+  auto await_suspend(std::coroutine_handle<> h) noexcept -> std::coroutine_handle<> {
+    coro_.promise().set_continuation(h);
     return coro_;
   }
   void await_resume() {

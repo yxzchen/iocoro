@@ -77,11 +77,7 @@ struct awaitable_promise_base {
 
     IOCORO_ENSURE(ex_, "awaitable_promise: resume_continuation() requires executor");
 
-    // Continuation resumption is always scheduled via executor, never inline.
-    ex_.post([h = continuation_, ex = ex_]() mutable {
-      detail::executor_guard g{ex};
-      h.resume();
-    });
+    resume_on_executor(ex_, continuation_);
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
