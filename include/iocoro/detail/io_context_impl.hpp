@@ -1,11 +1,11 @@
 #pragma once
 
 #include <iocoro/detail/timer_entry.hpp>
+#include <iocoro/detail/unique_function.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -65,10 +65,10 @@ class io_context_impl {
   void restart();
   auto stopped() const noexcept -> bool { return stopped_.load(std::memory_order_acquire); }
 
-  void post(std::function<void()> f);
-  void dispatch(std::function<void()> f);
+  void post(unique_function<void()> f);
+  void dispatch(unique_function<void()> f);
 
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
+  auto schedule_timer(std::chrono::milliseconds timeout, unique_function<void()> callback)
     -> std::shared_ptr<timer_entry>;
 
   auto register_fd_read(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
@@ -128,7 +128,7 @@ class io_context_impl {
   std::uint64_t next_timer_id_ = 1;
   mutable std::mutex timer_mutex_;
 
-  std::queue<std::function<void()>> posted_operations_;
+  std::queue<unique_function<void()>> posted_operations_;
   std::mutex posted_mutex_;
 
   std::atomic<std::size_t> work_guard_counter_{0};

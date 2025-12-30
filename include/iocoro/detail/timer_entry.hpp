@@ -1,13 +1,13 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/io_executor.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -31,7 +31,7 @@ struct timer_entry {
 
   std::uint64_t id{};
   std::chrono::steady_clock::time_point expiry;
-  std::function<void()> callback;
+  unique_function<void()> callback;
 
   // Executor that owns this timer (context thread affinity).
   iocoro::io_executor ex{};
@@ -42,7 +42,7 @@ struct timer_entry {
   // They should never resume inline; they are expected to post/dispatch as needed.
   bool completion_notified = false;
   std::mutex waiters_mutex{};
-  std::vector<std::function<void()>> waiters{};
+  std::vector<unique_function<void()>> waiters{};
 
   // Constructors
   timer_entry() = default;
@@ -76,13 +76,13 @@ struct timer_entry {
                                          std::memory_order_acq_rel, std::memory_order_acquire);
   }
 
-  void post_waiter(std::function<void()> w) {
+  void post_waiter(unique_function<void()> w) {
     IOCORO_ENSURE(ex, "timer_entry: missing executor for waiter dispatch");
     // Never execute waiters inline: always schedule via the owning executor.
     ex.post([w = std::move(w)]() mutable { w(); });
   }
 
-  void add_waiter(std::function<void()> w) {
+  void add_waiter(unique_function<void()> w) {
     if (!w) {
       return;
     }
@@ -103,7 +103,7 @@ struct timer_entry {
   }
 
   auto notify_completion() -> std::size_t {
-    std::vector<std::function<void()>> local;
+    std::vector<unique_function<void()>> local;
     {
       std::scoped_lock lk{waiters_mutex};
       if (completion_notified) {

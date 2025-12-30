@@ -1,10 +1,10 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool.hpp>
 
-#include <functional>
 #include <utility>
 
 namespace iocoro {
@@ -22,12 +22,12 @@ class thread_pool_executor {
   thread_pool_executor(thread_pool_executor&&) noexcept = default;
   auto operator=(thread_pool_executor&&) noexcept -> thread_pool_executor& = default;
 
-  void post(std::function<void()> f) const {
+  void post(detail::unique_function<void()> f) const noexcept {
     IOCORO_ENSURE(pool_ != nullptr, "thread_pool_executor: empty pool_");
     pool_->pick_executor().post(std::move(f));
   }
 
-  void dispatch(std::function<void()> f) const {
+  void dispatch(detail::unique_function<void()> f) const noexcept {
     IOCORO_ENSURE(pool_ != nullptr, "thread_pool_executor: empty pool_");
     pool_->pick_executor().dispatch(std::move(f));
   }

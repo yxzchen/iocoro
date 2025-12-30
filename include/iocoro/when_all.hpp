@@ -93,7 +93,7 @@ auto when_all_container_run_one(io_executor ex, std::shared_ptr<when_all_contain
 /// - void results are represented as std::monostate in the returned tuple.
 template <class... Ts>
 auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value_t<Ts>...>> {
-  auto ex = co_await this_coro::executor;
+  auto ex = co_await this_coro::io_executor;
   IOCORO_ENSURE(ex, "when_all: requires a bound executor");
 
   if constexpr (sizeof...(Ts) == 0) {
@@ -129,7 +129,7 @@ auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value
 template <class T>
 auto when_all(std::vector<awaitable<T>> tasks)
   -> awaitable<std::conditional_t<std::is_void_v<T>, void, std::vector<std::remove_cvref_t<T>>>> {
-  auto ex = co_await this_coro::executor;
+  auto ex = co_await this_coro::io_executor;
   IOCORO_ENSURE(ex, "when_all(vector): requires a bound executor");
 
   if (tasks.empty()) {

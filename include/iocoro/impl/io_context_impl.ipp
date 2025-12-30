@@ -110,7 +110,7 @@ inline void io_context_impl::stop() {
 
 inline void io_context_impl::restart() { stopped_.store(false, std::memory_order_release); }
 
-inline void io_context_impl::post(std::function<void()> f) {
+inline void io_context_impl::post(unique_function<void()> f) {
   {
     std::scoped_lock lk{posted_mutex_};
     posted_operations_.push(std::move(f));
@@ -118,11 +118,11 @@ inline void io_context_impl::post(std::function<void()> f) {
   wakeup();
 }
 
-inline void io_context_impl::dispatch(std::function<void()> f) {
+inline void io_context_impl::dispatch(unique_function<void()> f) {
   if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
     // Ensure awaitables that inherit the "current io_executor" see the right io_executor.
     auto const desired = io_executor{*this};
-    if (get_current_executor() == desired) {
+    if (get_current_io_executor() == desired) {
       f();
     } else {
       executor_guard g{desired};
@@ -134,7 +134,7 @@ inline void io_context_impl::dispatch(std::function<void()> f) {
 }
 
 inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
-                                            std::function<void()> callback)
+                                            unique_function<void()> callback)
   -> std::shared_ptr<timer_entry> {
   IOCORO_ASSERT(timeout.count() >= 0, "io_context_impl: negative schedule_timer timeout");
   if (timeout.count() < 0) {
@@ -329,7 +329,7 @@ inline auto io_context_impl::process_timers() -> std::size_t {
 }
 
 inline auto io_context_impl::process_posted() -> std::size_t {
-  std::queue<std::function<void()>> local;
+  std::queue<unique_function<void()>> local;
   {
     std::scoped_lock lk{posted_mutex_};
     std::swap(local, posted_operations_);

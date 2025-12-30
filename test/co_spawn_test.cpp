@@ -36,7 +36,7 @@ TEST(co_spawn_test, co_spawn_factory_use_awaitable_returns_value) {
     return iocoro::co_spawn(
       ex,
       [ex]() -> iocoro::awaitable<int> {
-        auto cur = co_await iocoro::this_coro::executor;
+        auto cur = co_await iocoro::this_coro::io_executor;
         EXPECT_EQ(cur, ex);
         co_return 42;
       },
@@ -91,7 +91,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_returns_value) {
   auto ex = ctx.get_executor();
 
   auto child = [ex]() -> iocoro::awaitable<int> {
-    auto cur = co_await iocoro::this_coro::executor;
+    auto cur = co_await iocoro::this_coro::io_executor;
     EXPECT_EQ(cur, ex);
     co_return 42;
   };
@@ -108,7 +108,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_rethrows_exception) {
   auto ex = ctx.get_executor();
 
   auto child = [ex]() -> iocoro::awaitable<int> {
-    auto cur = co_await iocoro::this_coro::executor;
+    auto cur = co_await iocoro::this_coro::io_executor;
     EXPECT_EQ(cur, ex);
     throw std::runtime_error("boom");
   };

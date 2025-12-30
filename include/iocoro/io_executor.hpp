@@ -1,6 +1,6 @@
 #pragma once
 
-#include <functional>
+#include <iocoro/detail/unique_function.hpp>
 
 namespace iocoro {
 
@@ -30,14 +30,16 @@ class io_executor {
   io_executor(io_executor&&) noexcept = default;
   auto operator=(io_executor&&) noexcept -> io_executor& = default;
 
-  /// Execute the given function (queued for later execution, never inline)
-  void execute(std::function<void()> f) const;
+  /// Execute the given function (queued for later execution, never inline).
+  ///
+  /// This is an alias of post().
+  void execute(detail::unique_function<void()> f) const noexcept { post(std::move(f)); }
 
-  /// Post the function for later execution (never inline)
-  void post(std::function<void()> f) const;
+  /// Post the function for later execution (never inline).
+  void post(detail::unique_function<void()> f) const noexcept;
 
-  /// Dispatch the function (inline if in context thread, otherwise queued)
-  void dispatch(std::function<void()> f) const;
+  /// Dispatch the function (inline if in context thread, otherwise queued).
+  void dispatch(detail::unique_function<void()> f) const noexcept;
 
   /// Returns true if the associated context is stopped (or io_executor is empty).
   auto stopped() const noexcept -> bool;

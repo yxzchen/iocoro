@@ -1,4 +1,5 @@
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/io_executor.hpp>
 
@@ -10,9 +11,11 @@ inline io_executor::io_executor(detail::io_context_impl& impl) noexcept : impl_{
 
 inline io_executor::io_executor() noexcept : impl_{nullptr} {}
 
-inline void io_executor::execute(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
-inline void io_executor::post(std::function<void()> f) const { ensure_impl().post(std::move(f)); }
-inline void io_executor::dispatch(std::function<void()> f) const {
+inline void io_executor::post(detail::unique_function<void()> f) const noexcept {
+  ensure_impl().post(std::move(f));
+}
+
+inline void io_executor::dispatch(detail::unique_function<void()> f) const noexcept {
   ensure_impl().dispatch(std::move(f));
 }
 

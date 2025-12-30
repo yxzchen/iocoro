@@ -77,7 +77,7 @@ auto with_timeout_impl(awaitable<Result> op, std::chrono::duration<Rep, Period> 
     co_return r;
   }
 
-  auto ex = co_await this_coro::executor;
+  auto ex = co_await this_coro::io_executor;
   IOCORO_ENSURE(ex, "with_timeout: requires a bound executor");
 
   auto timer = std::make_shared<steady_timer>(ex);
@@ -115,7 +115,7 @@ auto with_timeout_detached_impl(awaitable<Result> op, std::chrono::duration<Rep,
   -> awaitable<Result> {
   using traits = timeout_result_traits<Result>;
 
-  auto ex = co_await this_coro::executor;
+  auto ex = co_await this_coro::io_executor;
   IOCORO_ENSURE(ex, "with_timeout_detached: requires a bound executor");
 
   auto timer = std::make_shared<steady_timer>(ex);

@@ -5,6 +5,7 @@
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 
@@ -136,7 +137,7 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
 template <typename T>
 auto bind_executor(io_executor ex, awaitable<T> a) -> awaitable<T> {
   auto h = a.release();
-  h.promise().set_executor(ex);
+  h.promise().set_executor(any_executor{ex});
   return awaitable<T>{h};
 }
 
@@ -144,7 +145,7 @@ template <typename T>
 void spawn_detached_impl(io_executor ex, awaitable<T> a) {
   auto h = a.release();
 
-  h.promise().set_executor(ex);
+  h.promise().set_executor(any_executor{ex});
   h.promise().detach();
 
   ex.post([h, ex]() mutable {

@@ -121,7 +121,7 @@ auto when_any(awaitable<Ts>... tasks)
   -> awaitable<std::pair<std::size_t, std::variant<detail::when_value_t<Ts>...>>> {
   static_assert(sizeof...(Ts) > 0, "when_any requires at least one task");
 
-  auto ex = co_await this_coro::executor;
+  auto ex = co_await this_coro::io_executor;
   IOCORO_ENSURE(ex, "when_any: requires a bound executor");
 
   auto st = std::make_shared<detail::when_any_variadic_state<Ts...>>(ex);
@@ -157,7 +157,7 @@ auto when_any(awaitable<Ts>... tasks)
 template <class T>
 auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   std::size_t, std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>>> {
-  auto ex = co_await this_coro::executor;
+  auto ex = co_await this_coro::io_executor;
   IOCORO_ENSURE(ex, "when_any(vector): requires a bound executor");
   IOCORO_ENSURE(!tasks.empty(), "when_any(vector): requires at least one task");
 
