@@ -77,19 +77,6 @@ struct spawn_state_with_completion {
     : factory_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
 };
 
-/// Wrap an awaitable<T> as a nullary callable returning awaitable<T>.
-/// This lets awaitables and callables share the same spawn_entry_point code path.
-template <typename T>
-class awaitable_as_function {
- public:
-  explicit awaitable_as_function(awaitable<T>&& a) : awaitable_(std::move(a)) {}
-
-  auto operator()() -> awaitable<T> { return std::move(awaitable_); }
-
- private:
-  awaitable<T> awaitable_;
-};
-
 /// Helper to safely invoke completion callback, swallowing any exceptions.
 template <typename F, typename T>
 void safe_invoke_completion(F& completion, spawn_expected<T> result) noexcept {
@@ -106,12 +93,7 @@ void safe_invoke_completion(F& completion, spawn_expected<T> result) noexcept {
 /// callable (or an awaitable wrapped as a callable).
 template <typename T>
 auto spawn_entry_point(std::shared_ptr<spawn_state<T>> state) -> awaitable<T> {
-  if constexpr (std::is_void_v<T>) {
-    co_await state->factory_();
-    co_return;
-  } else {
-    co_return co_await state->factory_();
-  }
+  co_return co_await state->factory_();
 }
 
 template <typename T>

@@ -57,11 +57,11 @@ void co_spawn(any_executor ex, Factory&& f, Completion&& completion) {
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
 }
 
-/// Overload for awaitable<T>: converts to factory and forwards to unified implementation.
+/// Overload for awaitable<T>: converts to factory lambda and forwards to unified implementation.
 template <typename T, typename Token>
 auto co_spawn(any_executor ex, awaitable<T> a, Token&& token) {
-  detail::awaitable_as_function<T> factory(std::move(a));
-  return co_spawn(ex, std::move(factory), std::forward<Token>(token));
+  return co_spawn(ex, [a = std::move(a)]() mutable -> awaitable<T> { return std::move(a); },
+                  std::forward<Token>(token));
 }
 
 /// Generic forwarding overload for io_executor: converts to any_executor and forwards all arguments.
