@@ -13,6 +13,7 @@
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
 #include <iocoro/executor.hpp>
+#include <iocoro/when_any.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -80,13 +81,6 @@ struct with_timeout_result_traits<std::error_code> {
     return error::timed_out;
   }
 };
-
-template <class T>
-auto bind_executor(io_executor ex, awaitable<T> op) -> awaitable<T> {
-  auto h = op.release();
-  h.promise().set_executor(any_executor{ex});
-  return awaitable<T>{h};
-}
 
 }  // namespace detail
 
@@ -215,7 +209,7 @@ auto with_timeout_write(Stream& s, Awaitable&& op, std::chrono::steady_clock::du
   }
 }
 
-/// Optional: detached variant.
+/// Detached variant.
 ///
 /// Semantics:
 /// - On timeout, executes on_timeout and returns timed_out without waiting op to complete.
@@ -235,151 +229,47 @@ auto with_timeout_detached(io_executor ex, Awaitable&& op, std::chrono::steady_c
     co_return traits::timed_out();
   }
 
-  struct state {
-    io_executor ex;
-    std::shared_ptr<steady_timer> timer;
-    std::mutex m;
-    bool completed = false;
-    bool timer_won = false;
-    bool timeout_fired = false;
-    std::optional<result_t> value;
-    std::exception_ptr ep;
-    std::coroutine_handle<> waiter{};
-    ::iocoro::detail::unique_function<void()> on_timeout;
+  auto timer = std::make_shared<steady_timer>(ex);
+  (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
+
+  auto timer_wait = [timer, on_timeout = std::forward<OnTimeout>(on_timeout)]() mutable
+    -> awaitable<std::error_code> {
+    auto ec = co_await timer->async_wait(use_awaitable);
+    if (!ec) {
+      on_timeout();
+    }
+    co_return ec;
   };
 
-  auto st = std::make_shared<state>();
-  st->ex = ex;
-  st->timer = std::make_shared<steady_timer>(ex);
-  st->on_timeout = ::iocoro::detail::unique_function<void()>(std::forward<OnTimeout>(on_timeout));
-  (void)st->timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
+  // Start both concurrently; whichever finishes first determines the result.
+  // NOTE: when_any does not cancel the losing task.
+  auto [index, v] = co_await when_any(std::forward<Awaitable>(op),
+                                      timer_wait());
 
-  struct awaiter {
-    std::shared_ptr<state> st;
-
-    bool await_ready() const noexcept { return false; }
-
-    bool await_suspend(std::coroutine_handle<> h) noexcept {
-      std::coroutine_handle<> to_resume{};
-      {
-        std::scoped_lock lk{st->m};
-        if (st->completed) {
-          return false;
-        }
-        st->waiter = h;
-      }
-      (void)to_resume;
-      return true;
-    }
-
-    void await_resume() const {
-      if (st->timer_won) {
-        return;
-      }
-      if (st->ep) {
-        std::rethrow_exception(st->ep);
-      }
-    }
-  };
-
-  // Start the operation on ex and capture its completion.
-  auto bound = detail::bind_executor<result_t>(ex, std::forward<Awaitable>(op));
-  co_spawn(
-    ex,
-    std::move(bound),
-    [st](expected<result_t, std::exception_ptr> r) mutable {
-      std::coroutine_handle<> w{};
-      {
-        std::scoped_lock lk{st->m};
-        if (st->completed) {
-          return;
-        }
-        st->completed = true;
-        st->timer_won = false;
-        w = st->waiter;
-        st->waiter = {};
-      }
-
-      (void)st->timer->cancel();
-
-      if (!r) {
-        st->ep = std::move(r).error();
-      } else {
-        st->value.emplace(std::move(*r));
-      }
-
-      if (w) {
-        st->ex.post([w] { w.resume(); });
-      }
-    });
-
-  // Start the timer on ex.
-  co_spawn(
-    ex,
-    [timer = st->timer]() -> awaitable<std::error_code> {
-      co_return co_await timer->async_wait(use_awaitable);
-    },
-    [st](expected<std::error_code, std::exception_ptr> r) mutable {
-      std::coroutine_handle<> w{};
-      bool fire = false;
-      std::optional<result_t> timer_value{};
-      {
-        std::scoped_lock lk{st->m};
-        if (st->completed) {
-          return;
-        }
-        if (!r) {
-          st->completed = true;
-          st->timer_won = true;
-          st->timeout_fired = false;
-          timer_value.emplace(traits::from_error(error::operation_aborted));
-          w = st->waiter;
-          st->waiter = {};
-        } else {
-          auto ec = *r;
-          if (!ec) {
-            st->completed = true;
-            st->timer_won = true;
-            st->timeout_fired = true;
-            fire = true;
-            w = st->waiter;
-            st->waiter = {};
-          } else {
-            st->completed = true;
-            st->timer_won = true;
-            st->timeout_fired = false;
-            timer_value.emplace(traits::from_error(ec));
-            w = st->waiter;
-            st->waiter = {};
-          }
-        }
-      }
-
-      if (timer_value.has_value()) {
-        st->value = std::move(timer_value);
-      }
-
-      if (fire) {
-        st->on_timeout();
-      }
-
-      if (w) {
-        st->ex.post([w] { w.resume(); });
-      }
-    });
-
-  co_await awaiter{st};
-
-  if (st->timer_won) {
-    if (st->timeout_fired) {
-      co_return traits::timed_out();
-    }
-    IOCORO_ENSURE(st->value.has_value(), "with_timeout_detached: missing timer error");
-    co_return std::move(*st->value);
+  if (index == 0) {
+    (void)timer->cancel();
+    co_return std::get<0>(std::move(v));
   }
 
-  IOCORO_ENSURE(st->value.has_value(), "with_timeout_detached: missing value");
-  co_return std::move(*st->value);
+  auto ec = std::get<1>(std::move(v));
+  if (!ec) {
+    co_return traits::timed_out();
+  }
+
+  // Timer wait completed due to cancellation/executor shutdown.
+  // Treat it as a timer error rather than a timeout.
+  co_return traits::from_error(ec);
+}
+
+template <class Awaitable, class OnTimeout = decltype([] {})>
+  requires std::invocable<OnTimeout&> && requires { typename detail::with_timeout_result_t<Awaitable>; }
+auto with_timeout_detached(Awaitable&& op, std::chrono::steady_clock::duration timeout,
+                           OnTimeout&& on_timeout = OnTimeout{})
+  -> awaitable<detail::with_timeout_result_t<Awaitable>> {
+  auto ex_any = co_await this_coro::executor;
+  IOCORO_ENSURE(ex_any, "with_timeout_detached: requires a bound executor");
+  auto ex = ::iocoro::detail::require_io_executor(ex_any);
+  co_return co_await with_timeout_detached(ex, std::forward<Awaitable>(op), timeout, std::forward<OnTimeout>(on_timeout));
 }
 
 }  // namespace iocoro::io
