@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/require_io_executor.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>

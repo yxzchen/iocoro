@@ -23,19 +23,20 @@ TEST(when_any_test, variadic_returns_first_completed) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
 
   using result_t = std::pair<std::size_t, std::variant<std::monostate, int, std::string>>;
 
-  auto t0 = []() -> iocoro::awaitable<void> {
-    co_await iocoro::co_sleep(50ms);
+  auto t0 = [ex]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(ex, 50ms);
     co_return;
   };
-  auto t1 = []() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(10ms);
+  auto t1 = [ex]() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(ex, 10ms);
     co_return 42;
   };
-  auto t2 = []() -> iocoro::awaitable<std::string> {
-    co_await iocoro::co_sleep(100ms);
+  auto t2 = [ex]() -> iocoro::awaitable<std::string> {
+    co_await iocoro::co_sleep(ex, 100ms);
     co_return "hello";
   };
 
@@ -51,14 +52,15 @@ TEST(when_any_test, variadic_rethrows_exception_if_first) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
 
   auto boom = []() -> iocoro::awaitable<int> {
     (void)co_await iocoro::this_coro::executor;
     throw std::runtime_error("boom");
   };
 
-  auto slow = []() -> iocoro::awaitable<std::string> {
-    co_await iocoro::co_sleep(100ms);
+  auto slow = [ex]() -> iocoro::awaitable<std::string> {
+    co_await iocoro::co_sleep(ex, 100ms);
     co_return "slow";
   };
 
@@ -80,20 +82,21 @@ TEST(when_any_test, container_returns_first_completed_with_index) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
 
   using result_t = std::pair<std::size_t, int>;
 
   std::vector<iocoro::awaitable<int>> tasks;
-  tasks.push_back([]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(50ms);
+  tasks.push_back([ex]() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(ex, 50ms);
     co_return 1;
   }());
-  tasks.push_back([]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(10ms);
+  tasks.push_back([ex]() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(ex, 10ms);
     co_return 2;
   }());
-  tasks.push_back([]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(100ms);
+  tasks.push_back([ex]() -> iocoro::awaitable<int> {
+    co_await iocoro::co_sleep(ex, 100ms);
     co_return 3;
   }());
 
@@ -108,16 +111,17 @@ TEST(when_any_test, container_void_returns_index) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
 
   using result_t = std::pair<std::size_t, std::monostate>;
 
   std::vector<iocoro::awaitable<void>> tasks;
-  tasks.push_back([]() -> iocoro::awaitable<void> {
-    co_await iocoro::co_sleep(30ms);
+  tasks.push_back([ex]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(ex, 30ms);
     co_return;
   }());
-  tasks.push_back([]() -> iocoro::awaitable<void> {
-    co_await iocoro::co_sleep(5ms);
+  tasks.push_back([ex]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(ex, 5ms);
     co_return;
   }());
 

@@ -5,7 +5,6 @@
 
 #include <concepts>
 #include <memory>
-#include <typeinfo>
 #include <utility>
 
 // This header provides a minimal and IO-agnostic executor abstraction.
@@ -26,10 +25,6 @@
 //   (e.g. terminate/log/drop) rather than by throwing.
 
 namespace iocoro {
-
-namespace detail {
-struct any_executor_access;
-}  // namespace detail
 
 template <class Ex>
 concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
@@ -55,13 +50,10 @@ class any_executor {
   explicit operator bool() const noexcept { return static_cast<bool>(impl_); }
 
  private:
-  friend struct detail::any_executor_access;
-
   struct concept_base {
     virtual ~concept_base() = default;
     virtual void post(detail::unique_function<void()>) noexcept = 0;
     virtual void dispatch(detail::unique_function<void()>) noexcept = 0;
-    virtual auto target(std::type_info const& ti) const noexcept -> void const* = 0;
   };
 
   template <class Ex>
@@ -74,27 +66,12 @@ class any_executor {
       ex_.dispatch(std::move(fn));
     }
 
-    auto target(std::type_info const& ti) const noexcept -> void const* override {
-      if (ti == typeid(Ex)) {
-        return std::addressof(ex_);
-      }
-      return nullptr;
-    }
-
     Ex ex_;
   };
 
   inline auto ensure_impl() const -> std::shared_ptr<concept_base> {
     IOCORO_ENSURE(impl_, "any_executor: empty impl_");
     return impl_;
-  }
-
-  template <class T>
-  auto target() const noexcept -> T const* {
-    if (!impl_) {
-      return nullptr;
-    }
-    return static_cast<T const*>(impl_->target(typeid(T)));
   }
 
   std::shared_ptr<concept_base> impl_{};

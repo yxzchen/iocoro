@@ -3,7 +3,6 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/detail/require_io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
@@ -38,7 +37,7 @@ TEST(co_spawn_test, co_spawn_factory_use_awaitable_returns_value) {
       ex,
       [ex]() -> iocoro::awaitable<int> {
         auto cur = co_await iocoro::this_coro::executor;
-        EXPECT_EQ(iocoro::detail::require_io_executor(cur), ex);
+        EXPECT_TRUE(static_cast<bool>(cur));
         co_return 42;
       },
       iocoro::use_awaitable);
@@ -93,7 +92,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_returns_value) {
 
   auto child = [ex]() -> iocoro::awaitable<int> {
     auto cur = co_await iocoro::this_coro::executor;
-    EXPECT_EQ(iocoro::detail::require_io_executor(cur), ex);
+    EXPECT_TRUE(static_cast<bool>(cur));
     co_return 42;
   };
 
@@ -110,7 +109,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_rethrows_exception) {
 
   auto child = [ex]() -> iocoro::awaitable<int> {
     auto cur = co_await iocoro::this_coro::executor;
-    EXPECT_EQ(iocoro::detail::require_io_executor(cur), ex);
+    EXPECT_TRUE(static_cast<bool>(cur));
     throw std::runtime_error("boom");
   };
 
@@ -134,7 +133,7 @@ TEST(co_spawn_test, co_spawn_use_awaitable_waits_for_timer_based_child) {
   auto ex = ctx.get_executor();
 
   auto slow = [&]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(10ms);
+    co_await iocoro::co_sleep(ex, 10ms);
     co_return 7;
   };
 

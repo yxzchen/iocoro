@@ -256,7 +256,7 @@ TEST(local_stream_acceptor_test, cancel_aborts_waiting_accept) {
       },
       iocoro::use_awaitable);
 
-    (void)co_await iocoro::co_sleep(10ms);
+    (void)co_await iocoro::co_sleep(ex, 10ms);
     a.cancel();
 
     try {
@@ -297,7 +297,7 @@ TEST(local_stream_acceptor_test, close_aborts_waiting_accept) {
       },
       iocoro::use_awaitable);
 
-    (void)co_await iocoro::co_sleep(10ms);
+    (void)co_await iocoro::co_sleep(ex, 10ms);
     a.close();
 
     try {

@@ -311,9 +311,9 @@ TEST(stream_socket_impl_test, concurrent_read_reports_busy) {
 
       // Wait until the first read has started (yielding to the io_executor).
       for (int i = 0; i < 50 && !started_first.load(std::memory_order_acquire); ++i) {
-        (void)co_await iocoro::co_sleep(1ms);
+        (void)co_await iocoro::co_sleep(ex, 1ms);
       }
-      (void)co_await iocoro::co_sleep(5ms);  // give it a chance to reach the readiness wait
+      (void)co_await iocoro::co_sleep(ex, 5ms);  // give it a chance to reach the readiness wait
 
       std::error_code second_ec{};
       auto r2 = co_await s.async_read_some(b2);
@@ -430,15 +430,15 @@ TEST(stream_socket_impl_test, cancel_read_does_not_cancel_write_wait) {
       for (int i = 0; i < 50 && (!write_started.load(std::memory_order_acquire) ||
                                  !read_started.load(std::memory_order_acquire));
            ++i) {
-        (void)co_await iocoro::co_sleep(1ms);
+        (void)co_await iocoro::co_sleep(ex, 1ms);
       }
-      (void)co_await iocoro::co_sleep(5ms);  // give them time to reach readiness waits
+      (void)co_await iocoro::co_sleep(ex, 5ms);  // give them time to reach readiness waits
 
       // Cancel ONLY the read side and ensure write doesn't complete as a side-effect.
       s.cancel_read();
 
       for (int i = 0; i < 200 && !read_done.load(std::memory_order_acquire); ++i) {
-        (void)co_await iocoro::co_sleep(1ms);
+        (void)co_await iocoro::co_sleep(ex, 1ms);
       }
 
       bool const write_completed_after_read_cancel = write_done.load(std::memory_order_acquire);
@@ -447,7 +447,7 @@ TEST(stream_socket_impl_test, cancel_read_does_not_cancel_write_wait) {
       s.cancel_write();
 
       for (int i = 0; i < 200 && !write_done.load(std::memory_order_acquire); ++i) {
-        (void)co_await iocoro::co_sleep(1ms);
+        (void)co_await iocoro::co_sleep(ex, 1ms);
       }
 
       try {
