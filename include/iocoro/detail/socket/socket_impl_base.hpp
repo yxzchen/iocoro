@@ -159,12 +159,12 @@ class socket_impl_base {
 
   /// Wait until the native fd becomes readable (read readiness).
   auto wait_read_ready() -> fd_awaiter<fd_wait_kind::read> {
-    return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+    return {this, native_handle(), get_executor()};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
   auto wait_write_ready() -> fd_awaiter<fd_wait_kind::write> {
-    return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+    return {this, native_handle(), get_executor()};
   }
 
  private:
@@ -209,11 +209,11 @@ class socket_impl_base {
     socket_impl_base* self;
     int fd;
     io_executor ex;
+
     std::shared_ptr<wait_state> st;
 
-    fd_awaiter(socket_impl_base* self_, int fd_, io_executor ex_,
-               std::shared_ptr<wait_state> st_) noexcept
-        : self(self_), fd(fd_), ex(ex_), st(st_) {}
+    fd_awaiter(socket_impl_base* self_, int fd_, io_executor ex_) noexcept
+        : self(self_), fd(fd_), ex(ex_), st(std::make_shared<wait_state>()) {}
 
     bool await_ready() const noexcept { return fd < 0 || !ex; }
 
