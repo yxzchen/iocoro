@@ -3,6 +3,7 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 
@@ -87,6 +88,7 @@ class basic_acceptor_impl {
 
   struct accept_turn_state {
     std::coroutine_handle<> h{};
+    any_executor ex{};
   };
 
   struct accept_turn_awaiter {

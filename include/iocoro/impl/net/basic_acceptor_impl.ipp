@@ -89,6 +89,7 @@ inline auto basic_acceptor_impl<Protocol>::async_accept() -> awaitable<expected<
 
   // Queue-based serialization (FIFO).
   auto st = std::make_shared<accept_turn_state>();
+  st->ex = co_await this_coro::executor;
   {
     std::scoped_lock lk{mtx_};
     accept_queue_.push_back(st);
@@ -224,8 +225,7 @@ inline void basic_acceptor_impl<Protocol>::cleanup_expired_queue_front() noexcep
 
 template <class Protocol>
 inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
-  std::coroutine_handle<> next_h{};
-  io_executor ex{};
+  std::shared_ptr<accept_turn_state> next{};
   {
     std::scoped_lock lk{mtx_};
 
@@ -245,22 +245,19 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_
     cleanup_expired_queue_front();
 
     if (!accept_queue_.empty()) {
-      auto next = accept_queue_.front().lock();
+      next = accept_queue_.front().lock();
       IOCORO_ENSURE(
         static_cast<bool>(next),
         "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
       accept_active_ = true;
-      next_h = next->h;
-      ex = base_.get_executor();
     }
   }
 
   // Resume next waiter (if it actually suspended).
-  if (next_h) {
-    ex.post([h = next_h, ex] {
-      detail::executor_guard g{ex};
-      h.resume();
-    });
+  // Asynchronously schedule the next waiter's coroutine on its own executor.
+  // This avoids blocking the current coroutine's completion and prevents stack depth issues.
+  if (next && next->h && next->ex) {
+    detail::resume_on_executor(next->ex, next->h);
   }
 }
 
