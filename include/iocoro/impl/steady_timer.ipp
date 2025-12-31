@@ -104,16 +104,13 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
   }
 
   struct state final {
-    io_executor ex{};
     std::coroutine_handle<> h{};
     std::error_code ec{};
   };
 
   struct awaiter final {
-    // Explicit constructor to ensure proper move semantics
-    explicit awaiter(io_executor ex_, timer_handle th_) : ex(ex_), th(std::move(th_)) {}
+    explicit awaiter(timer_handle th_) : th(std::move(th_)) {}
 
-    io_executor ex{};
     timer_handle th{};
     std::shared_ptr<state> st{};
 
@@ -131,7 +128,6 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
       }
 
       st = std::make_shared<state>();
-      st->ex = ex;
       st->h = h;
 
       std::weak_ptr<state> w = st;
@@ -139,11 +135,10 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
       th.add_waiter([w, th_copy]() mutable {
         if (auto s = w.lock()) {
           s->ec = th_copy.cancelled() ? error::operation_aborted : std::error_code{};
-
-          s->ex.post([s]() mutable {
-            detail::executor_guard g{s->ex};
-            s->h.resume();
-          });
+          // Directly resume the awaitable coroutine (intermediate coroutine).
+          // The awaitable promise's final_suspend() will handle resuming
+          // the user coroutine on the correct executor.
+          s->h.resume();
         }
       });
 
@@ -161,7 +156,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
     }
   };
 
-  co_return co_await awaiter{ex_, th_};
+  co_return co_await awaiter{th_};
 }
 
 inline auto steady_timer::cancel() noexcept -> std::size_t {
