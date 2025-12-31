@@ -42,7 +42,7 @@ class socket_impl_base {
   using fd_event_handle = io_context_impl::fd_event_handle;
 
   socket_impl_base() noexcept = delete;
-  explicit socket_impl_base(io_executor ex) noexcept : ex_(ex) {}
+  explicit socket_impl_base(io_executor ex) noexcept : ctx_impl_(ex.impl_) {}
 
   socket_impl_base(socket_impl_base const&) = delete;
   auto operator=(socket_impl_base const&) -> socket_impl_base& = delete;
@@ -51,7 +51,7 @@ class socket_impl_base {
 
   ~socket_impl_base() { close(); }
 
-  auto get_executor() const noexcept -> io_executor { return ex_; }
+  auto get_executor() const noexcept -> io_executor { return io_executor{*ctx_impl_}; }
 
   /// Native handle snapshot. Returns -1 if not open.
   ///
@@ -160,12 +160,12 @@ class socket_impl_base {
 
   /// Wait until the native fd becomes readable (read readiness).
   auto wait_read_ready() -> awaitable<std::error_code> {
-    co_return co_await fd_awaiter<fd_wait_kind::read>{this, native_handle(), get_executor()};
+    co_return co_await fd_awaiter<fd_wait_kind::read>{this, native_handle()};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
   auto wait_write_ready() -> awaitable<std::error_code> {
-    co_return co_await fd_awaiter<fd_wait_kind::write>{this, native_handle(), get_executor()};
+    co_return co_await fd_awaiter<fd_wait_kind::write>{this, native_handle()};
   }
 
  private:
@@ -188,7 +188,7 @@ class socket_impl_base {
 
   class fd_wait_operation final : public operation_base {
    public:
-    fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
+    fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base,
                       std::shared_ptr<wait_state> st) noexcept;
 
     void on_ready() noexcept override;
@@ -208,18 +208,16 @@ class socket_impl_base {
   struct fd_awaiter {
     socket_impl_base* self;
     int fd;
-    io_executor ex;
-
     std::shared_ptr<wait_state> st;
 
-    fd_awaiter(socket_impl_base* self_, int fd_, io_executor ex_) noexcept
-        : self(self_), fd(fd_), ex(ex_), st(std::make_shared<wait_state>()) {}
+    fd_awaiter(socket_impl_base* self_, int fd_) noexcept
+        : self(self_), fd(fd_), st(std::make_shared<wait_state>()) {}
 
-    bool await_ready() const noexcept { return fd < 0 || !ex; }
+    bool await_ready() const noexcept { return fd < 0; }
 
     bool await_suspend(std::coroutine_handle<> h) {
       st->h = h;
-      auto op = std::make_unique<fd_wait_operation>(Kind, fd, self, ex, st);
+      auto op = std::make_unique<fd_wait_operation>(Kind, fd, self, st);
       op->start(std::move(op));
       return true;
     }
@@ -228,14 +226,11 @@ class socket_impl_base {
       if (fd < 0) {
         return error::not_open;
       }
-      if (!ex) {
-        return error::not_open;
-      }
       return st->ec;
     }
   };
 
-  io_executor ex_{};
+  io_context_impl* ctx_impl_{};
 
   mutable std::mutex mtx_{};
 

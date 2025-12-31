@@ -202,9 +202,8 @@ inline auto socket_impl_base::release() noexcept -> int {
 }
 
 inline socket_impl_base::fd_wait_operation::fd_wait_operation(
-  fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
-  std::shared_ptr<wait_state> st) noexcept
-    : operation_base(ex.impl_), kind_(k), fd_(fd), base_(base), st_(std::move(st)) {}
+  fd_wait_kind k, int fd, socket_impl_base* base, std::shared_ptr<wait_state> st) noexcept
+    : operation_base(base->ctx_impl_), kind_(k), fd_(fd), base_(base), st_(std::move(st)) {}
 
 inline void socket_impl_base::fd_wait_operation::on_ready() noexcept {
   complete(std::error_code{});
