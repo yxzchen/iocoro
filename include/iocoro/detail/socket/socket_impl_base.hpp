@@ -186,19 +186,43 @@ class socket_impl_base {
     std::atomic<bool> done{false};
   };
 
+  template <fd_wait_kind Kind>
   class fd_wait_operation final : public operation_base {
    public:
-    fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base,
-                      std::shared_ptr<wait_state> st) noexcept;
+    fd_wait_operation(int fd, socket_impl_base* base, std::shared_ptr<wait_state> st) noexcept
+        : operation_base(base->ctx_impl_), fd_(fd), base_(base), st_(std::move(st)) {}
 
-    void on_ready() noexcept override;
-    void on_abort(std::error_code ec) noexcept override;
+    void on_ready() noexcept override { complete(std::error_code{}); }
+    void on_abort(std::error_code ec) noexcept override { complete(ec); }
 
    private:
-    void do_start(std::unique_ptr<operation_base> self) override;
-    void complete(std::error_code ec) noexcept;
+    void do_start(std::unique_ptr<operation_base> self) override {
+      // Register and publish handle for cancellation.
+      // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
+      // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
+      // "single waiter per direction" invariant for correctness.
+      if constexpr (Kind == fd_wait_kind::read) {
+        auto h = impl_->register_fd_read(fd_, std::move(self));
+        base_->set_read_handle(h);
+      } else {
+        auto h = impl_->register_fd_write(fd_, std::move(self));
+        base_->set_write_handle(h);
+      }
+    }
 
-    fd_wait_kind kind_;
+    void complete(std::error_code ec) noexcept {
+      // Guard against double completion (on_ready + on_abort, or repeated signals).
+      if (st_->done.exchange(true, std::memory_order_acq_rel)) {
+        return;
+      }
+      st_->ec = ec;
+
+      // Directly resume the intermediate awaitable coroutine (not the user coroutine).
+      // The intermediate awaitable's promise will handle scheduling the user coroutine
+      // back to the correct executor via final_suspend() -> resume_continuation().
+      st_->h.resume();
+    }
+
     int fd_;
     socket_impl_base* base_ = nullptr;
     std::shared_ptr<wait_state> st_{};
@@ -217,7 +241,7 @@ class socket_impl_base {
 
     bool await_suspend(std::coroutine_handle<> h) {
       st->h = h;
-      auto op = std::make_unique<fd_wait_operation>(Kind, fd, self, st);
+      auto op = std::make_unique<fd_wait_operation<Kind>>(fd, self, st);
       op->start(std::move(op));
       return true;
     }

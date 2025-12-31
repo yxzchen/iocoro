@@ -201,47 +201,4 @@ inline auto socket_impl_base::release() noexcept -> int {
   return fd;
 }
 
-inline socket_impl_base::fd_wait_operation::fd_wait_operation(
-  fd_wait_kind k, int fd, socket_impl_base* base, std::shared_ptr<wait_state> st) noexcept
-    : operation_base(base->ctx_impl_), kind_(k), fd_(fd), base_(base), st_(std::move(st)) {}
-
-inline void socket_impl_base::fd_wait_operation::on_ready() noexcept {
-  complete(std::error_code{});
-}
-
-inline void socket_impl_base::fd_wait_operation::on_abort(std::error_code ec) noexcept {
-  complete(ec);
-}
-
-inline void socket_impl_base::fd_wait_operation::do_start(std::unique_ptr<operation_base> self) {
-  // Register and publish handle for cancellation.
-  // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
-  // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
-  // "single waiter per direction" invariant for correctness.
-  if (kind_ == fd_wait_kind::read) {
-    auto h = impl_->register_fd_read(fd_, std::move(self));
-    if (base_ != nullptr) {
-      base_->set_read_handle(h);
-    }
-  } else {
-    auto h = impl_->register_fd_write(fd_, std::move(self));
-    if (base_ != nullptr) {
-      base_->set_write_handle(h);
-    }
-  }
-}
-
-inline void socket_impl_base::fd_wait_operation::complete(std::error_code ec) noexcept {
-  // Guard against double completion (on_ready + on_abort, or repeated signals).
-  if (st_->done.exchange(true, std::memory_order_acq_rel)) {
-    return;
-  }
-  st_->ec = ec;
-
-  // Directly resume the intermediate awaitable coroutine (not the user coroutine).
-  // The intermediate awaitable's promise will handle scheduling the user coroutine
-  // back to the correct executor via final_suspend() -> resume_continuation().
-  st_->h.resume();
-}
-
 }  // namespace iocoro::detail::socket
