@@ -81,7 +81,8 @@ inline auto basic_acceptor_impl<Protocol>::local_endpoint() const
 }
 
 template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::async_accept() -> awaitable<expected<int, std::error_code>> {
+inline auto basic_acceptor_impl<Protocol>::async_accept()
+  -> awaitable<expected<int, std::error_code>> {
   auto const listen_fd = base_.native_handle();
   if (listen_fd < 0) {
     co_return unexpected(error::not_open);
@@ -89,7 +90,6 @@ inline auto basic_acceptor_impl<Protocol>::async_accept() -> awaitable<expected<
 
   // Queue-based serialization (FIFO).
   auto st = std::make_shared<accept_turn_state>();
-  st->ex = co_await this_coro::executor;
   {
     std::scoped_lock lk{mtx_};
     accept_queue_.push_back(st);
@@ -199,9 +199,8 @@ inline auto basic_acceptor_impl<Protocol>::try_acquire_turn(
   std::shared_ptr<accept_turn_state> const& st) noexcept -> bool {
   std::scoped_lock lk{mtx_};
   cleanup_expired_queue_front();
-  IOCORO_ENSURE(
-    !accept_queue_.empty(),
-    "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
+  IOCORO_ENSURE(!accept_queue_.empty(),
+                "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
   if (accept_active_) {
     return false;
   }
@@ -224,7 +223,8 @@ inline void basic_acceptor_impl<Protocol>::cleanup_expired_queue_front() noexcep
 }
 
 template <class Protocol>
-inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
+inline void basic_acceptor_impl<Protocol>::complete_turn(
+  std::shared_ptr<accept_turn_state> const& st) noexcept {
   std::shared_ptr<accept_turn_state> next{};
   {
     std::scoped_lock lk{mtx_};
@@ -246,9 +246,8 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_
 
     if (!accept_queue_.empty()) {
       next = accept_queue_.front().lock();
-      IOCORO_ENSURE(
-        static_cast<bool>(next),
-        "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
+      IOCORO_ENSURE(static_cast<bool>(next),
+                    "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
       accept_active_ = true;
     }
   }
@@ -257,10 +256,8 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_
   // Asynchronously schedule the next waiter's coroutine on its own executor.
   // This avoids blocking the current coroutine's completion and prevents stack depth issues.
   if (next && next->h && next->ex) {
-    detail::resume_on_executor(next->ex, next->h);
+    next->ex.post([next]() mutable { next->h.resume(); });
   }
 }
 
 }  // namespace iocoro::detail::net
-
-

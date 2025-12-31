@@ -1,7 +1,8 @@
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/steady_timer.hpp>
 
 #include <chrono>
@@ -105,6 +106,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
 
   struct state final {
     std::coroutine_handle<> h{};
+    any_executor ex{};
     std::error_code ec{};
   };
 
@@ -129,16 +131,14 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
 
       st = std::make_shared<state>();
       st->h = h;
+      st->ex = detail::get_current_executor();
 
       std::weak_ptr<state> w = st;
       auto th_copy = th;
       th.add_waiter([w, th_copy]() mutable {
         if (auto s = w.lock()) {
           s->ec = th_copy.cancelled() ? error::operation_aborted : std::error_code{};
-          // Directly resume the awaitable coroutine (intermediate coroutine).
-          // The awaitable promise's final_suspend() will handle resuming
-          // the user coroutine on the correct executor.
-          s->h.resume();
+          s->ex.post([s]() mutable { s->h.resume(); });
         }
       });
 

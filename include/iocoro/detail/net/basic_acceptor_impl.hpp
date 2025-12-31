@@ -102,6 +102,7 @@ class basic_acceptor_impl {
 
     bool await_suspend(std::coroutine_handle<> h) noexcept {
       st->h = h;
+      st->ex = detail::get_current_executor();
       return true;
     }
 

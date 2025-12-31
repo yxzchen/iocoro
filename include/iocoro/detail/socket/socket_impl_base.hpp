@@ -1,9 +1,11 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/socket_option.hpp>
 
@@ -182,6 +184,7 @@ class socket_impl_base {
 
   struct wait_state {
     std::coroutine_handle<> h{};
+    any_executor ex{};
     std::error_code ec{};
     std::atomic<bool> done{false};
   };
@@ -217,10 +220,10 @@ class socket_impl_base {
       }
       st_->ec = ec;
 
-      // Directly resume the intermediate awaitable coroutine (not the user coroutine).
-      // The intermediate awaitable's promise will handle scheduling the user coroutine
-      // back to the correct executor via final_suspend() -> resume_continuation().
-      st_->h.resume();
+      // Resume on the caller's original executor.
+      // This ensures the awaitable coroutine resumes on the same executor
+      // where the user initiated the wait operation.
+      st_->ex.post([st = st_]() mutable { st->h.resume(); });
     }
 
     int fd_;
@@ -241,6 +244,7 @@ class socket_impl_base {
 
     bool await_suspend(std::coroutine_handle<> h) {
       st->h = h;
+      st->ex = detail::get_current_executor();
       auto op = std::make_unique<fd_wait_operation<Kind>>(fd, self, st);
       op->start(std::move(op));
       return true;
