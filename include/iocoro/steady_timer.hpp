@@ -40,8 +40,6 @@ class steady_timer {
 
   ~steady_timer();
 
-  auto get_executor() const noexcept -> io_executor { return ex_; }
-
   auto expiry() const noexcept -> time_point { return expiry_; }
   /// Set the timer expiry time.
   ///

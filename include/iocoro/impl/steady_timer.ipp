@@ -52,42 +52,6 @@ inline void steady_timer::reschedule() {
   th_ = timer_handle(std::move(entry));
 }
 
-inline void steady_timer::async_wait(std::function<void(std::error_code)> h) {
-  IOCORO_ENSURE(ex_, "steady_timer::async_wait: requires a bound io_executor");
-
-  // If the io_executor is stopped, complete synchronously to avoid hanging.
-  if (ex_.stopped()) {
-    if (h) {
-      h(error::operation_aborted);
-    }
-    return;
-  }
-
-  // (Re)start the underlying scheduled timer if needed.
-  if (!th_.pending()) {
-    reschedule();
-  }
-
-  if (!th_) {
-    if (h) {
-      h(error::operation_aborted);
-    }
-    return;
-  }
-
-  auto th = th_;
-  th.add_waiter([ex = ex_, th, h = std::move(h)]() mutable {
-    auto ec = std::error_code{};
-    if (th.cancelled()) {
-      ec = error::operation_aborted;
-    }
-    detail::executor_guard g{ex};
-    if (h) {
-      h(ec);
-    }
-  });
-}
-
 inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_code> {
   IOCORO_ENSURE(ex_, "steady_timer::async_wait: requires a bound io_executor");
 
