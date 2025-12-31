@@ -428,20 +428,20 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       }
 
       if (read_op) {
-        read_op->abort(ec);
+        read_op->on_abort(ec);
         ++count;
       }
       if (write_op) {
-        write_op->abort(ec);
+        write_op->on_abort(ec);
         ++count;
       }
     } else {
       if (read_op) {
-        read_op->execute();
+        read_op->on_ready();
         ++count;
       }
       if (write_op) {
-        write_op->execute();
+        write_op->on_ready();
         ++count;
       }
     }

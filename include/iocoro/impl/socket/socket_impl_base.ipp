@@ -204,11 +204,15 @@ inline auto socket_impl_base::release() noexcept -> int {
 inline socket_impl_base::fd_wait_operation::fd_wait_operation(
   fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
   std::shared_ptr<wait_state> st) noexcept
-    : operation_base(ex), kind_(k), fd_(fd), base_(base), ex_(ex), st_(std::move(st)) {}
+    : operation_base(ex.impl_), kind_(k), fd_(fd), base_(base), ex_(ex), st_(std::move(st)) {}
 
-inline void socket_impl_base::fd_wait_operation::execute() { complete(std::error_code{}); }
+inline void socket_impl_base::fd_wait_operation::on_ready() noexcept {
+  complete(std::error_code{});
+}
 
-inline void socket_impl_base::fd_wait_operation::abort(std::error_code ec) { complete(ec); }
+inline void socket_impl_base::fd_wait_operation::on_abort(std::error_code ec) noexcept {
+  complete(ec);
+}
 
 inline void socket_impl_base::fd_wait_operation::do_start(std::unique_ptr<operation_base> self) {
   // Register and publish handle for cancellation.
@@ -228,16 +232,13 @@ inline void socket_impl_base::fd_wait_operation::do_start(std::unique_ptr<operat
   }
 }
 
-inline void socket_impl_base::fd_wait_operation::complete(std::error_code ec) {
-  // Guard against double completion (execute + abort, or repeated signals).
+inline void socket_impl_base::fd_wait_operation::complete(std::error_code ec) noexcept {
+  // Guard against double completion (on_ready + on_abort, or repeated signals).
   if (st_->done.exchange(true, std::memory_order_acq_rel)) {
     return;
   }
   st_->ec = ec;
-  ex_.post([s = st_, ex = ex_]() mutable {
-    detail::executor_guard g{ex};
-    s->h.resume();
-  });
+  ex_.post([s = st_, ex = ex_]() mutable { s->h.resume(); });
 }
 
 }  // namespace iocoro::detail::socket

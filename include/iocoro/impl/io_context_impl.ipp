@@ -180,7 +180,7 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     }
   }
   if (old) {
-    old->abort(error::operation_aborted);
+    old->on_abort(error::operation_aborted);
   }
 
   reconcile_fd_interest_async(fd);
@@ -217,7 +217,7 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     }
   }
   if (old) {
-    old->abort(error::operation_aborted);
+    old->on_abort(error::operation_aborted);
   }
 
   reconcile_fd_interest_async(fd);
@@ -243,10 +243,10 @@ inline void io_context_impl::deregister_fd(int fd) {
   reconcile_fd_interest_async(fd);
 
   if (removed.read_op) {
-    removed.read_op->abort(error::operation_aborted);
+    removed.read_op->on_abort(error::operation_aborted);
   }
   if (removed.write_op) {
-    removed.write_op->abort(error::operation_aborted);
+    removed.write_op->on_abort(error::operation_aborted);
   }
 
   wakeup();
@@ -469,7 +469,7 @@ inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
   reconcile_fd_interest_async(fd);
 
   if (removed) {
-    removed->abort(error::operation_aborted);
+    removed->on_abort(error::operation_aborted);
   }
   wakeup();
 }

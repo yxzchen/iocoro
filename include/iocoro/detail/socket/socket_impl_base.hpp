@@ -190,12 +190,12 @@ class socket_impl_base {
     fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
                       std::shared_ptr<wait_state> st) noexcept;
 
-    void execute() override;
-    void abort(std::error_code ec) override;
+    void on_ready() noexcept override;
+    void on_abort(std::error_code ec) noexcept override;
 
    private:
     void do_start(std::unique_ptr<operation_base> self) override;
-    void complete(std::error_code ec);
+    void complete(std::error_code ec) noexcept;
 
     fd_wait_kind kind_;
     int fd_;

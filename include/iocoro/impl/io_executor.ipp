@@ -12,11 +12,17 @@ inline io_executor::io_executor(detail::io_context_impl& impl) noexcept : impl_{
 inline io_executor::io_executor() noexcept : impl_{nullptr} {}
 
 inline void io_executor::post_impl(detail::unique_function<void()> f) const {
-  ensure_impl().post(std::move(f));
+  ensure_impl().post([ex = *this, f = std::move(f)]() mutable {
+    detail::executor_guard g{any_executor{ex}};
+    f();
+  });
 }
 
 inline void io_executor::dispatch_impl(detail::unique_function<void()> f) const {
-  ensure_impl().dispatch(std::move(f));
+  ensure_impl().dispatch([ex = *this, f = std::move(f)]() mutable {
+    detail::executor_guard g{any_executor{ex}};
+    f();
+  });
 }
 
 inline auto io_executor::stopped() const noexcept -> bool {
