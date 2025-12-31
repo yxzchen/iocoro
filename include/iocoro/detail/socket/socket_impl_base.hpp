@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iocoro/awaitable.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
@@ -158,13 +159,13 @@ class socket_impl_base {
   }
 
   /// Wait until the native fd becomes readable (read readiness).
-  auto wait_read_ready() -> fd_awaiter<fd_wait_kind::read> {
-    return {this, native_handle(), get_executor()};
+  auto wait_read_ready() -> awaitable<std::error_code> {
+    co_return co_await fd_awaiter<fd_wait_kind::read>{this, native_handle(), get_executor()};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
-  auto wait_write_ready() -> fd_awaiter<fd_wait_kind::write> {
-    return {this, native_handle(), get_executor()};
+  auto wait_write_ready() -> awaitable<std::error_code> {
+    co_return co_await fd_awaiter<fd_wait_kind::write>{this, native_handle(), get_executor()};
   }
 
  private:
@@ -200,7 +201,6 @@ class socket_impl_base {
     fd_wait_kind kind_;
     int fd_;
     socket_impl_base* base_ = nullptr;
-    io_executor ex_{};
     std::shared_ptr<wait_state> st_{};
   };
 

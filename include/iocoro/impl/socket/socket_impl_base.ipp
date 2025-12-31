@@ -204,7 +204,7 @@ inline auto socket_impl_base::release() noexcept -> int {
 inline socket_impl_base::fd_wait_operation::fd_wait_operation(
   fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
   std::shared_ptr<wait_state> st) noexcept
-    : operation_base(ex.impl_), kind_(k), fd_(fd), base_(base), ex_(ex), st_(std::move(st)) {}
+    : operation_base(ex.impl_), kind_(k), fd_(fd), base_(base), st_(std::move(st)) {}
 
 inline void socket_impl_base::fd_wait_operation::on_ready() noexcept {
   complete(std::error_code{});
@@ -238,7 +238,11 @@ inline void socket_impl_base::fd_wait_operation::complete(std::error_code ec) no
     return;
   }
   st_->ec = ec;
-  ex_.post([s = st_, ex = ex_]() mutable { s->h.resume(); });
+
+  // Directly resume the intermediate awaitable coroutine (not the user coroutine).
+  // The intermediate awaitable's promise will handle scheduling the user coroutine
+  // back to the correct executor via final_suspend() -> resume_continuation().
+  st_->h.resume();
 }
 
 }  // namespace iocoro::detail::socket
