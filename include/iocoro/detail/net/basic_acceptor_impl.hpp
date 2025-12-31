@@ -44,7 +44,7 @@ class basic_acceptor_impl {
 
   ~basic_acceptor_impl() = default;
 
-  auto get_executor() const noexcept -> io_executor { return base_.get_executor(); }
+  auto get_io_context_impl() const noexcept -> io_context_impl* { return base_.get_io_context_impl(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
   auto is_open() const noexcept -> bool { return base_.is_open(); }
 

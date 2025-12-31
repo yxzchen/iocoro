@@ -122,10 +122,8 @@ static void fill_send_buffer_nonblocking(int fd) {
 
 TEST(tcp_socket_test, construction_and_executor) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   iocoro::ip::tcp::socket s{ctx};
-  EXPECT_EQ(s.get_executor(), ex);
   EXPECT_FALSE(s.is_open());
   EXPECT_FALSE(s.is_connected());
   EXPECT_LT(s.native_handle(), 0);

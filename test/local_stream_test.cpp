@@ -128,10 +128,8 @@ static auto connect_to(iocoro::local::endpoint const& ep) -> unique_fd {
 
 TEST(local_stream_acceptor_test, construction_and_executor) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   iocoro::local::stream::acceptor a{ctx};
-  EXPECT_EQ(a.get_executor(), ex);
   EXPECT_FALSE(a.is_open());
   EXPECT_LT(a.native_handle(), 0);
 }

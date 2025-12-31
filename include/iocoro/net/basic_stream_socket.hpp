@@ -74,7 +74,6 @@ class basic_stream_socket : public ::iocoro::detail::basic_io_handle<
 
   auto is_connected() const noexcept -> bool { return this->impl_->is_connected(); }
 
-  using base_type::get_executor;
   using base_type::native_handle;
 
   using base_type::close;

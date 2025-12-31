@@ -53,7 +53,7 @@ class socket_impl_base {
 
   ~socket_impl_base() { close(); }
 
-  auto get_executor() const noexcept -> io_executor { return io_executor{*ctx_impl_}; }
+  auto get_io_context_impl() const noexcept -> io_context_impl* { return ctx_impl_; }
 
   /// Native handle snapshot. Returns -1 if not open.
   ///
