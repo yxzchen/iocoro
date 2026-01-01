@@ -58,7 +58,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
   }
 
   // State shared between awaiter and operation
-  struct state final {
+  struct wait_state final {
     std::coroutine_handle<> h{};
     any_executor ex{};
     std::error_code ec{};
@@ -67,7 +67,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
   // Timer operation
   class timer_wait_operation final : public detail::operation_base {
    public:
-    timer_wait_operation(steady_timer* timer, milliseconds timeout, std::shared_ptr<state> st)
+    timer_wait_operation(steady_timer* timer, milliseconds timeout, std::shared_ptr<wait_state> st)
         : operation_base(timer->ctx_impl_), timer_(timer), timeout_(timeout), st_(std::move(st)) {}
 
     void on_ready() noexcept override {
@@ -94,18 +94,18 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
 
     steady_timer* timer_ = nullptr;
     milliseconds timeout_;
-    std::shared_ptr<state> st_;
+    std::shared_ptr<wait_state> st_;
   };
 
   struct timer_awaiter final {
     steady_timer* self;
     milliseconds timeout;
-    std::shared_ptr<state> st{};
+    std::shared_ptr<wait_state> st{};
 
     bool await_ready() const noexcept { return false; }
 
     void await_suspend(std::coroutine_handle<> h) {
-      st = std::make_shared<state>();
+      st = std::make_shared<wait_state>();
       st->h = h;
       st->ex = detail::get_current_executor();
 
