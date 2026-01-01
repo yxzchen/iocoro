@@ -19,7 +19,6 @@ template <executor Target>
 inline auto require_executor(any_executor const& ex) noexcept -> Target {
   auto const* p = any_executor_access::target<Target>(ex);
   IOCORO_ENSURE(p != nullptr, "require_executor: executor is not of required type");
-  IOCORO_ENSURE(*p, "require_executor: empty executor");
   return *p;
 }
 
