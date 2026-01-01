@@ -162,12 +162,18 @@ class socket_impl_base {
 
   /// Wait until the native fd becomes readable (read readiness).
   auto wait_read_ready() -> awaitable<std::error_code> {
-    co_return co_await fd_awaiter<fd_wait_kind::read>{this, native_handle()};
+    if (native_handle() < 0) {
+      co_return error::not_open;
+    }
+    co_return co_await fd_awaiter<fd_wait_kind::read>{this};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
   auto wait_write_ready() -> awaitable<std::error_code> {
-    co_return co_await fd_awaiter<fd_wait_kind::write>{this, native_handle()};
+    if (native_handle() < 0) {
+      co_return error::not_open;
+    }
+    co_return co_await fd_awaiter<fd_wait_kind::write>{this};
   }
 
  private:
@@ -189,12 +195,10 @@ class socket_impl_base {
   };
 
   template <fd_wait_kind Kind>
-  class fd_wait_operation final
-      : public operation_base
-      , private one_shot_completion {
+  class fd_wait_operation final : public operation_base, private one_shot_completion {
    public:
-    fd_wait_operation(int fd, socket_impl_base* base, std::shared_ptr<wait_state> st) noexcept
-        : operation_base(base->ctx_impl_), fd_(fd), base_(base), st_(std::move(st)) {}
+    fd_wait_operation(socket_impl_base* base, std::shared_ptr<wait_state> st) noexcept
+        : operation_base(base->ctx_impl_), base_(base), st_(std::move(st)) {}
 
     void on_ready() noexcept override { complete(std::error_code{}); }
     void on_abort(std::error_code ec) noexcept override { complete(ec); }
@@ -206,10 +210,10 @@ class socket_impl_base {
       // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
       // "single waiter per direction" invariant for correctness.
       if constexpr (Kind == fd_wait_kind::read) {
-        auto h = impl_->register_fd_read(fd_, std::move(self));
+        auto h = impl_->register_fd_read(base_->native_handle(), std::move(self));
         base_->set_read_handle(h);
       } else {
-        auto h = impl_->register_fd_write(fd_, std::move(self));
+        auto h = impl_->register_fd_write(base_->native_handle(), std::move(self));
         base_->set_write_handle(h);
       }
     }
@@ -227,7 +231,6 @@ class socket_impl_base {
       st_->ex.post([st = st_]() mutable { st->h.resume(); });
     }
 
-    int fd_;
     socket_impl_base* base_ = nullptr;
     std::shared_ptr<wait_state> st_{};
   };
@@ -235,26 +238,23 @@ class socket_impl_base {
   template <fd_wait_kind Kind>
   struct fd_awaiter {
     socket_impl_base* self;
-    int fd;
     std::shared_ptr<wait_state> st;
 
-    fd_awaiter(socket_impl_base* self_, int fd_) noexcept
-        : self(self_), fd(fd_), st(std::make_shared<wait_state>()) {}
+    fd_awaiter(socket_impl_base* self_) noexcept
+        : self(self_), st(std::make_shared<wait_state>()) {}
 
-    bool await_ready() const noexcept { return fd < 0; }
+    bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> h) {
       st->h = h;
       st->ex = detail::get_current_executor();
-      auto op = std::make_unique<fd_wait_operation<Kind>>(fd, self, st);
+
+      auto op = std::make_unique<fd_wait_operation<Kind>>(self, st);
       op->start(std::move(op));
       return true;
     }
 
     auto await_resume() noexcept -> std::error_code {
-      if (fd < 0) {
-        return error::not_open;
-      }
       return st->ec;
     }
   };
