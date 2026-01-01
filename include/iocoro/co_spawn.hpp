@@ -22,6 +22,11 @@ template <typename F>
 concept awaitable_factory =
   std::invocable<F&> && requires { typename awaitable_factory_result_t<F>; };
 
+template <typename F, typename T>
+concept completion_callback_for = std::invocable<F&, expected<T, std::exception_ptr>> &&
+                                  (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
+                                  (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
+
 /// Start a callable that returns iocoro::awaitable<T> on the given executor (detached).
 template <typename F>
   requires awaitable_factory<std::remove_cvref_t<F>>
@@ -55,8 +60,8 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
 /// completion callback with either the result or an exception.
 template <typename F, typename Completion>
   requires awaitable_factory<std::remove_cvref_t<F>> &&
-           detail::completion_callback_for<std::remove_cvref_t<Completion>,
-                                           awaitable_factory_result_t<std::remove_cvref_t<F>>>
+           completion_callback_for<std::remove_cvref_t<Completion>,
+                                   awaitable_factory_result_t<std::remove_cvref_t<F>>>
 void co_spawn(any_executor ex, F&& f, Completion&& completion) {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 

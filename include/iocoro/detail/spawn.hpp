@@ -23,11 +23,6 @@ namespace iocoro::detail {
 template <typename T>
 using spawn_expected = expected<T, std::exception_ptr>;
 
-template <typename F, typename T>
-concept completion_callback_for =
-  std::invocable<F&, spawn_expected<T>> && (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
-  (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
-
 /// State for detached/use_awaitable mode (no completion handler).
 /// Uses type-erased unique_function to avoid storing lambda types directly.
 template <typename T>
