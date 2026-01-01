@@ -43,15 +43,15 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, invoking a
 /// completion callback with either the result or an exception.
-template <typename Factory, typename Completion>
-  requires detail::awaitable_factory<std::remove_cvref_t<Factory>> &&
+template <typename F, typename Completion>
+  requires detail::awaitable_factory<std::remove_cvref_t<F>> &&
            detail::completion_callback_for<std::remove_cvref_t<Completion>,
-                                           detail::awaitable_value_t<std::remove_cvref_t<Factory>>>
-void co_spawn(any_executor ex, Factory&& f, Completion&& completion) {
-  using value_type = detail::awaitable_value_t<std::remove_cvref_t<Factory>>;
+                                           detail::awaitable_value_t<std::remove_cvref_t<F>>>
+void co_spawn(any_executor ex, F&& f, Completion&& completion) {
+  using value_type = detail::awaitable_value_t<std::remove_cvref_t<F>>;
 
   auto state = std::make_shared<detail::spawn_state_with_completion<value_type>>(
-    std::forward<Factory>(f), std::forward<Completion>(completion));
+    std::forward<F>(f), std::forward<Completion>(completion));
   auto entry = detail::spawn_entry_point_with_completion<value_type>(std::move(state));
 
   detail::spawn_detached_impl(std::move(ex), std::move(entry));
