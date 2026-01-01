@@ -179,7 +179,7 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     old->on_abort(error::operation_aborted);
   }
 
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   wakeup();
   return fd_event_handle{this, fd, fd_event_kind::read, token};
@@ -216,7 +216,7 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     old->on_abort(error::operation_aborted);
   }
 
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   wakeup();
   return fd_event_handle{this, fd, fd_event_kind::write, token};
@@ -236,7 +236,7 @@ inline void io_context_impl::deregister_fd(int fd) {
   }
 
   // Always attempt to remove interest; safe and idempotent if it wasn't registered.
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed.read_op) {
     removed.read_op->on_abort(error::operation_aborted);
@@ -414,17 +414,6 @@ inline void io_context_impl::reconcile_fd_interest(int fd) {
   }
 }
 
-inline void io_context_impl::reconcile_fd_interest_async(int fd) {
-  // If we're on the context thread, update immediately so the backend state is
-  // consistent before we go back to waiting for events.
-  if (running_in_this_thread()) {
-    reconcile_fd_interest(fd);
-    return;
-  }
-
-  post([this, fd] { reconcile_fd_interest(fd); });
-}
-
 inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
                                              std::uint64_t token) noexcept {
   std::unique_ptr<operation_base> removed;
@@ -462,7 +451,7 @@ inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
     }
   }
 
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed) {
     removed->on_abort(error::operation_aborted);

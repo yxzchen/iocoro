@@ -32,7 +32,7 @@ class io_context_impl {
     io_context_impl* impl = nullptr;
     int fd = -1;
     fd_event_kind kind = fd_event_kind::read;
-    std::uint64_t token = 0;
+    std::uint64_t token = io_context_impl::invalid_fd_token;
 
     auto valid() const noexcept -> bool {
       return impl != nullptr && fd >= 0 && token != io_context_impl::invalid_fd_token;
@@ -48,11 +48,7 @@ class io_context_impl {
     /// after destruction is undefined behavior.
     void cancel() const noexcept;
 
-    static constexpr auto invalid_handle() {
-      fd_event_handle h;
-      h.token = invalid_fd_token;
-      return h;
-    }
+    static constexpr auto invalid_handle() { return fd_event_handle{}; }
   };
 
   struct timer_event_handle {
@@ -91,8 +87,8 @@ class io_context_impl {
   void dispatch(unique_function<void()> f);
 
   template <class Rep, class Period>
-  auto schedule_timer(std::chrono::duration<Rep, Period> d,
-                      std::unique_ptr<operation_base> op) -> timer_event_handle {
+  auto schedule_timer(std::chrono::duration<Rep, Period> d, std::unique_ptr<operation_base> op)
+    -> timer_event_handle {
     return schedule_timer(std::chrono::steady_clock::now() + d, std::move(op));
   }
   auto schedule_timer(std::chrono::steady_clock::time_point expiry,
@@ -126,7 +122,6 @@ class io_context_impl {
   auto has_work() -> bool;
 
   void reconcile_fd_interest(int fd);
-  void reconcile_fd_interest_async(int fd);
 
   void backend_update_fd_interest(int fd, bool want_read, bool want_write);
   void backend_remove_fd_interest(int fd) noexcept;
