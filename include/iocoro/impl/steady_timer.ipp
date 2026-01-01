@@ -1,6 +1,7 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
+#include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
@@ -57,19 +58,12 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
     ms = milliseconds{0};
   }
 
-  // State shared between awaiter and operation
-  struct wait_state final {
-    std::coroutine_handle<> h{};
-    any_executor ex{};
-    std::error_code ec{};
-  };
-
   // Timer operation
   class timer_wait_operation final
       : public detail::operation_base
       , private detail::one_shot_completion {
    public:
-    timer_wait_operation(steady_timer* timer, std::shared_ptr<wait_state> st)
+    timer_wait_operation(steady_timer* timer, std::shared_ptr<detail::operation_wait_state> st)
         : operation_base(timer->ctx_impl_), timer_(timer), st_(std::move(st)) {}
 
     void on_ready() noexcept override {
@@ -99,31 +93,10 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
     }
 
     steady_timer* timer_ = nullptr;
-    std::shared_ptr<wait_state> st_;
+    std::shared_ptr<detail::operation_wait_state> st_;
   };
 
-  struct timer_awaiter final {
-    steady_timer* self;
-    std::shared_ptr<wait_state> st{};
-
-    bool await_ready() const noexcept { return false; }
-
-    void await_suspend(std::coroutine_handle<> h) {
-      st = std::make_shared<wait_state>();
-      st->h = h;
-      st->ex = detail::get_current_executor();
-
-      // Create and register timer operation
-      auto op = std::make_unique<timer_wait_operation>(self, st);
-      op->start(std::move(op));
-    }
-
-    auto await_resume() noexcept -> std::error_code {
-      return st->ec;
-    }
-  };
-
-  co_return co_await timer_awaiter{this};
+  co_return co_await detail::operation_awaiter<timer_wait_operation, steady_timer*>{this};
 }
 
 }  // namespace iocoro

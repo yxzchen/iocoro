@@ -3,6 +3,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
+#include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
@@ -165,7 +166,7 @@ class socket_impl_base {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await fd_awaiter<fd_wait_kind::read>{this};
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::read>, socket_impl_base*>{this};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
@@ -173,7 +174,7 @@ class socket_impl_base {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await fd_awaiter<fd_wait_kind::write>{this};
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::write>, socket_impl_base*>{this};
   }
 
  private:
@@ -188,16 +189,10 @@ class socket_impl_base {
   /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
   enum class fd_state : std::uint8_t { closed, opening, open };
 
-  struct wait_state {
-    std::coroutine_handle<> h{};
-    any_executor ex{};
-    std::error_code ec{};
-  };
-
   template <fd_wait_kind Kind>
   class fd_wait_operation final : public operation_base, private one_shot_completion {
    public:
-    fd_wait_operation(socket_impl_base* base, std::shared_ptr<wait_state> st) noexcept
+    fd_wait_operation(socket_impl_base* base, std::shared_ptr<operation_wait_state> st) noexcept
         : operation_base(base->ctx_impl_), base_(base), st_(std::move(st)) {}
 
     void on_ready() noexcept override { complete(std::error_code{}); }
@@ -232,31 +227,7 @@ class socket_impl_base {
     }
 
     socket_impl_base* base_ = nullptr;
-    std::shared_ptr<wait_state> st_{};
-  };
-
-  template <fd_wait_kind Kind>
-  struct fd_awaiter {
-    socket_impl_base* self;
-    std::shared_ptr<wait_state> st;
-
-    fd_awaiter(socket_impl_base* self_) noexcept
-        : self(self_), st(std::make_shared<wait_state>()) {}
-
-    bool await_ready() const noexcept { return false; }
-
-    bool await_suspend(std::coroutine_handle<> h) {
-      st->h = h;
-      st->ex = detail::get_current_executor();
-
-      auto op = std::make_unique<fd_wait_operation<Kind>>(self, st);
-      op->start(std::move(op));
-      return true;
-    }
-
-    auto await_resume() noexcept -> std::error_code {
-      return st->ec;
-    }
+    std::shared_ptr<operation_wait_state> st_{};
   };
 
   io_context_impl* ctx_impl_{};
