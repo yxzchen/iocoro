@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
 
@@ -19,7 +19,7 @@ class awaitable;
 namespace iocoro::detail {
 
 struct awaitable_promise_base {
-  io_executor ex_{};
+  any_executor ex_{};
   std::coroutine_handle<> continuation_{};
   std::exception_ptr exception_{};
   bool detached_{false};
@@ -38,10 +38,7 @@ struct awaitable_promise_base {
         // If detached, the coroutine owns its own lifetime.
         if (self->detached_) {
           // Detached coroutines must not have a continuation.
-          self->ex_.post([h, ex = self->ex_]() mutable {
-            detail::executor_guard g{ex};
-            h.destroy();
-          });
+          self->ex_.post([h, ex = self->ex_]() mutable { h.destroy(); });
           return;
         }
 
@@ -54,7 +51,8 @@ struct awaitable_promise_base {
     return final_awaiter{this};
   }
 
-  void set_executor(io_executor ex) noexcept { ex_ = ex; }
+  auto get_executor() noexcept { return ex_; }
+  void set_executor(any_executor ex) noexcept { ex_ = std::move(ex); }
 
   void detach() noexcept {
     IOCORO_ENSURE(ex_, "awaitable_promise: detach() requires executor");
@@ -76,11 +74,7 @@ struct awaitable_promise_base {
 
     IOCORO_ENSURE(ex_, "awaitable_promise: resume_continuation() requires executor");
 
-    // Continuation resumption is always scheduled via executor, never inline.
-    ex_.post([h = continuation_, ex = ex_]() mutable {
-      detail::executor_guard g{ex};
-      h.resume();
-    });
+    ex_.post([h = continuation_]() { h.resume(); });
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
@@ -98,9 +92,9 @@ struct awaitable_promise_base {
 
   auto await_transform(this_coro::executor_t) noexcept {
     struct awaiter {
-      io_executor ex;
+      any_executor ex;
       bool await_ready() noexcept { return true; }
-      io_executor await_resume() noexcept { return ex; }
+      any_executor await_resume() noexcept { return ex; }
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
     return awaiter{ex_};

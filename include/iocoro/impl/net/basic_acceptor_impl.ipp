@@ -81,7 +81,8 @@ inline auto basic_acceptor_impl<Protocol>::local_endpoint() const
 }
 
 template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::async_accept() -> awaitable<expected<int, std::error_code>> {
+inline auto basic_acceptor_impl<Protocol>::async_accept()
+  -> awaitable<expected<int, std::error_code>> {
   auto const listen_fd = base_.native_handle();
   if (listen_fd < 0) {
     co_return unexpected(error::not_open);
@@ -198,9 +199,8 @@ inline auto basic_acceptor_impl<Protocol>::try_acquire_turn(
   std::shared_ptr<accept_turn_state> const& st) noexcept -> bool {
   std::scoped_lock lk{mtx_};
   cleanup_expired_queue_front();
-  IOCORO_ENSURE(
-    !accept_queue_.empty(),
-    "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
+  IOCORO_ENSURE(!accept_queue_.empty(),
+                "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
   if (accept_active_) {
     return false;
   }
@@ -223,9 +223,9 @@ inline void basic_acceptor_impl<Protocol>::cleanup_expired_queue_front() noexcep
 }
 
 template <class Protocol>
-inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
-  std::coroutine_handle<> next_h{};
-  io_executor ex{};
+inline void basic_acceptor_impl<Protocol>::complete_turn(
+  std::shared_ptr<accept_turn_state> const& st) noexcept {
+  std::shared_ptr<accept_turn_state> next{};
   {
     std::scoped_lock lk{mtx_};
 
@@ -245,25 +245,19 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(std::shared_ptr<accept_
     cleanup_expired_queue_front();
 
     if (!accept_queue_.empty()) {
-      auto next = accept_queue_.front().lock();
-      IOCORO_ENSURE(
-        static_cast<bool>(next),
-        "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
+      next = accept_queue_.front().lock();
+      IOCORO_ENSURE(static_cast<bool>(next),
+                    "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
       accept_active_ = true;
-      next_h = next->h;
-      ex = base_.get_executor();
     }
   }
 
   // Resume next waiter (if it actually suspended).
-  if (next_h) {
-    ex.post([h = next_h, ex] {
-      detail::executor_guard g{ex};
-      h.resume();
-    });
+  // Asynchronously schedule the next waiter's coroutine on its own executor.
+  // This avoids blocking the current coroutine's completion and prevents stack depth issues.
+  if (next && next->h && next->ex) {
+    next->ex.post([next]() mutable { next->h.resume(); });
   }
 }
 
 }  // namespace iocoro::detail::net
-
-

@@ -44,7 +44,7 @@ class basic_io_handle {
     return *this;
   }
 
-  auto get_executor() const noexcept -> io_executor { return impl_->get_executor(); }
+  auto get_io_context_impl() const noexcept -> io_context_impl* { return impl_->get_io_context_impl(); }
 
   auto is_open() const noexcept -> bool { return impl_->is_open(); }
 

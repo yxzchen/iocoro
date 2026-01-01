@@ -1,22 +1,26 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/io_executor.hpp>
 
 #include <memory>
 #include <system_error>
 
 namespace iocoro::detail {
 
+// Forward declaration
+class io_context_impl;
+
 /// Base class for low-level operations registered with an io_context_impl.
 ///
 /// Design intent:
-/// - `io_executor` is a construction-time "carrier" that grants access to the underlying
-///   `io_context_impl`.
-/// - During execution, operations talk directly to `io_context_impl` via `impl_`.
+/// - operation_base is a pure reactor-layer object.
+/// - It only provides callbacks for reactor events.
+/// - It does NOT know about executors, coroutines, or completion handlers.
+/// - Derived classes are responsible for bridging to higher-level abstractions.
 class operation_base {
  public:
+  operation_base() noexcept = default;
+
   operation_base(operation_base const&) = delete;
   auto operator=(operation_base const&) -> operation_base& = delete;
   operation_base(operation_base&&) = delete;
@@ -33,15 +37,11 @@ class operation_base {
     do_start(std::move(self));
   }
 
-  virtual void execute() = 0;
-  virtual void abort(std::error_code ec) = 0;
+  /// Called by reactor when the operation becomes ready.
+  virtual void on_ready() noexcept = 0;
 
- protected:
-  explicit operation_base(io_executor const& ex) noexcept : impl_{ex.impl_} {
-    IOCORO_ENSURE(impl_ != nullptr, "operation_base: io_executor has null impl_");
-  }
-
-  io_context_impl* impl_;
+  /// Called by reactor when the operation is cancelled or aborted.
+  virtual void on_abort(std::error_code ec) noexcept = 0;
 
  private:
   /// Derived classes only implement the registration action.

@@ -1,5 +1,4 @@
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
@@ -24,6 +23,14 @@ inline auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
   return reinterpret_cast<std::uintptr_t>(&tls_anchor);
 }
 
+inline void io_context_impl::set_thread_id() noexcept {
+  thread_token_.store(this_thread_token(), std::memory_order_release);
+}
+
+inline auto io_context_impl::running_in_this_thread() const noexcept -> bool {
+  return thread_token_.load(std::memory_order_acquire) == this_thread_token();
+}
+
 inline auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
@@ -37,9 +44,7 @@ inline auto io_context_impl::run() -> std::size_t {
       break;
     }
 
-    auto const timeout = get_timeout();
-    auto const wait = (timeout.count() < 0) ? std::nullopt : std::optional{timeout};
-    count += process_events(wait);
+    count += process_events(get_timeout());
   }
 
   return count;
@@ -64,9 +69,7 @@ inline auto io_context_impl::run_one() -> std::size_t {
     return 0;
   }
 
-  auto const timeout = get_timeout();
-  auto const wait = (timeout.count() < 0) ? std::nullopt : std::optional{timeout};
-  return process_events(wait);
+  return process_events(get_timeout());
 }
 
 inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
@@ -91,10 +94,10 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
     auto const remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::max(deadline - now, std::chrono::steady_clock::duration::zero()));
 
-    auto const timer_timeout = get_timeout();
     std::chrono::milliseconds wait_ms = remaining;
-    if (timer_timeout.count() >= 0) {
-      wait_ms = std::min(wait_ms, timer_timeout);
+    auto const timer_timeout = get_timeout();
+    if (timer_timeout) {
+      wait_ms = std::min(wait_ms, *timer_timeout);
     }
 
     count += process_events(wait_ms);
@@ -110,7 +113,7 @@ inline void io_context_impl::stop() {
 
 inline void io_context_impl::restart() { stopped_.store(false, std::memory_order_release); }
 
-inline void io_context_impl::post(std::function<void()> f) {
+inline void io_context_impl::post(unique_function<void()> f) {
   {
     std::scoped_lock lk{posted_mutex_};
     posted_operations_.push(std::move(f));
@@ -118,33 +121,20 @@ inline void io_context_impl::post(std::function<void()> f) {
   wakeup();
 }
 
-inline void io_context_impl::dispatch(std::function<void()> f) {
+inline void io_context_impl::dispatch(unique_function<void()> f) {
   if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
-    // Ensure awaitables that inherit the "current io_executor" see the right io_executor.
-    auto const desired = io_executor{*this};
-    if (get_current_executor() == desired) {
-      f();
-    } else {
-      executor_guard g{desired};
-      f();
-    }
+    f();
   } else {
     post(std::move(f));
   }
 }
 
-inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
-                                            std::function<void()> callback)
-  -> std::shared_ptr<timer_entry> {
-  IOCORO_ASSERT(timeout.count() >= 0, "io_context_impl: negative schedule_timer timeout");
-  if (timeout.count() < 0) {
-    timeout = std::chrono::milliseconds{0};
-  }
-
+inline auto io_context_impl::schedule_timer(std::chrono::steady_clock::time_point expiry,
+                                            std::unique_ptr<operation_base> op)
+  -> timer_event_handle {
   auto entry = std::make_shared<detail::timer_entry>();
-  entry->expiry = std::chrono::steady_clock::now() + timeout;
-  entry->callback = std::move(callback);
-  entry->ex = io_executor{*this};
+  entry->expiry = expiry;
+  entry->op = std::move(op);
   entry->state.store(timer_state::pending, std::memory_order_release);
 
   {
@@ -154,7 +144,7 @@ inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   }
 
   wakeup();
-  return entry;
+  return timer_event_handle{this, entry};
 }
 
 inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op)
@@ -166,7 +156,7 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::read, invalid_fd_token};
+      return fd_event_handle::invalid_handle();
     }
 
     if (it == fd_operations_.end()) {
@@ -185,10 +175,10 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     }
   }
   if (old) {
-    old->abort(error::operation_aborted);
+    old->on_abort(error::operation_aborted);
   }
 
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   wakeup();
   return fd_event_handle{this, fd, fd_event_kind::read, token};
@@ -203,7 +193,7 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     std::scoped_lock lk{fd_mutex_};
     auto it = fd_operations_.find(fd);
     if (it == fd_operations_.end() && !op) {
-      return fd_event_handle{this, fd, fd_event_kind::write, invalid_fd_token};
+      return fd_event_handle::invalid_handle();
     }
 
     if (it == fd_operations_.end()) {
@@ -222,10 +212,10 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     }
   }
   if (old) {
-    old->abort(error::operation_aborted);
+    old->on_abort(error::operation_aborted);
   }
 
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   wakeup();
   return fd_event_handle{this, fd, fd_event_kind::write, token};
@@ -245,13 +235,13 @@ inline void io_context_impl::deregister_fd(int fd) {
   }
 
   // Always attempt to remove interest; safe and idempotent if it wasn't registered.
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed.read_op) {
-    removed.read_op->abort(error::operation_aborted);
+    removed.read_op->on_abort(error::operation_aborted);
   }
   if (removed.write_op) {
-    removed.write_op->abort(error::operation_aborted);
+    removed.write_op->on_abort(error::operation_aborted);
   }
 
   wakeup();
@@ -271,14 +261,6 @@ inline void io_context_impl::remove_work_guard() noexcept {
   }
 }
 
-inline void io_context_impl::set_thread_id() noexcept {
-  thread_token_.store(this_thread_token(), std::memory_order_release);
-}
-
-inline auto io_context_impl::running_in_this_thread() const noexcept -> bool {
-  return thread_token_.load(std::memory_order_acquire) == this_thread_token();
-}
-
 inline auto io_context_impl::process_timers() -> std::size_t {
   std::unique_lock lk{timer_mutex_};
   auto const now = std::chrono::steady_clock::now();
@@ -291,34 +273,36 @@ inline auto io_context_impl::process_timers() -> std::size_t {
 
     auto entry = timers_.top();
 
+    // Lazy cancellation: skip cancelled timers and call on_abort
     if (entry->is_cancelled()) {
       timers_.pop();
+      auto op = std::move(entry->op);
+      lk.unlock();
+      if (op) {
+        op->on_abort(error::operation_aborted);
+      }
+      lk.lock();
       continue;
     }
 
+    // Check if expired
     if (entry->expiry > now) {
       break;
     }
 
-    // Remove it from the heap before executing.
+    // Remove from heap before executing
     timers_.pop();
 
-    // Attempt to claim it as fired (may lose to cancellation).
+    // Attempt to mark as fired (may lose to concurrent cancellation)
     if (!entry->mark_fired()) {
       continue;
     }
 
+    // Successfully fired, call on_ready
+    auto op = std::move(entry->op);
     lk.unlock();
-
-    auto cb = std::move(entry->callback);
-    if (cb) {
-      executor_guard g{io_executor{*this}};
-      cb();
-    }
-    try {
-      entry->notify_completion();
-    } catch (...) {
-      // Best-effort: avoid exceptions escaping the event loop.
+    if (op) {
+      op->on_ready();
     }
 
     ++count;
@@ -329,7 +313,7 @@ inline auto io_context_impl::process_timers() -> std::size_t {
 }
 
 inline auto io_context_impl::process_posted() -> std::size_t {
-  std::queue<std::function<void()>> local;
+  std::queue<unique_function<void()>> local;
   {
     std::scoped_lock lk{posted_mutex_};
     std::swap(local, posted_operations_);
@@ -340,8 +324,6 @@ inline auto io_context_impl::process_posted() -> std::size_t {
   if (local.empty()) {
     return 0;
   }
-
-  executor_guard g{io_executor{*this}};
 
   while (!local.empty()) {
     if (stopped_.load(std::memory_order_acquire)) {
@@ -364,7 +346,7 @@ inline auto io_context_impl::process_posted() -> std::size_t {
   return n;
 }
 
-inline auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
+inline auto io_context_impl::get_timeout() -> std::optional<std::chrono::milliseconds> {
   std::scoped_lock lk{timer_mutex_};
 
   while (!timers_.empty() && timers_.top()->is_cancelled()) {
@@ -372,7 +354,7 @@ inline auto io_context_impl::get_timeout() -> std::chrono::milliseconds {
   }
 
   if (timers_.empty()) {
-    return std::chrono::milliseconds(-1);
+    return std::nullopt;
   }
 
   auto const now = std::chrono::steady_clock::now();
@@ -397,9 +379,6 @@ inline auto io_context_impl::has_work() -> bool {
 
   {
     std::scoped_lock lk{timer_mutex_};
-    while (!timers_.empty() && timers_.top()->is_cancelled()) {
-      timers_.pop();
-    }
     if (!timers_.empty()) {
       return true;
     }
@@ -434,23 +413,8 @@ inline void io_context_impl::reconcile_fd_interest(int fd) {
   }
 }
 
-inline void io_context_impl::reconcile_fd_interest_async(int fd) {
-  // If we're on the context thread and not stopped, update immediately so the backend
-  // state is consistent before we go back to waiting for events.
-  if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
-    reconcile_fd_interest(fd);
-    return;
-  }
-
-  post([this, fd] { reconcile_fd_interest(fd); });
-}
-
 inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
                                              std::uint64_t token) noexcept {
-  if (fd < 0 || token == 0) {
-    return;
-  }
-
   std::unique_ptr<operation_base> removed;
   bool matched = false;
 
@@ -486,10 +450,10 @@ inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
     }
   }
 
-  reconcile_fd_interest_async(fd);
+  dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed) {
-    removed->abort(error::operation_aborted);
+    removed->on_abort(error::operation_aborted);
   }
   wakeup();
 }
@@ -499,17 +463,18 @@ inline void io_context_impl::fd_event_handle::cancel() const noexcept {
     return;
   }
 
-  auto* p = impl;
-  int const local_fd = fd;
-  auto const local_kind = kind;
-  auto const local_token = token;
+  impl->cancel_fd_event(fd, kind, token);
+}
 
-  if (p->running_in_this_thread()) {
-    p->cancel_fd_event(local_fd, local_kind, local_token);
-  } else {
-    p->post([p, local_fd, local_kind, local_token] {
-      p->cancel_fd_event(local_fd, local_kind, local_token);
-    });
+inline void io_context_impl::timer_event_handle::cancel() const noexcept {
+  if (!valid()) {
+    return;
+  }
+
+  // Mark the timer as cancelled (lazy cancellation)
+  if (entry->cancel()) {
+    // Successfully cancelled, wake up the event loop so process_timers can clean it up
+    impl->wakeup();
   }
 }
 

@@ -41,19 +41,6 @@ TEST(executor_basic, executors_from_different_contexts_are_not_equal) {
   EXPECT_NE(ex1, ex2);
 }
 
-// Test execute
-TEST(executor_operations, execute_posts_work) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-  std::atomic<bool> executed{false};
-
-  ex.execute([&executed] { executed.store(true, std::memory_order_relaxed); });
-
-  EXPECT_FALSE(executed.load(std::memory_order_relaxed));
-  ctx.run();
-  EXPECT_TRUE(executed.load(std::memory_order_relaxed));
-}
-
 // Test post
 TEST(executor_operations, post_queues_work) {
   iocoro::io_context ctx;

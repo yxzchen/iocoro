@@ -109,10 +109,8 @@ static auto write_all(int fd, void const* data, std::size_t n) -> bool {
 
 TEST(tcp_acceptor_test, construction_and_executor) {
   iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
 
   iocoro::ip::tcp::acceptor a{ctx};
-  EXPECT_EQ(a.get_executor(), ex);
   EXPECT_FALSE(a.is_open());
   EXPECT_LT(a.native_handle(), 0);
 }

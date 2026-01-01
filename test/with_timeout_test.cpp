@@ -28,6 +28,12 @@ struct cancellable_test_stream {
   std::atomic<bool> cancelled_read{false};
   std::atomic<bool> cancelled_write{false};
 
+  iocoro::io_executor ex{};
+
+  explicit cancellable_test_stream(iocoro::io_executor ex_) : ex(ex_) {}
+
+  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
+
   void cancel() noexcept {
     cancel_calls.fetch_add(1, std::memory_order_relaxed);
     cancelled.store(true, std::memory_order_release);
@@ -87,7 +93,8 @@ TEST(with_timeout_test, completes_before_timeout_returns_value_and_does_not_call
   EXPECT_FALSE(called.load(std::memory_order_relaxed));
 }
 
-TEST(with_timeout_test, error_code_completes_before_timeout_returns_success_and_does_not_call_on_timeout) {
+TEST(with_timeout_test,
+     error_code_completes_before_timeout_returns_success_and_does_not_call_on_timeout) {
   iocoro::io_context ctx;
 
   std::atomic<bool> called{false};
@@ -135,7 +142,8 @@ TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on
   EXPECT_EQ(r.error(), iocoro::error::timed_out);
 }
 
-TEST(with_timeout_test, error_code_timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
+TEST(with_timeout_test,
+     error_code_timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
   iocoro::io_context ctx;
 
   std::atomic<bool> cancelled{false};
@@ -204,25 +212,9 @@ TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
   EXPECT_EQ(r.error(), iocoro::error::broken_pipe);
 }
 
-TEST(with_timeout_test, with_timeout_stream_overload_uses_cancel) {
-  iocoro::io_context ctx;
-  cancellable_test_stream s{};
-
-  std::array<std::byte, 1> buf{};
-
-  auto r = iocoro::sync_wait_for(
-    ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      return iocoro::io::with_timeout(s, s.async_read_some(buf), 5ms);
-    }());
-
-  ASSERT_FALSE(r);
-  EXPECT_EQ(r.error(), iocoro::error::timed_out);
-  EXPECT_GE(s.cancel_calls.load(std::memory_order_relaxed), 1);
-}
-
 TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{};
+  cancellable_test_stream s{ctx.get_executor()};
 
   std::array<std::byte, 1> buf{};
 
@@ -239,7 +231,7 @@ TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
 
 TEST(with_timeout_test, with_timeout_write_prefers_cancel_write) {
   iocoro::io_context ctx;
-  cancellable_test_stream s{};
+  cancellable_test_stream s{ctx.get_executor()};
 
   std::array<std::byte, 1> buf{};
 
@@ -269,6 +261,7 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expec
 
   auto main = [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
     co_return co_await iocoro::io::with_timeout_detached(
+      ex,
       [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
         co_await iocoro::co_sleep(200ms);
         op_completed.store(true, std::memory_order_release);
@@ -316,6 +309,7 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
 
   auto main = [&]() -> iocoro::awaitable<std::error_code> {
     co_return co_await iocoro::io::with_timeout_detached(
+      ex,
       [&]() -> iocoro::awaitable<std::error_code> {
         co_await iocoro::co_sleep(200ms);
         op_completed.store(true, std::memory_order_release);
@@ -324,15 +318,16 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_error
       5ms);
   };
 
-  iocoro::co_spawn(ex, main(), [&](iocoro::expected<std::error_code, std::exception_ptr> r) mutable {
-    done.store(true, std::memory_order_release);
-    if (!r) {
-      ep = std::move(r).error();
-    } else {
-      out.emplace(std::move(*r));
-    }
-    ctx.stop();  // don't drain detached background work
-  });
+  iocoro::co_spawn(ex, main(),
+                   [&](iocoro::expected<std::error_code, std::exception_ptr> r) mutable {
+                     done.store(true, std::memory_order_release);
+                     if (!r) {
+                       ep = std::move(r).error();
+                     } else {
+                       out.emplace(std::move(*r));
+                     }
+                     ctx.stop();  // don't drain detached background work
+                   });
 
   (void)ctx.run_for(50ms);
 

@@ -1,4 +1,3 @@
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
@@ -298,8 +297,6 @@ void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
 
 auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
   -> std::size_t {
-  executor_guard g{io_executor{*this}};
-
   // Ensure any previously prepared SQEs are submitted before we wait.
   int const submitted = ::io_uring_submit(&backend_->ring);
   if (submitted < 0) {
@@ -431,20 +428,20 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       }
 
       if (read_op) {
-        read_op->abort(ec);
+        read_op->on_abort(ec);
         ++count;
       }
       if (write_op) {
-        write_op->abort(ec);
+        write_op->on_abort(ec);
         ++count;
       }
     } else {
       if (read_op) {
-        read_op->execute();
+        read_op->on_ready();
         ++count;
       }
       if (write_op) {
-        write_op->execute();
+        write_op->on_ready();
         ++count;
       }
     }

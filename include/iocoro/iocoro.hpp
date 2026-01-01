@@ -9,6 +9,7 @@
 
 // Coroutine & completion model
 #include <iocoro/awaitable.hpp>
+#include <iocoro/bind_executor.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/this_coro.hpp>
 
@@ -16,21 +17,22 @@
 #include <iocoro/co_spawn.hpp>
 
 // Execution & lifetime
-#include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool.hpp>
 #include <iocoro/thread_pool_executor.hpp>
 #include <iocoro/work_guard.hpp>
 
 // Timers & composition
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/timer_handle.hpp>
 
 #include <iocoro/when_all.hpp>
 #include <iocoro/when_any.hpp>
 
 // Networking
-#include <iocoro/net.hpp>
+#include <iocoro/net/basic_acceptor.hpp>
+#include <iocoro/net/basic_stream_socket.hpp>
+#include <iocoro/net/protocol.hpp>
 
 // Async I/O algorithms
 #include <iocoro/io/async_read.hpp>

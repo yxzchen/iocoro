@@ -1,8 +1,11 @@
 #pragma once
 
+#include <iocoro/awaitable.hpp>
+#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_base.hpp>
+#include <iocoro/detail/operation_async.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/socket_option.hpp>
 
@@ -41,7 +44,7 @@ class socket_impl_base {
   using fd_event_handle = io_context_impl::fd_event_handle;
 
   socket_impl_base() noexcept = delete;
-  explicit socket_impl_base(io_executor ex) noexcept : ex_(ex) {}
+  explicit socket_impl_base(io_executor ex) noexcept : ctx_impl_(ex.impl_) {}
 
   socket_impl_base(socket_impl_base const&) = delete;
   auto operator=(socket_impl_base const&) -> socket_impl_base& = delete;
@@ -50,7 +53,7 @@ class socket_impl_base {
 
   ~socket_impl_base() { close(); }
 
-  auto get_executor() const noexcept -> io_executor { return ex_; }
+  auto get_io_context_impl() const noexcept -> io_context_impl* { return ctx_impl_; }
 
   /// Native handle snapshot. Returns -1 if not open.
   ///
@@ -158,13 +161,19 @@ class socket_impl_base {
   }
 
   /// Wait until the native fd becomes readable (read readiness).
-  auto wait_read_ready() -> fd_awaiter<fd_wait_kind::read> {
-    return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+  auto wait_read_ready() -> awaitable<std::error_code> {
+    if (native_handle() < 0) {
+      co_return error::not_open;
+    }
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{this};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
-  auto wait_write_ready() -> fd_awaiter<fd_wait_kind::write> {
-    return {this, native_handle(), get_executor(), std::make_shared<wait_state>()};
+  auto wait_write_ready() -> awaitable<std::error_code> {
+    if (native_handle() < 0) {
+      co_return error::not_open;
+    }
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{this};
   }
 
  private:
@@ -179,63 +188,31 @@ class socket_impl_base {
   /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
   enum class fd_state : std::uint8_t { closed, opening, open };
 
-  struct wait_state {
-    std::coroutine_handle<> h{};
-    std::error_code ec{};
-    std::atomic<bool> done{false};
-  };
-
-  class fd_wait_operation final : public operation_base {
+  template <fd_wait_kind Kind>
+  class fd_wait_operation final : public async_operation {
    public:
-    fd_wait_operation(fd_wait_kind k, int fd, socket_impl_base* base, io_executor ex,
-                      std::shared_ptr<wait_state> st) noexcept;
-
-    void execute() override;
-    void abort(std::error_code ec) override;
+    fd_wait_operation(std::shared_ptr<operation_wait_state> st, socket_impl_base* socket) noexcept
+        : async_operation(std::move(st)), socket_(socket) {}
 
    private:
-    void do_start(std::unique_ptr<operation_base> self) override;
-    void complete(std::error_code ec);
-
-    fd_wait_kind kind_;
-    int fd_;
-    socket_impl_base* base_ = nullptr;
-    io_executor ex_{};
-    std::shared_ptr<wait_state> st_{};
-  };
-
-  template <fd_wait_kind Kind>
-  struct fd_awaiter {
-    socket_impl_base* self;
-    int fd;
-    io_executor ex;
-    std::shared_ptr<wait_state> st;
-
-    fd_awaiter(socket_impl_base* self_, int fd_, io_executor ex_,
-               std::shared_ptr<wait_state> st_) noexcept
-        : self(self_), fd(fd_), ex(ex_), st(st_) {}
-
-    bool await_ready() const noexcept { return fd < 0 || !ex; }
-
-    bool await_suspend(std::coroutine_handle<> h) {
-      st->h = h;
-      auto op = std::make_unique<fd_wait_operation>(Kind, fd, self, ex, st);
-      op->start(std::move(op));
-      return true;
+    void do_start(std::unique_ptr<operation_base> self) override {
+      // Register and publish handle for cancellation.
+      // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
+      // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
+      // "single waiter per direction" invariant for correctness.
+      if constexpr (Kind == fd_wait_kind::read) {
+        auto h = socket_->ctx_impl_->register_fd_read(socket_->native_handle(), std::move(self));
+        socket_->set_read_handle(h);
+      } else {
+        auto h = socket_->ctx_impl_->register_fd_write(socket_->native_handle(), std::move(self));
+        socket_->set_write_handle(h);
+      }
     }
 
-    auto await_resume() noexcept -> std::error_code {
-      if (fd < 0) {
-        return error::not_open;
-      }
-      if (!ex) {
-        return error::not_open;
-      }
-      return st->ec;
-    }
+    socket_impl_base* socket_ = nullptr;
   };
 
-  io_executor ex_{};
+  io_context_impl* ctx_impl_{};
 
   mutable std::mutex mtx_{};
 

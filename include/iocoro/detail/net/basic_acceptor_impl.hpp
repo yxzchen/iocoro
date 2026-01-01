@@ -3,6 +3,7 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 
@@ -43,7 +44,7 @@ class basic_acceptor_impl {
 
   ~basic_acceptor_impl() = default;
 
-  auto get_executor() const noexcept -> io_executor { return base_.get_executor(); }
+  auto get_io_context_impl() const noexcept -> io_context_impl* { return base_.get_io_context_impl(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
   auto is_open() const noexcept -> bool { return base_.is_open(); }
 
@@ -87,6 +88,7 @@ class basic_acceptor_impl {
 
   struct accept_turn_state {
     std::coroutine_handle<> h{};
+    any_executor ex{};
   };
 
   struct accept_turn_awaiter {
@@ -100,6 +102,7 @@ class basic_acceptor_impl {
 
     bool await_suspend(std::coroutine_handle<> h) noexcept {
       st->h = h;
+      st->ex = detail::get_current_executor();
       return true;
     }
 

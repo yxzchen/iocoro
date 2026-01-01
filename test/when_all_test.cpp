@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <iocoro/bind_executor.hpp>
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>

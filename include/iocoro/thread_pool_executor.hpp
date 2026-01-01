@@ -1,10 +1,11 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool.hpp>
 
-#include <functional>
+#include <type_traits>
 #include <utility>
 
 namespace iocoro {
@@ -22,14 +23,18 @@ class thread_pool_executor {
   thread_pool_executor(thread_pool_executor&&) noexcept = default;
   auto operator=(thread_pool_executor&&) noexcept -> thread_pool_executor& = default;
 
-  void post(std::function<void()> f) const {
+  template <class F>
+    requires std::is_invocable_v<F&>
+  void post(F&& f) const noexcept {
     IOCORO_ENSURE(pool_ != nullptr, "thread_pool_executor: empty pool_");
-    pool_->pick_executor().post(std::move(f));
+    pool_->pick_executor().post(std::forward<F>(f));
   }
 
-  void dispatch(std::function<void()> f) const {
+  template <class F>
+    requires std::is_invocable_v<F&>
+  void dispatch(F&& f) const noexcept {
     IOCORO_ENSURE(pool_ != nullptr, "thread_pool_executor: empty pool_");
-    pool_->pick_executor().dispatch(std::move(f));
+    pool_->pick_executor().dispatch(std::forward<F>(f));
   }
 
   auto pick_executor() const -> io_executor {

@@ -38,7 +38,7 @@ class basic_stream_socket_impl {
 
   ~basic_stream_socket_impl() = default;
 
-  auto get_executor() const noexcept -> io_executor { return stream_.get_executor(); }
+  auto get_io_context_impl() const noexcept -> io_context_impl* { return stream_.get_io_context_impl(); }
   auto native_handle() const noexcept -> int { return stream_.native_handle(); }
   auto is_open() const noexcept -> bool { return stream_.is_open(); }
 

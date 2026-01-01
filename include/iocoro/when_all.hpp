@@ -21,15 +21,14 @@ namespace detail {
 
 // Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-auto when_all_run_one(io_executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st,
-                      awaitable<T> a) -> awaitable<void> {
-  auto bound = bind_executor<T>(ex, std::move(a));
+auto when_all_run_one(std::shared_ptr<when_all_variadic_state<Ts...>> st, awaitable<T> a)
+  -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
-      co_await std::move(bound);
+      co_await std::move(a);
       st->template set_value<I>(std::monostate{});
     } else {
-      st->template set_value<I>(co_await std::move(bound));
+      st->template set_value<I>(co_await std::move(a));
     }
   } catch (...) {
     st->set_exception(std::current_exception());
@@ -40,13 +39,16 @@ auto when_all_run_one(io_executor ex, std::shared_ptr<when_all_variadic_state<Ts
 }
 
 template <class... Ts, std::size_t... Is>
-void when_all_start_variadic([[maybe_unused]] io_executor ex,
+void when_all_start_variadic(any_executor fallback_ex,
                              [[maybe_unused]] std::shared_ptr<when_all_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
-  (co_spawn(ex,
+  (co_spawn([&]() {
+              auto task_ex = std::get<Is>(tasks).get_executor();
+              return task_ex ? task_ex : fallback_ex;
+            }(),
             when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-              ex, st, std::move(std::get<Is>(tasks))),
+              st, std::move(std::get<Is>(tasks))),
             detached),
    ...);
 }
@@ -65,14 +67,13 @@ auto when_all_collect_variadic([[maybe_unused]]
 
 // Runner coroutine for container when_all
 template <class T>
-auto when_all_container_run_one(io_executor ex, std::shared_ptr<when_all_container_state<T>> st,
-                                std::size_t i, awaitable<T> a) -> awaitable<void> {
-  auto bound = bind_executor<T>(ex, std::move(a));
+auto when_all_container_run_one(std::shared_ptr<when_all_container_state<T>> st, std::size_t i,
+                                awaitable<T> a) -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
-      co_await std::move(bound);
+      co_await std::move(a);
     } else {
-      st->set_value(i, co_await std::move(bound));
+      st->set_value(i, co_await std::move(a));
     }
   } catch (...) {
     st->set_exception(std::current_exception());
@@ -87,21 +88,22 @@ auto when_all_container_run_one(io_executor ex, std::shared_ptr<when_all_contain
 /// Wait for all awaitables to complete (variadic).
 ///
 /// Semantics:
-/// - All tasks are started concurrently on the current coroutine's executor.
+/// - All tasks are started concurrently, each on its own bound executor.
+/// - If a task doesn't have a bound executor, it uses the calling coroutine's executor.
 /// - The returned awaitable completes once all tasks finished.
 /// - If any task throws, when_all waits for all tasks and then rethrows the first exception.
 /// - void results are represented as std::monostate in the returned tuple.
 template <class... Ts>
 auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value_t<Ts>...>> {
-  auto ex = co_await this_coro::executor;
-  IOCORO_ENSURE(ex, "when_all: requires a bound executor");
-
   if constexpr (sizeof...(Ts) == 0) {
     co_return std::tuple<detail::when_value_t<Ts>...>{};
   }
 
-  auto st = std::make_shared<detail::when_all_variadic_state<Ts...>>(ex);
-  detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
+  auto fallback_ex = co_await this_coro::executor;
+  IOCORO_ENSURE(fallback_ex, "when_all: requires a bound executor");
+
+  auto st = std::make_shared<detail::when_all_variadic_state<Ts...>>();
+  detail::when_all_start_variadic<Ts...>(fallback_ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
   co_await detail::await_when(st);
@@ -129,9 +131,6 @@ auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value
 template <class T>
 auto when_all(std::vector<awaitable<T>> tasks)
   -> awaitable<std::conditional_t<std::is_void_v<T>, void, std::vector<std::remove_cvref_t<T>>>> {
-  auto ex = co_await this_coro::executor;
-  IOCORO_ENSURE(ex, "when_all(vector): requires a bound executor");
-
   if (tasks.empty()) {
     if constexpr (std::is_void_v<T>) {
       co_return;
@@ -140,10 +139,15 @@ auto when_all(std::vector<awaitable<T>> tasks)
     }
   }
 
-  auto st = std::make_shared<detail::when_all_container_state<T>>(ex, tasks.size());
+  auto fallback_ex = co_await this_coro::executor;
+  IOCORO_ENSURE(fallback_ex, "when_all(vector): requires a bound executor");
+
+  auto st = std::make_shared<detail::when_all_container_state<T>>(tasks.size());
 
   for (std::size_t i = 0; i < tasks.size(); ++i) {
-    co_spawn(ex, detail::when_all_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);
+    auto task_executor = tasks[i].get_executor();
+    auto exec = task_executor ? task_executor : fallback_ex;
+    co_spawn(exec, detail::when_all_container_run_one<T>(st, i, std::move(tasks[i])), detached);
   }
 
   co_await detail::await_when(st);

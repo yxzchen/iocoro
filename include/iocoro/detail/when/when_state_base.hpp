@@ -1,7 +1,6 @@
 #pragma once
 
-#include <iocoro/detail/executor_guard.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/executor.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -13,25 +12,19 @@
 namespace iocoro::detail {
 
 template <class T>
-struct when_value {
-  using type = std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>;
-};
-
-template <class T>
-using when_value_t = typename when_value<T>::type;
+using when_value_t = std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>;
 
 // Shared state base for when_all/when_any.
 // - when_all: remaining = n (number of all tasks)
 // - when_any: remaining = 1 (only one completion needed)
-template <class Derived>
 struct when_state_base {
-  io_executor ex{};
+  any_executor ex{};
   std::mutex m;
   std::atomic<std::size_t> remaining{0};
   std::coroutine_handle<> waiter{};
   std::exception_ptr first_ep{};
 
-  explicit when_state_base(io_executor ex_, std::size_t n) : ex(ex_) {
+  explicit when_state_base(std::size_t n) {
     remaining.store(n, std::memory_order_relaxed);
   }
 
@@ -52,10 +45,7 @@ struct when_state_base {
       waiter = {};
     }
     if (w) {
-      ex.post([w, ex = ex]() mutable {
-        executor_guard g{ex};
-        w.resume();
-      });
+      ex.post([w]() { w.resume(); });
     }
   }
 };
@@ -66,15 +56,19 @@ struct when_awaiter {
 
   std::shared_ptr<State> st;
 
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return (st->remaining.load(std::memory_order_relaxed) == 0);
+  }
 
   bool await_suspend(std::coroutine_handle<> h) {
     std::scoped_lock lk{st->m};
-    IOCORO_ENSURE(!st->waiter, "when_all/when_any: multiple awaiters are not supported");
     if (st->remaining.load(std::memory_order_relaxed) == 0) {
-      return false;  // already completed; resume immediately
+      return false;
     }
+    
+    IOCORO_ENSURE(!st->waiter, "when_all/when_any: multiple awaiters are not supported");
     st->waiter = h;
+    st->ex = get_current_executor();
     return true;
   }
 

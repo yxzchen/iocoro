@@ -1,11 +1,11 @@
 #pragma once
 
 #include <iocoro/detail/timer_entry.hpp>
+#include <iocoro/detail/unique_function.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -32,7 +32,7 @@ class io_context_impl {
     io_context_impl* impl = nullptr;
     int fd = -1;
     fd_event_kind kind = fd_event_kind::read;
-    std::uint64_t token = 0;
+    std::uint64_t token = io_context_impl::invalid_fd_token;
 
     auto valid() const noexcept -> bool {
       return impl != nullptr && fd >= 0 && token != io_context_impl::invalid_fd_token;
@@ -47,6 +47,24 @@ class io_context_impl {
     /// Lifetime: the referenced io_context_impl must outlive this handle; calling cancel()
     /// after destruction is undefined behavior.
     void cancel() const noexcept;
+
+    static constexpr auto invalid_handle() { return fd_event_handle{}; }
+  };
+
+  struct timer_event_handle {
+    io_context_impl* impl = nullptr;
+    std::shared_ptr<timer_entry> entry;
+
+    auto valid() const noexcept -> bool { return impl != nullptr && entry != nullptr; }
+    explicit operator bool() const noexcept { return valid(); }
+
+    /// Cancel the timer (lazy cancellation).
+    /// The timer entry is marked as cancelled; actual cleanup happens in process_timers.
+    ///
+    /// Thread-safe: can be called from any thread.
+    void cancel() const noexcept;
+
+    static auto invalid_handle() { return timer_event_handle{}; }
   };
 
   io_context_impl();
@@ -65,11 +83,16 @@ class io_context_impl {
   void restart();
   auto stopped() const noexcept -> bool { return stopped_.load(std::memory_order_acquire); }
 
-  void post(std::function<void()> f);
-  void dispatch(std::function<void()> f);
+  void post(unique_function<void()> f);
+  void dispatch(unique_function<void()> f);
 
-  auto schedule_timer(std::chrono::milliseconds timeout, std::function<void()> callback)
-    -> std::shared_ptr<timer_entry>;
+  template <class Rep, class Period>
+  auto schedule_timer(std::chrono::duration<Rep, Period> d, std::unique_ptr<operation_base> op)
+    -> timer_event_handle {
+    return schedule_timer(std::chrono::steady_clock::now() + d, std::move(op));
+  }
+  auto schedule_timer(std::chrono::steady_clock::time_point expiry,
+                      std::unique_ptr<operation_base> op) -> timer_event_handle;
 
   auto register_fd_read(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
   auto register_fd_write(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
@@ -93,13 +116,12 @@ class io_context_impl {
   auto process_timers() -> std::size_t;
   auto process_posted() -> std::size_t;
 
-  auto get_timeout() -> std::chrono::milliseconds;
+  auto get_timeout() -> std::optional<std::chrono::milliseconds>;
   void wakeup();
 
   auto has_work() -> bool;
 
   void reconcile_fd_interest(int fd);
-  void reconcile_fd_interest_async(int fd);
 
   void backend_update_fd_interest(int fd, bool want_read, bool want_write);
   void backend_remove_fd_interest(int fd) noexcept;
@@ -117,19 +139,19 @@ class io_context_impl {
     std::uint64_t write_token = 0;
   };
 
-  std::unordered_map<int, fd_ops> fd_operations_;
   std::mutex fd_mutex_;
+  std::unordered_map<int, fd_ops> fd_operations_;
   std::uint64_t next_fd_token_ = 1;
   static constexpr std::uint64_t invalid_fd_token = 0;
 
+  mutable std::mutex timer_mutex_;
   std::priority_queue<std::shared_ptr<timer_entry>, std::vector<std::shared_ptr<timer_entry>>,
                       timer_entry_compare>
     timers_;
   std::uint64_t next_timer_id_ = 1;
-  mutable std::mutex timer_mutex_;
 
-  std::queue<std::function<void()>> posted_operations_;
   std::mutex posted_mutex_;
+  std::queue<unique_function<void()>> posted_operations_;
 
   std::atomic<std::size_t> work_guard_counter_{0};
 

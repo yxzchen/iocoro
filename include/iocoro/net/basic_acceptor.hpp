@@ -87,21 +87,22 @@ class basic_acceptor : public ::iocoro::detail::basic_io_handle<
   /// Accept and return a connected `socket`.
   ///
   /// Notes:
-  /// - The returned socket is bound to the same io_executor as this acceptor.
+  /// - The returned socket is bound to the same io_context as this acceptor.
   /// - The accepted native fd is adopted atomically; no fd leaks occur on failure.
   auto async_accept() -> awaitable<expected<socket, std::error_code>> {
     auto r = co_await async_accept_fd();
     if (!r) {
       co_return unexpected(r.error());
     }
-    socket s{this->get_executor()};
+    // Temporarily construct io_executor from io_context_impl to create socket.
+    auto* ctx_impl = this->get_io_context_impl();
+    socket s{io_executor{*ctx_impl}};
     if (auto ec = s.assign(*r)) {
       co_return unexpected(ec);
     }
     co_return s;
   }
 
-  using base_type::get_executor;
   using base_type::native_handle;
 
   using base_type::close;

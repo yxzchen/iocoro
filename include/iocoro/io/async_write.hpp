@@ -22,7 +22,7 @@ namespace iocoro::io {
 /// - If the stream is cancelled externally (not by this timeout), `error::operation_aborted`
 ///   is propagated as-is.
 template <async_write_stream Stream, class Rep, class Period>
-  requires cancellable_stream<Stream>
+  requires cancel_writable_stream<Stream>
 auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
                               std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
@@ -65,7 +65,7 @@ auto async_write(Stream& s, std::span<std::byte const> buf)
 /// - Requires `Stream::cancel()` so the pending I/O can be safely aborted on timeout.
 /// - On timeout, this returns `error::timed_out` (not `error::operation_aborted`).
 template <async_stream Stream, class Rep, class Period>
-  requires cancellable_stream<Stream>
+  requires cancel_writable_stream<Stream>
 auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
                          std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
