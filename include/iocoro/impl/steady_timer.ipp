@@ -1,7 +1,6 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/steady_timer.hpp>

@@ -1,10 +1,9 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detail/async_operation.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_awaiter.hpp>
+#include <iocoro/detail/operation_async.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
