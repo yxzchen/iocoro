@@ -19,25 +19,25 @@ namespace iocoro::detail {
 /// - This type intentionally does NOT encode any network protocol semantics.
 ///   Higher-level networking facades live under `iocoro::ip::basic_*<Protocol>`.
 template <class Impl>
-class basic_io_handle {
+class basic_socket_handle {
  public:
   using impl_type = Impl;
 
   /// Handles must be bound to an io_executor at construction time.
-  basic_io_handle() = delete;
+  basic_socket_handle() = delete;
 
-  explicit basic_io_handle(io_executor ex) : impl_(std::make_shared<Impl>(ex)) {}
-  explicit basic_io_handle(io_context& ctx) : basic_io_handle(ctx.get_executor()) {}
+  explicit basic_socket_handle(io_executor ex) : impl_(std::make_shared<Impl>(ex)) {}
+  explicit basic_socket_handle(io_context& ctx) : basic_socket_handle(ctx.get_executor()) {}
 
-  basic_io_handle(basic_io_handle const&) = delete;
-  basic_io_handle& operator=(basic_io_handle const&) = delete;
+  basic_socket_handle(basic_socket_handle const&) = delete;
+  basic_socket_handle& operator=(basic_socket_handle const&) = delete;
 
   /// "Move" is intentionally implemented as shared-ownership transfer (copy the shared_ptr)
   /// so the moved-from handle remains usable and retains a valid impl object.
   ///
   /// This keeps the invariant: impl_ is never null for any handle object.
-  basic_io_handle(basic_io_handle&& other) noexcept : impl_(other.impl_) {}
-  basic_io_handle& operator=(basic_io_handle&& other) noexcept {
+  basic_socket_handle(basic_socket_handle&& other) noexcept : impl_(other.impl_) {}
+  basic_socket_handle& operator=(basic_socket_handle&& other) noexcept {
     if (this != &other) {
       impl_ = other.impl_;
     }
