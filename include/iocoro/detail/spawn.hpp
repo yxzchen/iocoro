@@ -120,9 +120,9 @@ struct spawn_wait_state {
   explicit spawn_wait_state(any_executor ex_) : ex(std::move(ex_)) {}
 
   // Overload for non-void types (takes parameter)
-  template <typename U = T>
+  template <typename U>
   void set_value(U v)
-    requires(!std::is_void_v<T> && std::is_same_v<U, T>)
+    requires(!std::is_void_v<T> && std::is_convertible_v<U, T>)
   {
     std::scoped_lock lk{m};
     value.emplace(std::move(v));
@@ -186,7 +186,7 @@ struct state_awaiter {
     bool ready = false;
     {
       std::scoped_lock lk{st->m};
-      IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters are not supported");
+      IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters not supported");
       ready = st->done;
       if (!ready) {
         st->waiter = h;
@@ -225,11 +225,6 @@ struct state_awaiter {
 };
 
 template <typename T>
-auto await_state(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
-  co_return co_await state_awaiter<T>{std::move(st)};
-}
-
-template <typename T>
 auto run_to_state(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st, awaitable<T> a)
   -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
@@ -244,6 +239,11 @@ auto run_to_state(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st, awai
     st->set_exception(std::current_exception());
   }
   st->complete();
+}
+
+template <typename T>
+auto await_state(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
+  co_return co_await state_awaiter<T>{std::move(st)};
 }
 
 }  // namespace iocoro::detail
