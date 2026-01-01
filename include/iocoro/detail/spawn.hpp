@@ -98,8 +98,7 @@ void spawn_detached_impl(any_executor ex, awaitable<T> a) {
   h.promise().set_executor(ex);
   h.promise().detach();
 
-  ex.post([h, ex]() mutable {
-    executor_guard g{ex};
+  ex.post([h]() mutable {
     try {
       h.resume();
     } catch (...) {
