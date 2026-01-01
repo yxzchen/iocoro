@@ -68,12 +68,13 @@ class async_operation : public operation_base {
 ///   co_await operation_awaiter<timer_wait_operation>{this};
 ///   co_await operation_awaiter<fd_wait_operation<Kind>>{this};
 template <typename Operation>
+  requires std::derived_from<Operation, detail::async_operation>
 struct operation_awaiter {
   std::unique_ptr<Operation> op;
   std::shared_ptr<operation_wait_state> st{std::make_shared<operation_wait_state>()};
 
   template <typename... Args>
-  explicit operation_awaiter(Args... args) {
+  explicit operation_awaiter(Args&&... args) {
     op = std::make_unique<Operation>(st, std::forward<Args>(args)...);
   }
 
