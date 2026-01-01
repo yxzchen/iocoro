@@ -21,8 +21,8 @@ namespace detail {
 
 // Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-auto when_all_run_one(any_executor ex, std::shared_ptr<when_all_variadic_state<Ts...>> st,
-                      awaitable<T> a) -> awaitable<void> {
+auto when_all_run_one(std::shared_ptr<when_all_variadic_state<Ts...>> st, awaitable<T> a)
+  -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
       co_await std::move(a);
@@ -48,7 +48,7 @@ void when_all_start_variadic(any_executor fallback_ex,
               return task_ex ? task_ex : fallback_ex;
             }(),
             when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-              any_executor{}, st, std::move(std::get<Is>(tasks))),
+              st, std::move(std::get<Is>(tasks))),
             detached),
    ...);
 }
@@ -67,8 +67,8 @@ auto when_all_collect_variadic([[maybe_unused]]
 
 // Runner coroutine for container when_all
 template <class T>
-auto when_all_container_run_one(any_executor ex, std::shared_ptr<when_all_container_state<T>> st,
-                                std::size_t i, awaitable<T> a) -> awaitable<void> {
+auto when_all_container_run_one(std::shared_ptr<when_all_container_state<T>> st, std::size_t i,
+                                awaitable<T> a) -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
       co_await std::move(a);
@@ -147,7 +147,7 @@ auto when_all(std::vector<awaitable<T>> tasks)
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     auto task_executor = tasks[i].get_executor();
     auto exec = task_executor ? task_executor : fallback_ex;
-    co_spawn(exec, detail::when_all_container_run_one<T>(any_executor{}, st, i, std::move(tasks[i])), detached);
+    co_spawn(exec, detail::when_all_container_run_one<T>(st, i, std::move(tasks[i])), detached);
   }
 
   co_await detail::await_when(st);
