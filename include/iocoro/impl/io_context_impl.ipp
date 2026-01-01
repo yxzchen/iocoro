@@ -129,10 +129,9 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
   }
 }
 
-inline auto io_context_impl::schedule_timer(
-  std::chrono::steady_clock::time_point expiry,
-  std::unique_ptr<operation_base> op
-) -> timer_event_handle {
+inline auto io_context_impl::schedule_timer(std::chrono::steady_clock::time_point expiry,
+                                            std::unique_ptr<operation_base> op)
+  -> timer_event_handle {
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = expiry;
   entry->op = std::move(op);
@@ -464,18 +463,7 @@ inline void io_context_impl::fd_event_handle::cancel() const noexcept {
     return;
   }
 
-  auto* p = impl;
-  auto const local_fd = fd;
-  auto const local_kind = kind;
-  auto const local_token = token;
-
-  if (p->running_in_this_thread()) {
-    p->cancel_fd_event(local_fd, local_kind, local_token);
-  } else {
-    p->post([p, local_fd, local_kind, local_token] {
-      p->cancel_fd_event(local_fd, local_kind, local_token);
-    });
-  }
+  impl->cancel_fd_event(fd, kind, token);
 }
 
 inline void io_context_impl::timer_event_handle::cancel() const noexcept {
