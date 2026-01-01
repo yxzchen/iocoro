@@ -179,12 +179,17 @@ struct spawn_result_awaiter {
     return st->done;
   }
 
-  void await_suspend(std::coroutine_handle<> h) {
+  bool await_suspend(std::coroutine_handle<> h) {
     std::scoped_lock lk{st->m};
+    if (st->done) {
+      return false;
+    }
+
     IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters not supported");
 
     st->waiter = h;
     st->ex = get_current_executor();
+    return true;
   }
 
   auto await_resume() -> T {
@@ -217,8 +222,8 @@ struct spawn_result_awaiter {
 /// Executes a spawned task and stores its result (or exception) in shared state.
 /// Used internally by co_spawn(use_awaitable) to run the task and notify waiters.
 template <typename T>
-auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st, awaitable<T> a)
-  -> awaitable<void> {
+auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st,
+                              awaitable<T> a) -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {
     if constexpr (std::is_void_v<T>) {

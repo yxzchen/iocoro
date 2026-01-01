@@ -57,7 +57,7 @@ struct when_awaiter {
   std::shared_ptr<State> st;
 
   bool await_ready() const noexcept {
-    return false;
+    return (st->remaining.load(std::memory_order_relaxed) == 0);
   }
 
   bool await_suspend(std::coroutine_handle<> h) {
