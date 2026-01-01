@@ -28,7 +28,7 @@ struct operation_wait_state {
 ///
 /// Template parameters:
 /// - Operation: The operation_base-derived class to instantiate
-/// - Args: Constructor arguments for the operation (excluding the final wait_state parameter)
+/// - Args: Constructor arguments for the operation (excluding the beginning wait_state parameter)
 ///
 /// Usage:
 ///   co_await operation_awaiter<timer_wait_operation, steady_timer*>{this};
@@ -50,7 +50,7 @@ struct operation_awaiter {
     // Construct operation with captured args + shared state
     auto op = std::apply(
         [this](auto&&... operation_args) {
-          return std::make_unique<Operation>(std::forward<decltype(operation_args)>(operation_args)..., st);
+          return std::make_unique<Operation>(st, std::forward<decltype(operation_args)>(operation_args)...);
         },
         args);
     op->start(std::move(op));

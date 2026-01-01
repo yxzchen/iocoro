@@ -1,10 +1,10 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/detail/async_operation.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
-#include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
@@ -190,13 +190,10 @@ class socket_impl_base {
   enum class fd_state : std::uint8_t { closed, opening, open };
 
   template <fd_wait_kind Kind>
-  class fd_wait_operation final : public operation_base, private one_shot_completion {
+  class fd_wait_operation final : public async_operation {
    public:
-    fd_wait_operation(socket_impl_base* base, std::shared_ptr<operation_wait_state> st) noexcept
-        : operation_base(base->ctx_impl_), base_(base), st_(std::move(st)) {}
-
-    void on_ready() noexcept override { complete(std::error_code{}); }
-    void on_abort(std::error_code ec) noexcept override { complete(ec); }
+    fd_wait_operation(std::shared_ptr<operation_wait_state> st, socket_impl_base* base) noexcept
+        : async_operation(std::move(st), base->ctx_impl_), base_(base) {}
 
    private:
     void do_start(std::unique_ptr<operation_base> self) override {
@@ -205,29 +202,15 @@ class socket_impl_base {
       // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
       // "single waiter per direction" invariant for correctness.
       if constexpr (Kind == fd_wait_kind::read) {
-        auto h = impl_->register_fd_read(base_->native_handle(), std::move(self));
+        auto h = this->impl_->register_fd_read(base_->native_handle(), std::move(self));
         base_->set_read_handle(h);
       } else {
-        auto h = impl_->register_fd_write(base_->native_handle(), std::move(self));
+        auto h = this->impl_->register_fd_write(base_->native_handle(), std::move(self));
         base_->set_write_handle(h);
       }
     }
 
-    void complete(std::error_code ec) noexcept {
-      // Guard against double completion (on_ready + on_abort, or repeated signals).
-      if (!try_complete()) {
-        return;
-      }
-      st_->ec = ec;
-
-      // Resume on the caller's original executor.
-      // This ensures the awaitable coroutine resumes on the same executor
-      // where the user initiated the wait operation.
-      st_->ex.post([st = st_]() mutable { st->h.resume(); });
-    }
-
     socket_impl_base* base_ = nullptr;
-    std::shared_ptr<operation_wait_state> st_{};
   };
 
   io_context_impl* ctx_impl_{};

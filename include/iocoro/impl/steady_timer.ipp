@@ -1,8 +1,8 @@
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/async_operation.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
-#include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/steady_timer.hpp>
@@ -59,41 +59,18 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
   }
 
   // Timer operation
-  class timer_wait_operation final
-      : public detail::operation_base
-      , private detail::one_shot_completion {
+  class timer_wait_operation final : public detail::async_operation {
    public:
-    timer_wait_operation(steady_timer* timer, std::shared_ptr<detail::operation_wait_state> st)
-        : operation_base(timer->ctx_impl_), timer_(timer), st_(std::move(st)) {}
-
-    void on_ready() noexcept override {
-      complete(std::error_code{});
-    }
-
-    void on_abort(std::error_code ec) noexcept override {
-      complete(ec);
-    }
+    timer_wait_operation(std::shared_ptr<detail::operation_wait_state> st, steady_timer* timer)
+        : async_operation(std::move(st), timer->ctx_impl_), timer_(timer) {}
 
    private:
     void do_start(std::unique_ptr<operation_base> self) override {
-      auto handle = impl_->schedule_timer(timer_->expiry(), std::move(self));
+      auto handle = this->impl_->schedule_timer(timer_->expiry(), std::move(self));
       timer_->set_write_handle(handle);
     }
 
-    void complete(std::error_code ec) {
-      // Guard against double completion (on_ready + on_abort, or repeated signals).
-      if (!try_complete()) {
-        return;
-      }
-      st_->ec = ec;
-
-      // Resume on the caller's original executor (if set).
-      // If no executor, resume directly in the current context.
-      st_->ex.post([st = st_]() mutable { st->h.resume(); });
-    }
-
     steady_timer* timer_ = nullptr;
-    std::shared_ptr<detail::operation_wait_state> st_;
   };
 
   co_return co_await detail::operation_awaiter<timer_wait_operation, steady_timer*>{this};
