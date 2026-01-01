@@ -4,7 +4,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/detail/require_io_executor.hpp>
+#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/executor.hpp>
@@ -135,7 +135,7 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 ///
 /// Strong requirement:
 /// - The current coroutine MUST be running on io_executor.
-/// - Otherwise this fails at runtime (require_io_executor).
+/// - Otherwise this fails at runtime (require_executor).
 ///
 /// This is purely:
 /// - with_timeout(co_await this_coro::executor, ...)
@@ -147,7 +147,7 @@ auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout,
                   OnTimeout on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout: requires a bound executor");
-  auto ex = ::iocoro::detail::require_io_executor(ex_any);
+  auto ex = ::iocoro::detail::require_executor<io_executor>(ex_any);
   co_return co_await with_timeout(ex, std::move(op), timeout,
                                   std::move(on_timeout));
 }
@@ -254,7 +254,7 @@ auto with_timeout_detached(Awaitable op, std::chrono::steady_clock::duration tim
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout_detached: requires a bound executor");
-  auto ex = ::iocoro::detail::require_io_executor(ex_any);
+  auto ex = ::iocoro::detail::require_executor<io_executor>(ex_any);
   co_return co_await with_timeout_detached(ex, std::move(op), timeout);
 }
 
