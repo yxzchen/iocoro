@@ -39,10 +39,10 @@ template <class Awaitable>
 using with_timeout_result_t = typename with_timeout_result<std::remove_cvref_t<Awaitable>>::type;
 
 template <class Result>
-struct with_timeout_result_traits;
+struct timeout_result_traits;
 
 template <class T>
-struct with_timeout_result_traits<iocoro::expected<T, std::error_code>> {
+struct timeout_result_traits<iocoro::expected<T, std::error_code>> {
   using result_type = iocoro::expected<T, std::error_code>;
 
   static auto is_operation_aborted(result_type const& r) -> bool {
@@ -58,7 +58,7 @@ struct with_timeout_result_traits<iocoro::expected<T, std::error_code>> {
 };
 
 template <>
-struct with_timeout_result_traits<std::error_code> {
+struct timeout_result_traits<std::error_code> {
   using result_type = std::error_code;
 
   static auto is_operation_aborted(result_type const& r) -> bool {
@@ -89,7 +89,7 @@ template <class Awaitable, class OnTimeout>
 auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::duration timeout,
                   OnTimeout on_timeout) -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
-  using traits = detail::with_timeout_result_traits<result_t>;
+  using traits = detail::timeout_result_traits<result_t>;
 
   IOCORO_ENSURE(ex, "with_timeout: requires a non-empty io_executor");
 
@@ -214,7 +214,7 @@ auto with_timeout_detached(io_executor ex, Awaitable op,
                            std::chrono::steady_clock::duration timeout)
   -> awaitable<detail::with_timeout_result_t<Awaitable>> {
   using result_t = detail::with_timeout_result_t<Awaitable>;
-  using traits = detail::with_timeout_result_traits<result_t>;
+  using traits = detail::timeout_result_traits<result_t>;
 
   IOCORO_ENSURE(ex, "with_timeout_detached: requires a non-empty io_executor");
 
