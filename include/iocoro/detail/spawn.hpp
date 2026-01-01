@@ -39,12 +39,12 @@ struct spawn_state {
 template <typename T>
 struct spawn_state_with_completion {
   unique_function<awaitable<T>()> factory{};
-  unique_function<void(spawn_expected<T>)> completion_{};
+  unique_function<void(spawn_expected<T>)> completion{};
 
   template <typename F, typename C>
     requires std::is_invocable_r_v<awaitable<T>, F&> && std::is_invocable_v<C&, spawn_expected<T>>
   spawn_state_with_completion(F&& f, C&& c)
-      : factory(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
+      : factory(std::forward<F>(f)), completion(std::forward<C>(c)) {}
 };
 
 /// Helper to safely invoke completion callback, swallowing any exceptions.
@@ -72,14 +72,14 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
   try {
     if constexpr (std::is_void_v<T>) {
       co_await state->factory();
-      safe_invoke_completion(state->completion_, spawn_expected<void>{});
+      safe_invoke_completion(state->completion, spawn_expected<void>{});
     } else {
       auto v = co_await state->factory();
-      safe_invoke_completion(state->completion_, spawn_expected<T>{std::move(v)});
+      safe_invoke_completion(state->completion, spawn_expected<T>{std::move(v)});
     }
   } catch (...) {
     auto ep = std::current_exception();
-    safe_invoke_completion(state->completion_, spawn_expected<T>{unexpected(ep)});
+    safe_invoke_completion(state->completion, spawn_expected<T>{unexpected(ep)});
   }
   co_return;
 }
