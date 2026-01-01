@@ -9,6 +9,7 @@
 
 // Coroutine & completion model
 #include <iocoro/awaitable.hpp>
+#include <iocoro/bind_executor.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/this_coro.hpp>
 
