@@ -73,4 +73,9 @@ concept cancel_readable_stream = requires(Stream& s) { s.cancel_read(); };
 template <class Stream>
 concept cancel_writable_stream = requires(Stream& s) { s.cancel_write(); };
 
+template <class Stream>
+concept io_executor_stream = requires(Stream& s) {
+  { s.get_executor() } -> std::same_as<io_executor>;
+};
+
 }  // namespace iocoro::io

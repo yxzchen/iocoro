@@ -212,22 +212,6 @@ TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
   EXPECT_EQ(r.error(), iocoro::error::broken_pipe);
 }
 
-TEST(with_timeout_test, with_timeout_stream_overload_uses_cancel) {
-  iocoro::io_context ctx;
-  cancellable_test_stream s{ctx.get_executor()};
-
-  std::array<std::byte, 1> buf{};
-
-  auto r = iocoro::sync_wait_for(
-    ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      return iocoro::io::with_timeout(s, s.async_read_some(buf), 5ms);
-    }());
-
-  ASSERT_FALSE(r);
-  EXPECT_EQ(r.error(), iocoro::error::timed_out);
-  EXPECT_GE(s.cancel_calls.load(std::memory_order_relaxed), 1);
-}
-
 TEST(with_timeout_test, with_timeout_read_prefers_cancel_read) {
   iocoro::io_context ctx;
   cancellable_test_stream s{ctx.get_executor()};

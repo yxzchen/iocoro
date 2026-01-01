@@ -95,64 +95,30 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 template <class Awaitable, class OnTimeout>
   requires std::invocable<OnTimeout&> &&
            requires { typename traits::awaitable_result_t<Awaitable>; }
-auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout,
-                  OnTimeout on_timeout) -> awaitable<traits::awaitable_result_t<Awaitable>> {
+auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout, OnTimeout on_timeout)
+  -> awaitable<traits::awaitable_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout: requires a bound executor");
-  auto ex = ::iocoro::detail::require_executor<io_executor>(ex_any);
-  co_return co_await with_timeout(ex, std::move(op), timeout,
-                                  std::move(on_timeout));
-}
-
-namespace detail {
-
-template <class Stream>
-concept io_executor_stream = requires(Stream& s) {
-  { s.get_executor() } -> std::same_as<io_executor>;
-};
-
-}  // namespace detail
-
-/// Syntax sugar 2: stream-bound.
-///
-/// Rules:
-/// - executor source: s.get_executor() (must be io_executor)
-/// - on_timeout is bound automatically (cancel/cancel_read/cancel_write)
-template <class Stream, class Awaitable>
-  requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
-           requires { typename traits::awaitable_result_t<Awaitable>; }
-auto with_timeout(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
-  -> awaitable<traits::awaitable_result_t<Awaitable>> {
-  co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
-                                  [&]() { s.cancel(); });
+  auto ex = detail::require_executor<io_executor>(ex_any);
+  co_return co_await with_timeout(ex, std::move(op), timeout, std::move(on_timeout));
 }
 
 template <class Stream, class Awaitable>
-  requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
+  requires cancel_readable_stream<Stream> && io_executor_stream<Stream> &&
            requires { typename traits::awaitable_result_t<Awaitable>; }
 auto with_timeout_read(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<traits::awaitable_result_t<Awaitable>> {
-  if constexpr (cancel_readable_stream<Stream>) {
-    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
-                                    [&]() { s.cancel_read(); });
-  } else {
-    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
-                                    [&]() { s.cancel(); });
-  }
+  co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
+                                  [&]() { s.cancel_read(); });
 }
 
 template <class Stream, class Awaitable>
-  requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
+  requires cancel_writable_stream<Stream> && io_executor_stream<Stream> &&
            requires { typename traits::awaitable_result_t<Awaitable>; }
 auto with_timeout_write(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<traits::awaitable_result_t<Awaitable>> {
-  if constexpr (cancel_writable_stream<Stream>) {
-    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
-                                    [&]() { s.cancel_write(); });
-  } else {
-    co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
-                                    [&]() { s.cancel(); });
-  }
+  co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
+                                  [&]() { s.cancel_write(); });
 }
 
 /// Detached variant.
@@ -175,7 +141,7 @@ auto with_timeout_detached(io_executor ex, Awaitable op,
   }
 
   auto timer = std::make_shared<steady_timer>(ex);
-  (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
+  timer->expires_after(timeout);
 
   auto timer_wait = [timer]() -> awaitable<std::error_code> {
     co_return co_await timer->async_wait(use_awaitable);
@@ -206,7 +172,7 @@ auto with_timeout_detached(Awaitable op, std::chrono::steady_clock::duration tim
   -> awaitable<traits::awaitable_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout_detached: requires a bound executor");
-  auto ex = ::iocoro::detail::require_executor<io_executor>(ex_any);
+  auto ex = detail::require_executor<io_executor>(ex_any);
   co_return co_await with_timeout_detached(ex, std::move(op), timeout);
 }
 
