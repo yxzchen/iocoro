@@ -27,24 +27,24 @@ using spawn_expected = expected<T, std::exception_ptr>;
 /// Uses type-erased unique_function to avoid storing lambda types directly.
 template <typename T>
 struct spawn_state {
-  unique_function<awaitable<T>()> factory_{};
+  unique_function<awaitable<T>()> factory{};
 
   template <typename F>
     requires std::is_invocable_r_v<awaitable<T>, F&>
-  explicit spawn_state(F&& f) : factory_(std::forward<F>(f)) {}
+  explicit spawn_state(F&& f) : factory(std::forward<F>(f)) {}
 };
 
 /// State for completion callback mode.
 /// Both factory and completion are type-erased.
 template <typename T>
 struct spawn_state_with_completion {
-  unique_function<awaitable<T>()> factory_{};
+  unique_function<awaitable<T>()> factory{};
   unique_function<void(spawn_expected<T>)> completion_{};
 
   template <typename F, typename C>
     requires std::is_invocable_r_v<awaitable<T>, F&> && std::is_invocable_v<C&, spawn_expected<T>>
   spawn_state_with_completion(F&& f, C&& c)
-      : factory_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
+      : factory(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
 };
 
 /// Helper to safely invoke completion callback, swallowing any exceptions.
@@ -63,7 +63,7 @@ void safe_invoke_completion(F& completion, spawn_expected<T> result) noexcept {
 /// callable (or an awaitable wrapped as a callable).
 template <typename T>
 auto spawn_entry_point(std::shared_ptr<spawn_state<T>> state) -> awaitable<T> {
-  co_return co_await state->factory_();
+  co_return co_await state->factory();
 }
 
 template <typename T>
@@ -71,10 +71,10 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
   -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
-      co_await state->factory_();
+      co_await state->factory();
       safe_invoke_completion(state->completion_, spawn_expected<void>{});
     } else {
-      auto v = co_await state->factory_();
+      auto v = co_await state->factory();
       safe_invoke_completion(state->completion_, spawn_expected<T>{std::move(v)});
     }
   } catch (...) {
