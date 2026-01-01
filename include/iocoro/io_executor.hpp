@@ -13,11 +13,9 @@ namespace iocoro {
 
 class steady_timer;
 
-namespace detail {
-namespace socket {
+namespace detail::socket {
 class socket_impl_base;
-}  // namespace socket
-}  // namespace detail
+}  // namespace detail::socket
 
 template <typename Executor>
 class work_guard;
