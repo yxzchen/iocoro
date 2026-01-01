@@ -2,6 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
+#include <iocoro/bind_executor.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
@@ -82,13 +83,6 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
     safe_invoke_completion(state->completion, spawn_expected<T>{unexpected(ep)});
   }
   co_return;
-}
-
-template <typename T>
-auto bind_executor(any_executor ex, awaitable<T> a) -> awaitable<T> {
-  auto h = a.release();
-  h.promise().set_executor(std::move(ex));
-  return awaitable<T>{h};
 }
 
 template <typename T>
