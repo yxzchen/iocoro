@@ -12,17 +12,11 @@
 namespace iocoro::detail {
 
 template <class T>
-struct when_value {
-  using type = std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>;
-};
-
-template <class T>
-using when_value_t = typename when_value<T>::type;
+using when_value_t = std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>;
 
 // Shared state base for when_all/when_any.
 // - when_all: remaining = n (number of all tasks)
 // - when_any: remaining = 1 (only one completion needed)
-template <class Derived>
 struct when_state_base {
   any_executor ex{};
   std::mutex m;
@@ -30,7 +24,7 @@ struct when_state_base {
   std::coroutine_handle<> waiter{};
   std::exception_ptr first_ep{};
 
-  explicit when_state_base(any_executor ex_, std::size_t n) : ex(std::move(ex_)) {
+  explicit when_state_base(std::size_t n) {
     remaining.store(n, std::memory_order_relaxed);
   }
 
@@ -62,15 +56,16 @@ struct when_awaiter {
 
   std::shared_ptr<State> st;
 
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    std::scoped_lock lk{st->m};
+    return (st->remaining.load(std::memory_order_relaxed) == 0);
+  }
 
   bool await_suspend(std::coroutine_handle<> h) {
     std::scoped_lock lk{st->m};
     IOCORO_ENSURE(!st->waiter, "when_all/when_any: multiple awaiters are not supported");
-    if (st->remaining.load(std::memory_order_relaxed) == 0) {
-      return false;  // already completed; resume immediately
-    }
     st->waiter = h;
+    st->ex = get_current_executor();
     return true;
   }
 

@@ -124,7 +124,7 @@ auto when_any(awaitable<Ts>... tasks)
   auto ex = co_await this_coro::executor;
   IOCORO_ENSURE(ex, "when_any: requires a bound executor");
 
-  auto st = std::make_shared<detail::when_any_variadic_state<Ts...>>(ex);
+  auto st = std::make_shared<detail::when_any_variadic_state<Ts...>>();
   detail::when_any_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
@@ -161,7 +161,7 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   IOCORO_ENSURE(ex, "when_any(vector): requires a bound executor");
   IOCORO_ENSURE(!tasks.empty(), "when_any(vector): requires at least one task");
 
-  auto st = std::make_shared<detail::when_any_container_state<T>>(ex);
+  auto st = std::make_shared<detail::when_any_container_state<T>>();
 
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     co_spawn(ex, detail::when_any_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);

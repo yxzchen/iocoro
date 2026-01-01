@@ -100,7 +100,7 @@ auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value
     co_return std::tuple<detail::when_value_t<Ts>...>{};
   }
 
-  auto st = std::make_shared<detail::when_all_variadic_state<Ts...>>(ex);
+  auto st = std::make_shared<detail::when_all_variadic_state<Ts...>>();
   detail::when_all_start_variadic<Ts...>(ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
@@ -140,7 +140,7 @@ auto when_all(std::vector<awaitable<T>> tasks)
     }
   }
 
-  auto st = std::make_shared<detail::when_all_container_state<T>>(ex, tasks.size());
+  auto st = std::make_shared<detail::when_all_container_state<T>>(tasks.size());
 
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     co_spawn(ex, detail::when_all_container_run_one<T>(ex, st, i, std::move(tasks[i])), detached);

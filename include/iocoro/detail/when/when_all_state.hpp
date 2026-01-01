@@ -19,13 +19,13 @@
 namespace iocoro::detail {
 
 template <class... Ts>
-struct when_all_variadic_state : when_state_base<when_all_variadic_state<Ts...>> {
+struct when_all_variadic_state : when_state_base {
   using values_tuple = std::tuple<std::optional<when_value_t<Ts>>...>;
 
   values_tuple values{};
 
-  explicit when_all_variadic_state(any_executor ex_)
-      : when_state_base<when_all_variadic_state<Ts...>>(std::move(ex_), sizeof...(Ts)) {}
+  explicit when_all_variadic_state()
+      : when_state_base(sizeof...(Ts)) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {
@@ -35,14 +35,14 @@ struct when_all_variadic_state : when_state_base<when_all_variadic_state<Ts...>>
 };
 
 template <class T>
-struct when_all_container_state : when_state_base<when_all_container_state<T>> {
+struct when_all_container_state : when_state_base {
   using value_t = when_value_t<T>;
 
   // Only used for non-void T
   std::vector<std::optional<value_t>> values{};
 
-  explicit when_all_container_state(any_executor ex_, std::size_t n)
-      : when_state_base<when_all_container_state<T>>(std::move(ex_), n) {
+  explicit when_all_container_state(std::size_t n)
+      : when_state_base(n) {
     if constexpr (!std::is_void_v<T>) {
       values.resize(n);
     }
