@@ -117,8 +117,6 @@ struct spawn_wait_state {
   [[no_unique_address]] std::conditional_t<std::is_void_v<T>, std::monostate, std::optional<T>>
     value{};
 
-  explicit spawn_wait_state(any_executor ex_) : ex(std::move(ex_)) {}
-
   // Overload for non-void types (takes parameter)
   template <typename U>
   void set_value(U v)
@@ -139,15 +137,16 @@ struct spawn_wait_state {
   }
 
   void complete() {
-    std::coroutine_handle<> w{};
+    std::coroutine_handle<> h{};
     {
       std::scoped_lock lk{m};
       done = true;
-      w = waiter;
+      h = waiter;
       waiter = {};
     }
-    if (w) {
-      ex.post([w]() { w.resume(); });
+    if (h) {
+      IOCORO_ENSURE(ex, "spawn_wait_state: empty executor with non empty waiter");
+      ex.post([h]() { h.resume(); });
     }
   }
 };
@@ -179,22 +178,17 @@ struct state_awaiter {
 
   std::shared_ptr<spawn_wait_state<T>> st;
 
-  // Always suspend and resume via executor to match the library's "never inline" policy.
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    std::scoped_lock lk{st->m};
+    return st->done;
+  }
 
   void await_suspend(std::coroutine_handle<> h) {
-    bool ready = false;
-    {
-      std::scoped_lock lk{st->m};
-      IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters not supported");
-      ready = st->done;
-      if (!ready) {
-        st->waiter = h;
-      }
-    }
-    if (ready) {
-      st->ex.post([h]() { h.resume(); });
-    }
+    std::scoped_lock lk{st->m};
+    IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters not supported");
+
+    st->waiter = h;
+    st->ex = get_current_executor();
   }
 
   auto await_resume() -> T {

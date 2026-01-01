@@ -47,7 +47,7 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   -> awaitable<awaitable_factory_result_t<std::remove_cvref_t<F>>> {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
-  auto st = std::make_shared<detail::spawn_wait_state<value_type>>(ex);
+  auto st = std::make_shared<detail::spawn_wait_state<value_type>>();
 
   auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
   auto entry = detail::spawn_entry_point<value_type>(std::move(state));
