@@ -13,6 +13,7 @@
 #include <iocoro/io_executor.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
+#include <iocoro/traits/awaitable_traits.hpp>
 #include <iocoro/when_any.hpp>
 
 #include <atomic>
@@ -26,17 +27,6 @@
 namespace iocoro::io {
 
 namespace detail {
-
-template <class A>
-struct timeout_result;
-
-template <class T>
-struct timeout_result<iocoro::awaitable<T>> {
-  using type = T;
-};
-
-template <class Awaitable>
-using timeout_result_t = typename timeout_result<std::remove_cvref_t<Awaitable>>::type;
 
 template <class Result>
 struct timeout_result_traits;
@@ -85,10 +75,10 @@ struct timeout_result_traits<std::error_code> {
 ///   - then waits for `op` to finish (typically by being cancelled by `on_timeout()`).
 template <class Awaitable, class OnTimeout>
   requires std::invocable<OnTimeout&> &&
-           requires { typename detail::timeout_result_t<Awaitable>; }
+           requires { typename iocoro::traits::awaitable_value_t<Awaitable>; }
 auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::duration timeout,
-                  OnTimeout on_timeout) -> awaitable<detail::timeout_result_t<Awaitable>> {
-  using result_t = detail::timeout_result_t<Awaitable>;
+                  OnTimeout on_timeout) -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
+  using result_t = iocoro::traits::awaitable_value_t<Awaitable>;
   using traits = detail::timeout_result_traits<result_t>;
 
   IOCORO_ENSURE(ex, "with_timeout: requires a non-empty io_executor");
@@ -142,9 +132,9 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 /// and does not introduce any new semantics.
 template <class Awaitable, class OnTimeout>
   requires std::invocable<OnTimeout&> &&
-           requires { typename detail::timeout_result_t<Awaitable>; }
+           requires { typename iocoro::traits::awaitable_value_t<Awaitable>; }
 auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout,
-                  OnTimeout on_timeout) -> awaitable<detail::timeout_result_t<Awaitable>> {
+                  OnTimeout on_timeout) -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout: requires a bound executor");
   auto ex = ::iocoro::detail::require_executor<io_executor>(ex_any);
@@ -168,18 +158,18 @@ concept io_executor_stream = requires(Stream& s) {
 /// - on_timeout is bound automatically (cancel/cancel_read/cancel_write)
 template <class Stream, class Awaitable>
   requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
-           requires { typename detail::timeout_result_t<Awaitable>; }
+           requires { typename iocoro::traits::awaitable_value_t<Awaitable>; }
 auto with_timeout(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
-  -> awaitable<detail::timeout_result_t<Awaitable>> {
+  -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
   co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                   [&]() { s.cancel(); });
 }
 
 template <class Stream, class Awaitable>
   requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
-           requires { typename detail::timeout_result_t<Awaitable>; }
+           requires { typename iocoro::traits::awaitable_value_t<Awaitable>; }
 auto with_timeout_read(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
-  -> awaitable<detail::timeout_result_t<Awaitable>> {
+  -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
   if constexpr (cancel_readable_stream<Stream>) {
     co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                     [&]() { s.cancel_read(); });
@@ -191,9 +181,9 @@ auto with_timeout_read(Stream& s, Awaitable op, std::chrono::steady_clock::durat
 
 template <class Stream, class Awaitable>
   requires cancellable_stream<Stream> && detail::io_executor_stream<Stream> &&
-           requires { typename detail::timeout_result_t<Awaitable>; }
+           requires { typename iocoro::traits::awaitable_value_t<Awaitable>; }
 auto with_timeout_write(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
-  -> awaitable<detail::timeout_result_t<Awaitable>> {
+  -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
   if constexpr (cancel_writable_stream<Stream>) {
     co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
                                     [&]() { s.cancel_write(); });
@@ -209,11 +199,11 @@ auto with_timeout_write(Stream& s, Awaitable op, std::chrono::steady_clock::dura
 /// - On timeout, returns timed_out without waiting op to complete.
 /// - op may continue running on ex after this returns.
 template <class Awaitable>
-  requires requires { typename detail::timeout_result_t<Awaitable>; }
+  requires requires { typename iocoro::traits::awaitable_value_t<Awaitable>; }
 auto with_timeout_detached(io_executor ex, Awaitable op,
                            std::chrono::steady_clock::duration timeout)
-  -> awaitable<detail::timeout_result_t<Awaitable>> {
-  using result_t = detail::timeout_result_t<Awaitable>;
+  -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
+  using result_t = iocoro::traits::awaitable_value_t<Awaitable>;
   using traits = detail::timeout_result_traits<result_t>;
 
   IOCORO_ENSURE(ex, "with_timeout_detached: requires a non-empty io_executor");
@@ -249,9 +239,9 @@ auto with_timeout_detached(io_executor ex, Awaitable op,
 }
 
 template <class Awaitable>
-  requires requires { typename detail::timeout_result_t<Awaitable>; }
+  requires requires { typename iocoro::traits::awaitable_value_t<Awaitable>; }
 auto with_timeout_detached(Awaitable op, std::chrono::steady_clock::duration timeout)
-  -> awaitable<detail::timeout_result_t<Awaitable>> {
+  -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout_detached: requires a bound executor");
   auto ex = ::iocoro::detail::require_executor<io_executor>(ex_any);
