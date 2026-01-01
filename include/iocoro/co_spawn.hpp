@@ -52,8 +52,8 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
   auto entry = detail::spawn_entry_point<value_type>(std::move(state));
 
-  co_spawn(ex, detail::run_to_state<value_type>(ex, st, std::move(entry)), detached);
-  return detail::await_state<value_type>(std::move(st));
+  co_spawn(ex, detail::execute_and_store_result<value_type>(ex, st, std::move(entry)), detached);
+  return detail::get_result_awaitable<value_type>(std::move(st));
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, invoking a

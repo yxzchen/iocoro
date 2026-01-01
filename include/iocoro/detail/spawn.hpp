@@ -151,13 +151,15 @@ struct spawn_wait_state {
   }
 };
 
+/// Awaiter for retrieving the result of a spawned coroutine.
+/// Used by co_spawn(use_awaitable) to wait for completion and extract the result.
 template <typename T>
-struct state_awaiter {
+struct spawn_result_awaiter {
   // IMPORTANT: Explicit constructor required to avoid ASan use-after-free errors.
   //
   // Issue: Aggregate initialization `awaiter{shared_ptr}` triggers ASan
   // use-after-free errors. Known to affect:
-  // - state_awaiter<T> / state_awaiter<void> (this file)
+  // - spawn_result_awaiter<T> / spawn_result_awaiter<void> (this file)
   // - awaiter inside steady_timer::async_wait (steady_timer.ipp)
   // - when_all_awaiter (when_all/state.hpp)
   // Likely affects all awaiters containing shared_ptr members.
@@ -174,7 +176,7 @@ struct state_awaiter {
   // - C++17/20 aggregate initialization rules changes
   // - Compiler-specific temporary materialization behavior
   // - Interaction between move semantics and aggregate members
-  explicit state_awaiter(std::shared_ptr<spawn_wait_state<T>> st_) : st(std::move(st_)) {}
+  explicit spawn_result_awaiter(std::shared_ptr<spawn_wait_state<T>> st_) : st(std::move(st_)) {}
 
   std::shared_ptr<spawn_wait_state<T>> st;
 
@@ -218,8 +220,10 @@ struct state_awaiter {
   }
 };
 
+/// Executes a spawned task and stores its result (or exception) in shared state.
+/// Used internally by co_spawn(use_awaitable) to run the task and notify waiters.
 template <typename T>
-auto run_to_state(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st, awaitable<T> a)
+auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st, awaitable<T> a)
   -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {
@@ -235,9 +239,11 @@ auto run_to_state(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st, awai
   st->complete();
 }
 
+/// Returns an awaitable that retrieves the result from a spawn_wait_state.
+/// Used internally by co_spawn(use_awaitable) to return an awaitable to the caller.
 template <typename T>
-auto await_state(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
-  co_return co_await state_awaiter<T>{std::move(st)};
+auto get_result_awaitable(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
+  co_return co_await spawn_result_awaiter<T>{std::move(st)};
 }
 
 }  // namespace iocoro::detail
