@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iocoro/assert.hpp>
 #include <iocoro/executor.hpp>
 
 #include <coroutine>
@@ -27,11 +28,5 @@ struct executor_guard {
   executor_guard(executor_guard&&) = delete;
   auto operator=(executor_guard&&) -> executor_guard& = delete;
 };
-
-/// Helper to resume a coroutine on a specific executor with proper guard.
-/// IMPORTANT: Copies executor to avoid leaving source empty.
-inline void resume_on_executor(any_executor ex, std::coroutine_handle<> h) {
-  ex.post([h, ex]() mutable { h.resume(); });
-}
 
 }  // namespace iocoro::detail

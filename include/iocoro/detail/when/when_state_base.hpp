@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/executor.hpp>
 
 #include <atomic>
@@ -52,7 +51,7 @@ struct when_state_base {
       waiter = {};
     }
     if (w) {
-      resume_on_executor(ex, w);
+      ex.post([w]() { w.resume(); });
     }
   }
 };

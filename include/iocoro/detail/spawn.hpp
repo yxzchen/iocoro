@@ -74,7 +74,7 @@ struct spawn_state_with_completion {
   template <typename F, typename C>
     requires std::is_invocable_r_v<awaitable<T>, F&> && std::is_invocable_v<C&, spawn_expected<T>>
   spawn_state_with_completion(F&& f, C&& c)
-    : factory_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
+      : factory_(std::forward<F>(f)), completion_(std::forward<C>(c)) {}
 };
 
 /// Helper to safely invoke completion callback, swallowing any exceptions.
@@ -145,19 +145,24 @@ struct spawn_wait_state {
   bool done{false};
   std::coroutine_handle<> waiter{};
   std::exception_ptr ep{};
-  [[no_unique_address]] std::conditional_t<std::is_void_v<T>, std::monostate, std::optional<T>> value{};
+  [[no_unique_address]] std::conditional_t<std::is_void_v<T>, std::monostate, std::optional<T>>
+    value{};
 
   explicit spawn_wait_state(any_executor ex_) : ex(std::move(ex_)) {}
 
   // Overload for non-void types (takes parameter)
   template <typename U = T>
-  void set_value(U v) requires (!std::is_void_v<T> && std::is_same_v<U, T>) {
+  void set_value(U v)
+    requires(!std::is_void_v<T> && std::is_same_v<U, T>)
+  {
     std::scoped_lock lk{m};
     value.emplace(std::move(v));
   }
 
   // Overload for void type (no parameter)
-  void set_value() noexcept requires std::is_void_v<T> {}
+  void set_value() noexcept
+    requires std::is_void_v<T>
+  {}
 
   void set_exception(std::exception_ptr e) {
     std::scoped_lock lk{m};
@@ -173,7 +178,7 @@ struct spawn_wait_state {
       waiter = {};
     }
     if (w) {
-      resume_on_executor(ex, w);
+      ex.post([w]() { w.resume(); });
     }
   }
 };
@@ -219,7 +224,7 @@ struct state_awaiter {
       }
     }
     if (ready) {
-      resume_on_executor(st->ex, h);
+      st->ex.post([h]() { h.resume(); });
     }
   }
 
@@ -252,7 +257,7 @@ struct state_awaiter {
 
 template <typename T>
 auto await_state(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
-    co_return co_await state_awaiter<T>{std::move(st)};
+  co_return co_await state_awaiter<T>{std::move(st)};
 }
 
 template <typename T>

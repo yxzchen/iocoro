@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
@@ -74,7 +73,7 @@ struct awaitable_promise_base {
 
     IOCORO_ENSURE(ex_, "awaitable_promise: resume_continuation() requires executor");
 
-    resume_on_executor(ex_, continuation_);
+    ex_.post([h = continuation_]() { h.resume(); });
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
