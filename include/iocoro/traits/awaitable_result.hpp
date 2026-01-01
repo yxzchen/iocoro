@@ -14,11 +14,11 @@ namespace traits {
 ///
 /// Primary template is undefined; specializations must define a `type` member.
 template <typename A>
-struct awaitable_value;
+struct awaitable_result;
 
 /// Specialization for iocoro::awaitable<T>: extracts the inner type T.
 template <typename T>
-struct awaitable_value<awaitable<T>> {
+struct awaitable_result<awaitable<T>> {
   using type = T;
 };
 
@@ -27,7 +27,7 @@ struct awaitable_value<awaitable<T>> {
 /// This ensures that `awaitable<T>&`, `const awaitable<T>`, etc., all resolve
 /// to the same underlying value type T.
 template <typename A>
-using awaitable_value_t = typename awaitable_value<std::remove_cvref_t<A>>::type;
+using awaitable_result_t = typename awaitable_result<std::remove_cvref_t<A>>::type;
 
 }  // namespace traits
 }  // namespace iocoro

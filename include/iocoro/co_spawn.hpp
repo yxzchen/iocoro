@@ -5,7 +5,7 @@
 #include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool_executor.hpp>
-#include <iocoro/traits/awaitable_value.hpp>
+#include <iocoro/traits/awaitable_result.hpp>
 
 namespace iocoro {
 
@@ -14,19 +14,19 @@ namespace iocoro {
 /// This alias is intentionally ill-formed if `F()` does not return
 /// `iocoro::awaitable<T>`, so that misuse is diagnosed at the concept boundary.
 template <typename F>
-using awaitable_factory_value_t = traits::awaitable_value_t<std::invoke_result_t<F&>>;
+using awaitable_factory_result_t = traits::awaitable_result_t<std::invoke_result_t<F&>>;
 
 /// A callable that can be invoked with no arguments and returns
 /// `iocoro::awaitable<T>` for some `T`.
 template <typename F>
 concept awaitable_factory =
-  std::invocable<F&> && requires { typename awaitable_factory_value_t<F>; };
+  std::invocable<F&> && requires { typename awaitable_factory_result_t<F>; };
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor (detached).
 template <typename F>
   requires awaitable_factory<std::remove_cvref_t<F>>
 void co_spawn(any_executor ex, F&& f, detached_t) {
-  using value_type = awaitable_factory_value_t<std::remove_cvref_t<F>>;
+  using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
   auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
   auto entry = detail::spawn_entry_point<value_type>(std::move(state));
@@ -39,8 +39,8 @@ void co_spawn(any_executor ex, F&& f, detached_t) {
 template <typename F>
   requires awaitable_factory<std::remove_cvref_t<F>>
 auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
-  -> awaitable<awaitable_factory_value_t<std::remove_cvref_t<F>>> {
-  using value_type = awaitable_factory_value_t<std::remove_cvref_t<F>>;
+  -> awaitable<awaitable_factory_result_t<std::remove_cvref_t<F>>> {
+  using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
   auto st = std::make_shared<detail::spawn_wait_state<value_type>>(ex);
 
@@ -56,9 +56,9 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
 template <typename F, typename Completion>
   requires awaitable_factory<std::remove_cvref_t<F>> &&
            detail::completion_callback_for<std::remove_cvref_t<Completion>,
-                                           awaitable_factory_value_t<std::remove_cvref_t<F>>>
+                                           awaitable_factory_result_t<std::remove_cvref_t<F>>>
 void co_spawn(any_executor ex, F&& f, Completion&& completion) {
-  using value_type = awaitable_factory_value_t<std::remove_cvref_t<F>>;
+  using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
   auto state = std::make_shared<detail::spawn_state_with_completion<value_type>>(
     std::forward<F>(f), std::forward<Completion>(completion));
