@@ -24,26 +24,31 @@ class steady_timer {
   using time_point = clock::time_point;
   using duration = clock::duration;
 
-  explicit steady_timer(io_executor ex) noexcept;
-  steady_timer(io_executor ex, time_point at) noexcept;
-  steady_timer(io_executor ex, duration after) noexcept;
+  explicit steady_timer(io_executor ex) noexcept : ctx_impl_(ex.impl_), expiry_(clock::now()) {}
+  steady_timer(io_executor ex, time_point at) noexcept : ctx_impl_(ex.impl_), expiry_(at) {}
+  steady_timer(io_executor ex, duration after) noexcept
+      : ctx_impl_(ex.impl_), expiry_(clock::now() + after) {}
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
   steady_timer(steady_timer&&) = delete;
   auto operator=(steady_timer&&) -> steady_timer& = delete;
 
-  ~steady_timer();
+  ~steady_timer() { cancel(); }
 
   auto expiry() const noexcept -> time_point { return expiry_; }
 
   /// Set the timer expiry time.
-  /// Returns the number of pending waits that were cancelled (0 or 1).
-  auto expires_at(time_point at) noexcept -> std::size_t;
+  void expires_at(time_point at) noexcept {
+    expiry_ = at;
+    cancel();
+  }
 
   /// Set the timer expiry time relative to now.
-  /// Returns the number of pending waits that were cancelled (0 or 1).
-  auto expires_after(duration d) noexcept -> std::size_t;
+  void expires_after(duration d) noexcept {
+    expiry_ = clock::now() + d;
+    cancel();
+  }
 
   /// Wait until expiry (or cancellation) as an awaitable.
   ///
@@ -55,8 +60,12 @@ class steady_timer {
   }
 
   /// Cancel the pending timer operation.
-  /// Returns the number of operations cancelled (0 or 1).
-  auto cancel() noexcept -> std::size_t;
+  void cancel() noexcept {
+    if (handle_) {
+      handle_.cancel();
+      handle_ = detail::io_context_impl::timer_event_handle::invalid_handle();
+    }
+  }
 
   time_point expiry() { return expiry_; }
 
