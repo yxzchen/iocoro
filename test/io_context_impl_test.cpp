@@ -16,8 +16,8 @@ using namespace std::chrono_literals;
 // Test helper: operation_base wrapper for callbacks
 class test_timer_operation final : public iocoro::detail::operation_base {
  public:
-  test_timer_operation(iocoro::detail::io_context_impl* impl, std::function<void()> on_ready_cb)
-      : operation_base(impl), on_ready_cb_(std::move(on_ready_cb)) {}
+  test_timer_operation(std::function<void()> on_ready_cb)
+      : on_ready_cb_(std::move(on_ready_cb)) {}
 
   void on_ready() noexcept override {
     if (on_ready_cb_) {
@@ -161,7 +161,7 @@ TEST(io_context_impl_timer, schedule_timer_executes_callback) {
   std::atomic<bool> fired{false};
 
   auto op = std::make_unique<test_timer_operation>(
-    &impl, [&fired] { fired.store(true, std::memory_order_relaxed); });
+    [&fired] { fired.store(true, std::memory_order_relaxed); });
   auto handle = impl.schedule_timer(10ms, std::move(op));
 
   ASSERT_TRUE(handle.valid());
@@ -178,7 +178,7 @@ TEST(io_context_impl_timer, cancel_timer_prevents_execution) {
   std::atomic<bool> fired{false};
 
   auto op = std::make_unique<test_timer_operation>(
-    &impl, [&fired] { fired.store(true, std::memory_order_relaxed); });
+    [&fired] { fired.store(true, std::memory_order_relaxed); });
   auto handle = impl.schedule_timer(100ms, std::move(op));
 
   ASSERT_TRUE(handle.valid());
@@ -195,19 +195,19 @@ TEST(io_context_impl_timer, multiple_timers_fire_in_order) {
   std::atomic<int> counter{0};
   std::vector<int> order;
 
-  auto op1 = std::make_unique<test_timer_operation>(&impl, [&] {
+  auto op1 = std::make_unique<test_timer_operation>([&] {
     order.push_back(1);
     counter++;
   });
   auto e1 = impl.schedule_timer(30ms, std::move(op1));
 
-  auto op2 = std::make_unique<test_timer_operation>(&impl, [&] {
+  auto op2 = std::make_unique<test_timer_operation>([&] {
     order.push_back(2);
     counter++;
   });
   auto e2 = impl.schedule_timer(10ms, std::move(op2));
 
-  auto op3 = std::make_unique<test_timer_operation>(&impl, [&] {
+  auto op3 = std::make_unique<test_timer_operation>([&] {
     order.push_back(3);
     counter++;
   });

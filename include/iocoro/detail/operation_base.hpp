@@ -14,11 +14,13 @@ class io_context_impl;
 ///
 /// Design intent:
 /// - operation_base is a pure reactor-layer object.
-/// - It only knows about io_context_impl and provides callbacks for reactor events.
+/// - It only provides callbacks for reactor events.
 /// - It does NOT know about executors, coroutines, or completion handlers.
 /// - Derived classes are responsible for bridging to higher-level abstractions.
 class operation_base {
  public:
+  operation_base() noexcept = default;
+
   operation_base(operation_base const&) = delete;
   auto operator=(operation_base const&) -> operation_base& = delete;
   operation_base(operation_base&&) = delete;
@@ -40,13 +42,6 @@ class operation_base {
 
   /// Called by reactor when the operation is cancelled or aborted.
   virtual void on_abort(std::error_code ec) noexcept = 0;
-
- protected:
-  explicit operation_base(io_context_impl* impl) noexcept : impl_{impl} {
-    IOCORO_ENSURE(impl_ != nullptr, "operation_base: impl must not be null");
-  }
-
-  io_context_impl* impl_;
 
  private:
   /// Derived classes only implement the registration action.

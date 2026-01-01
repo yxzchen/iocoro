@@ -166,7 +166,7 @@ class socket_impl_base {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::read>, socket_impl_base*>{this};
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{this};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
@@ -174,7 +174,7 @@ class socket_impl_base {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::write>, socket_impl_base*>{this};
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{this};
   }
 
  private:
@@ -192,8 +192,8 @@ class socket_impl_base {
   template <fd_wait_kind Kind>
   class fd_wait_operation final : public async_operation {
    public:
-    fd_wait_operation(std::shared_ptr<operation_wait_state> st, socket_impl_base* base) noexcept
-        : async_operation(std::move(st), base->ctx_impl_), base_(base) {}
+    fd_wait_operation(std::shared_ptr<operation_wait_state> st, socket_impl_base* socket) noexcept
+        : async_operation(std::move(st)), socket_(socket) {}
 
    private:
     void do_start(std::unique_ptr<operation_base> self) override {
@@ -202,15 +202,15 @@ class socket_impl_base {
       // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
       // "single waiter per direction" invariant for correctness.
       if constexpr (Kind == fd_wait_kind::read) {
-        auto h = this->impl_->register_fd_read(base_->native_handle(), std::move(self));
-        base_->set_read_handle(h);
+        auto h = socket_->ctx_impl_->register_fd_read(socket_->native_handle(), std::move(self));
+        socket_->set_read_handle(h);
       } else {
-        auto h = this->impl_->register_fd_write(base_->native_handle(), std::move(self));
-        base_->set_write_handle(h);
+        auto h = socket_->ctx_impl_->register_fd_write(socket_->native_handle(), std::move(self));
+        socket_->set_write_handle(h);
       }
     }
 
-    socket_impl_base* base_ = nullptr;
+    socket_impl_base* socket_ = nullptr;
   };
 
   io_context_impl* ctx_impl_{};

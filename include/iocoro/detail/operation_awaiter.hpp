@@ -33,13 +33,15 @@ struct operation_wait_state {
 /// Usage:
 ///   co_await operation_awaiter<timer_wait_operation, steady_timer*>{this};
 ///   co_await operation_awaiter<fd_wait_operation<Kind>, socket_impl_base*>{this};
-template <typename Operation, typename... Args>
+template <typename Operation>
 struct operation_awaiter {
+  std::unique_ptr<Operation> op;
   std::shared_ptr<operation_wait_state> st{std::make_shared<operation_wait_state>()};
-  std::tuple<Args...> args;
 
-  explicit operation_awaiter(Args... args_) noexcept
-      : args(std::forward<Args>(args_)...) {}
+  template <typename... Args>
+  explicit operation_awaiter(Args... args) {
+    op = std::make_unique<Operation>(st, std::forward<Args>(args)...);
+  }
 
   bool await_ready() const noexcept { return false; }
 
@@ -47,12 +49,6 @@ struct operation_awaiter {
     st->h = h;
     st->ex = get_current_executor();
 
-    // Construct operation with captured args + shared state
-    auto op = std::apply(
-        [this](auto&&... operation_args) {
-          return std::make_unique<Operation>(st, std::forward<decltype(operation_args)>(operation_args)...);
-        },
-        args);
     op->start(std::move(op));
     return true;
   }

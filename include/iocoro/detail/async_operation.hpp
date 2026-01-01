@@ -20,8 +20,8 @@ class async_operation : public operation_base {
   void on_abort(std::error_code ec) noexcept final { complete(ec); }
 
  protected:
-  async_operation(std::shared_ptr<operation_wait_state> st, io_context_impl* impl) noexcept
-      : operation_base(impl), st_(std::move(st)) {}
+  async_operation(std::shared_ptr<operation_wait_state> st) noexcept
+      : st_(std::move(st)) {}
 
   void complete(std::error_code ec) noexcept {
     // Guard against double completion (on_ready + on_abort, or repeated signals).
