@@ -55,6 +55,22 @@ class io_context_impl {
     }
   };
 
+  struct timer_event_handle {
+    io_context_impl* impl = nullptr;
+    std::shared_ptr<timer_entry> entry;
+
+    auto valid() const noexcept -> bool { return impl != nullptr && entry != nullptr; }
+    explicit operator bool() const noexcept { return valid(); }
+
+    /// Cancel the timer (lazy cancellation).
+    /// The timer entry is marked as cancelled; actual cleanup happens in process_timers.
+    ///
+    /// Thread-safe: can be called from any thread.
+    void cancel() const noexcept;
+
+    static auto invalid_handle() { return timer_event_handle{}; }
+  };
+
   io_context_impl();
   ~io_context_impl();
 
@@ -74,8 +90,8 @@ class io_context_impl {
   void post(unique_function<void()> f);
   void dispatch(unique_function<void()> f);
 
-  auto schedule_timer(std::chrono::milliseconds timeout, unique_function<void()> callback)
-    -> std::shared_ptr<timer_entry>;
+  auto schedule_timer(std::chrono::milliseconds timeout, std::unique_ptr<operation_base> op)
+    -> timer_event_handle;
 
   auto register_fd_read(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
   auto register_fd_write(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;

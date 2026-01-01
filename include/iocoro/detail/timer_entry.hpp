@@ -1,19 +1,13 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
-#include <iocoro/detail/unique_function.hpp>
-#include <iocoro/io_executor.hpp>
-
 #include <atomic>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
-#include <utility>
-#include <vector>
 
 namespace iocoro::detail {
+
+struct operation_base;
 
 enum class timer_state : std::uint8_t {
   pending,
@@ -21,28 +15,13 @@ enum class timer_state : std::uint8_t {
   cancelled,
 };
 
-/// Internal timer data structure.
-/// Shared between timer_handle and io_context_impl via shared_ptr.
 struct timer_entry {
-  // NOTE: fields in this struct follow a write-once then read-many pattern.
-  // The owning io_context_impl initializes id/expiry/callback/ex before publishing
-  // the shared_ptr to other threads. After publication, these fields are treated
-  // as immutable (except for state + waiter bookkeeping).
-
   std::uint64_t id{};
   std::chrono::steady_clock::time_point expiry;
-  unique_function<void()> callback;
+  std::unique_ptr<operation_base> op;
 
   std::atomic<timer_state> state{timer_state::pending};
 
-  // Waiters are completion hooks (e.g. async_wait(use_awaitable)).
-  // They should never resume inline; they are expected to post/dispatch as needed.
-  bool completion_notified = false;
-
-  std::mutex waiters_mutex{};
-  std::vector<unique_function<void()>> waiters{};
-
-  // Constructors
   timer_entry() = default;
 
   timer_entry(const timer_entry&) = delete;
@@ -54,65 +33,24 @@ struct timer_entry {
     return state.load(std::memory_order_acquire) == timer_state::pending;
   }
 
-  auto is_fired() const noexcept -> bool {
-    return state.load(std::memory_order_acquire) == timer_state::fired;
-  }
-
   auto is_cancelled() const noexcept -> bool {
     return state.load(std::memory_order_acquire) == timer_state::cancelled;
   }
 
   auto mark_fired() noexcept -> bool {
     auto expected = timer_state::pending;
-    return state.compare_exchange_strong(expected, timer_state::fired, std::memory_order_acq_rel,
-                                         std::memory_order_acquire);
+    return state.compare_exchange_strong(
+      expected, timer_state::fired,
+      std::memory_order_acq_rel, std::memory_order_acquire
+    );
   }
 
   auto cancel() noexcept -> bool {
     auto expected = timer_state::pending;
-    return state.compare_exchange_strong(expected, timer_state::cancelled,
-                                         std::memory_order_acq_rel, std::memory_order_acquire);
-  }
-
-  void add_waiter(unique_function<void()> w) {
-    if (!w) {
-      return;
-    }
-
-    bool run_now = false;
-    {
-      std::scoped_lock lk{waiters_mutex};
-      if (completion_notified) {
-        run_now = true;
-      } else {
-        waiters.push_back(std::move(w));
-      }
-    }
-
-    if (run_now) {
-      w();
-    }
-  }
-
-  auto notify_completion() -> std::size_t {
-    std::vector<unique_function<void()>> local;
-    {
-      std::scoped_lock lk{waiters_mutex};
-      if (completion_notified) {
-        return 0;
-      }
-      completion_notified = true;
-      local.swap(waiters);
-    }
-
-    if (local.empty()) {
-      return 0;
-    }
-
-    for (auto& w : local) {
-      w();
-    }
-    return local.size();
+    return state.compare_exchange_strong(
+      expected, timer_state::cancelled,
+      std::memory_order_acq_rel, std::memory_order_acquire
+    );
   }
 };
 

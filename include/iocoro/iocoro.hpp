@@ -24,7 +24,6 @@
 
 // Timers & composition
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/timer_handle.hpp>
 
 #include <iocoro/when_all.hpp>
 #include <iocoro/when_any.hpp>

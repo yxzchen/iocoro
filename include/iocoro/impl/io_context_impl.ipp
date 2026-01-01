@@ -129,9 +129,10 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
   }
 }
 
-inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
-                                            unique_function<void()> callback)
-  -> std::shared_ptr<timer_entry> {
+inline auto io_context_impl::schedule_timer(
+  std::chrono::milliseconds timeout,
+  std::unique_ptr<operation_base> op
+) -> timer_event_handle {
   IOCORO_ASSERT(timeout.count() >= 0, "io_context_impl: negative schedule_timer timeout");
   if (timeout.count() < 0) {
     timeout = std::chrono::milliseconds{0};
@@ -139,7 +140,7 @@ inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
 
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = std::chrono::steady_clock::now() + timeout;
-  entry->callback = std::move(callback);
+  entry->op = std::move(op);
   entry->state.store(timer_state::pending, std::memory_order_release);
 
   {
@@ -149,7 +150,7 @@ inline auto io_context_impl::schedule_timer(std::chrono::milliseconds timeout,
   }
 
   wakeup();
-  return entry;
+  return timer_event_handle{this, entry};
 }
 
 inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op)
@@ -278,33 +279,36 @@ inline auto io_context_impl::process_timers() -> std::size_t {
 
     auto entry = timers_.top();
 
+    // Lazy cancellation: skip cancelled timers and call on_abort
     if (entry->is_cancelled()) {
       timers_.pop();
+      auto op = std::move(entry->op);
+      lk.unlock();
+      if (op) {
+        op->on_abort(error::operation_aborted);
+      }
+      lk.lock();
       continue;
     }
 
+    // Check if expired
     if (entry->expiry > now) {
       break;
     }
 
-    // Remove it from the heap before executing.
+    // Remove from heap before executing
     timers_.pop();
 
-    // Attempt to claim it as fired (may lose to cancellation).
+    // Attempt to mark as fired (may lose to concurrent cancellation)
     if (!entry->mark_fired()) {
       continue;
     }
 
+    // Successfully fired, call on_ready
+    auto op = std::move(entry->op);
     lk.unlock();
-
-    auto cb = std::move(entry->callback);
-    if (cb) {
-      cb();
-    }
-    try {
-      entry->notify_completion();
-    } catch (...) {
-      // Best-effort: avoid exceptions escaping the event loop.
+    if (op) {
+      op->on_ready();
     }
 
     ++count;
@@ -381,9 +385,6 @@ inline auto io_context_impl::has_work() -> bool {
 
   {
     std::scoped_lock lk{timer_mutex_};
-    while (!timers_.empty() && timers_.top()->is_cancelled()) {
-      timers_.pop();
-    }
     if (!timers_.empty()) {
       return true;
     }
@@ -490,6 +491,18 @@ inline void io_context_impl::fd_event_handle::cancel() const noexcept {
     p->post([p, local_fd, local_kind, local_token] {
       p->cancel_fd_event(local_fd, local_kind, local_token);
     });
+  }
+}
+
+inline void io_context_impl::timer_event_handle::cancel() const noexcept {
+  if (!valid()) {
+    return;
+  }
+
+  // Mark the timer as cancelled (lazy cancellation)
+  if (entry->cancel()) {
+    // Successfully cancelled, wake up the event loop so process_timers can clean it up
+    impl->wakeup();
   }
 }
 

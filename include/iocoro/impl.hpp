@@ -9,7 +9,6 @@
 #include <iocoro/impl/thread_pool.ipp>
 
 #include <iocoro/impl/steady_timer.ipp>
-#include <iocoro/impl/timer_handle.ipp>
 
 #include <iocoro/impl/socket/socket_impl_base.ipp>
 #include <iocoro/impl/socket/stream_socket_impl.ipp>

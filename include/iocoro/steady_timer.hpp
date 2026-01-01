@@ -3,26 +3,20 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/io_executor.hpp>
-#include <iocoro/timer_handle.hpp>
+#include <iocoro/detail/io_context_impl.hpp>
 
 #include <chrono>
 #include <cstddef>
-#include <functional>
 #include <system_error>
 
 namespace iocoro {
 
-/// A reusable timer resource bound to an io_executor.
+/// A single-use timer for awaiting a time point.
 ///
 /// Model:
-/// - Owns a "timer resource".
-/// - You can set expiry (expires_at/after), then wait (async_wait).
-/// - cancel() cancels the underlying timer and completes pending waits.
-///
-/// Notes:
-/// - Normal case: completion handlers / coroutine resumption are scheduled via the bound io_executor
-///   (never inline).
-/// - Exception: if the bound io_executor is stopped, operations may complete inline to avoid hanging.
+/// - Each async_wait() creates a new timer operation.
+/// - cancel() cancels the current pending timer.
+/// - Setting a new expiry (expires_at/after) cancels the previous timer.
 class steady_timer {
  public:
   using clock = std::chrono::steady_clock;
@@ -41,47 +35,34 @@ class steady_timer {
   ~steady_timer();
 
   auto expiry() const noexcept -> time_point { return expiry_; }
+
   /// Set the timer expiry time.
-  ///
-  /// Returns the number of pending waits that were cancelled (best-effort).
+  /// Returns the number of pending waits that were cancelled (0 or 1).
   auto expires_at(time_point at) noexcept -> std::size_t;
 
   /// Set the timer expiry time relative to now.
-  ///
-  /// Returns the number of pending waits that were cancelled (best-effort).
+  /// Returns the number of pending waits that were cancelled (0 or 1).
   auto expires_after(duration d) noexcept -> std::size_t;
-
-  /// Wait until expiry (or cancellation) and invoke handler.
-  ///
-  /// Handler signature: void(std::error_code)
-  ///
-  /// Completion semantics:
-  /// - Normal case: handler is invoked via the timer's owning io_executor (never inline).
-  /// - Exception: if the owning io_executor is stopped (or handle is empty), completion may be inline.
-  /// - `ec == operation_aborted` iff the timer was cancelled.
-  void async_wait(std::function<void(std::error_code)> h);
 
   /// Wait until expiry (or cancellation) as an awaitable.
   ///
   /// Returns:
-  /// - `ec == operation_aborted` iff the timer was cancelled.
-  ///
-  /// Completion semantics:
-  /// - Normal case: coroutine resumption occurs via the timer's owning io_executor (never inline).
-  /// - Exception: if the owning io_executor is stopped (or handle is empty), it completes inline.
+  /// - `std::error_code{}` on successful timer expiry.
+  /// - `error::operation_aborted` if the timer was cancelled.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code>;
 
-  /// Cancel pending waits on the timer (best-effort).
-  ///
-  /// Returns the number of pending waits that were cancelled (best-effort).
+  /// Cancel the pending timer operation.
+  /// Returns the number of operations cancelled (0 or 1).
   auto cancel() noexcept -> std::size_t;
 
- private:
-  void reschedule();
+  void set_write_handle(detail::io_context_impl::timer_event_handle h) noexcept {
+    handle_ = h;
+  }
 
-  io_executor ex_{};
+ private:
+  detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
-  timer_handle th_{};
+  detail::io_context_impl::timer_event_handle handle_{};
 };
 
 }  // namespace iocoro

@@ -1,7 +1,6 @@
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/timer_handle.hpp>
 
 #include <utility>
 

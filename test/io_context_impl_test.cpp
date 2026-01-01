@@ -1,15 +1,41 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/detail/io_context_impl.hpp>
+#include <iocoro/detail/operation_base.hpp>
 #include <iocoro/impl.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <thread>
 
 namespace {
 
 using namespace std::chrono_literals;
+
+// Test helper: operation_base wrapper for callbacks
+class test_timer_operation final : public iocoro::detail::operation_base {
+ public:
+  test_timer_operation(iocoro::detail::io_context_impl* impl, std::function<void()> on_ready_cb)
+      : operation_base(impl), on_ready_cb_(std::move(on_ready_cb)) {}
+
+  void on_ready() noexcept override {
+    if (on_ready_cb_) {
+      on_ready_cb_();
+    }
+  }
+
+  void on_abort(std::error_code /*ec*/) noexcept override {
+    // For tests, we don't need to do anything on abort
+  }
+
+ private:
+  void do_start(std::unique_ptr<operation_base> /*self*/) override {
+    // Timer operations don't need explicit start logic
+  }
+
+  std::function<void()> on_ready_cb_;
+};
 
 // Test basic construction and destruction
 TEST(io_context_impl_basic, construct_and_destruct) {
@@ -134,11 +160,12 @@ TEST(io_context_impl_timer, schedule_timer_executes_callback) {
   iocoro::detail::io_context_impl impl;
   std::atomic<bool> fired{false};
 
-  auto entry =
-    impl.schedule_timer(10ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
+  auto op = std::make_unique<test_timer_operation>(
+    &impl, [&fired] { fired.store(true, std::memory_order_relaxed); });
+  auto handle = impl.schedule_timer(10ms, std::move(op));
 
-  ASSERT_NE(entry, nullptr);
-  EXPECT_TRUE(entry->is_pending());
+  ASSERT_TRUE(handle.valid());
+  EXPECT_TRUE(handle.entry->is_pending());
 
   auto const n = impl.run_for(200ms);
   EXPECT_GE(n, 1U);
@@ -150,12 +177,13 @@ TEST(io_context_impl_timer, cancel_timer_prevents_execution) {
   iocoro::detail::io_context_impl impl;
   std::atomic<bool> fired{false};
 
-  auto entry =
-    impl.schedule_timer(100ms, [&fired] { fired.store(true, std::memory_order_relaxed); });
+  auto op = std::make_unique<test_timer_operation>(
+    &impl, [&fired] { fired.store(true, std::memory_order_relaxed); });
+  auto handle = impl.schedule_timer(100ms, std::move(op));
 
-  ASSERT_NE(entry, nullptr);
-  EXPECT_TRUE(entry->cancel());
-  EXPECT_TRUE(entry->is_cancelled());
+  ASSERT_TRUE(handle.valid());
+  EXPECT_TRUE(handle.entry->cancel());
+  EXPECT_TRUE(handle.entry->is_cancelled());
 
   (void)impl.run_for(200ms);
   EXPECT_FALSE(fired.load(std::memory_order_relaxed));
@@ -167,18 +195,23 @@ TEST(io_context_impl_timer, multiple_timers_fire_in_order) {
   std::atomic<int> counter{0};
   std::vector<int> order;
 
-  auto e1 = impl.schedule_timer(30ms, [&] {
+  auto op1 = std::make_unique<test_timer_operation>(&impl, [&] {
     order.push_back(1);
     counter++;
   });
-  auto e2 = impl.schedule_timer(10ms, [&] {
+  auto e1 = impl.schedule_timer(30ms, std::move(op1));
+
+  auto op2 = std::make_unique<test_timer_operation>(&impl, [&] {
     order.push_back(2);
     counter++;
   });
-  auto e3 = impl.schedule_timer(20ms, [&] {
+  auto e2 = impl.schedule_timer(10ms, std::move(op2));
+
+  auto op3 = std::make_unique<test_timer_operation>(&impl, [&] {
     order.push_back(3);
     counter++;
   });
+  auto e3 = impl.schedule_timer(20ms, std::move(op3));
 
   impl.run_for(200ms);
 
