@@ -53,4 +53,18 @@ class operation_base {
   virtual void do_start(std::unique_ptr<operation_base> self) = 0;
 };
 
+/// Completion guard for one-shot operations.
+/// Ensures that an operation's completion callback is invoked at most once,
+/// even in the presence of concurrent cancellation or multiple completion attempts.
+struct one_shot_completion {
+  std::atomic<bool> done{false};
+
+  /// Attempt to mark this operation as completed.
+  /// Returns true if this is the first completion attempt (caller should proceed).
+  /// Returns false if already completed (caller should return immediately).
+  auto try_complete() noexcept -> bool {
+    return !done.exchange(true, std::memory_order_acq_rel);
+  }
+};
+
 }  // namespace iocoro::detail

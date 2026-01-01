@@ -186,11 +186,12 @@ class socket_impl_base {
     std::coroutine_handle<> h{};
     any_executor ex{};
     std::error_code ec{};
-    std::atomic<bool> done{false};
   };
 
   template <fd_wait_kind Kind>
-  class fd_wait_operation final : public operation_base {
+  class fd_wait_operation final
+      : public operation_base
+      , private one_shot_completion {
    public:
     fd_wait_operation(int fd, socket_impl_base* base, std::shared_ptr<wait_state> st) noexcept
         : operation_base(base->ctx_impl_), fd_(fd), base_(base), st_(std::move(st)) {}
@@ -215,7 +216,7 @@ class socket_impl_base {
 
     void complete(std::error_code ec) noexcept {
       // Guard against double completion (on_ready + on_abort, or repeated signals).
-      if (st_->done.exchange(true, std::memory_order_acq_rel)) {
+      if (!try_complete()) {
         return;
       }
       st_->ec = ec;

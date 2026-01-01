@@ -65,7 +65,9 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
   };
 
   // Timer operation
-  class timer_wait_operation final : public detail::operation_base {
+  class timer_wait_operation final
+      : public detail::operation_base
+      , private detail::one_shot_completion {
    public:
     timer_wait_operation(steady_timer* timer, milliseconds timeout, std::shared_ptr<wait_state> st)
         : operation_base(timer->ctx_impl_), timer_(timer), timeout_(timeout), st_(std::move(st)) {}
@@ -85,6 +87,10 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
     }
 
     void complete(std::error_code ec) {
+      // Guard against double completion (on_ready + on_abort, or repeated signals).
+      if (!try_complete()) {
+        return;
+      }
       st_->ec = ec;
 
       // Resume on the caller's original executor (if set).
