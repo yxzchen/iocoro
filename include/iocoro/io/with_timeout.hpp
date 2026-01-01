@@ -14,6 +14,7 @@
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
 #include <iocoro/traits/awaitable_value.hpp>
+#include <iocoro/traits/timeout_result.hpp>
 #include <iocoro/when_any.hpp>
 
 #include <atomic>
@@ -25,45 +26,6 @@
 #include <utility>
 
 namespace iocoro::io {
-
-namespace detail {
-
-template <class Result>
-struct timeout_result_traits;
-
-template <class T>
-struct timeout_result_traits<iocoro::expected<T, std::error_code>> {
-  using result_type = iocoro::expected<T, std::error_code>;
-
-  static auto is_operation_aborted(result_type const& r) -> bool {
-    if (!r && r.error() == error::operation_aborted) {
-      return true;
-    }
-    return false;
-  }
-
-  static auto from_error(std::error_code ec) -> result_type { return unexpected(ec); }
-
-  static auto timed_out() -> result_type { return unexpected(error::timed_out); }
-};
-
-template <>
-struct timeout_result_traits<std::error_code> {
-  using result_type = std::error_code;
-
-  static auto is_operation_aborted(result_type const& r) -> bool {
-    if (r == error::operation_aborted) {
-      return true;
-    }
-    return false;
-  }
-
-  static auto from_error(std::error_code ec) -> result_type { return ec; }
-
-  static auto timed_out() -> result_type { return error::timed_out; }
-};
-
-}  // namespace detail
 
 /// Await an I/O awaitable with a deadline.
 ///
@@ -79,15 +41,15 @@ template <class Awaitable, class OnTimeout>
 auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::duration timeout,
                   OnTimeout on_timeout) -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
   using result_t = iocoro::traits::awaitable_value_t<Awaitable>;
-  using traits = detail::timeout_result_traits<result_t>;
+  using result_traits = iocoro::traits::timeout_result_traits<result_t>;
 
   IOCORO_ENSURE(ex, "with_timeout: requires a non-empty io_executor");
 
   if (timeout <= std::chrono::steady_clock::duration::zero()) {
     on_timeout();
     auto r = co_await std::move(op);
-    if (traits::is_operation_aborted(r)) {
-      co_return traits::timed_out();
+    if (result_traits::is_operation_aborted(r)) {
+      co_return result_traits::timed_out();
     }
     co_return r;
   }
@@ -114,8 +76,8 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
   (void)timer->cancel();
   (void)co_await std::move(watcher);
 
-  if (fired.load(std::memory_order_acquire) && traits::is_operation_aborted(r)) {
-    co_return traits::timed_out();
+  if (fired.load(std::memory_order_acquire) && result_traits::is_operation_aborted(r)) {
+    co_return result_traits::timed_out();
   }
 
   co_return r;
@@ -204,12 +166,12 @@ auto with_timeout_detached(io_executor ex, Awaitable op,
                            std::chrono::steady_clock::duration timeout)
   -> awaitable<iocoro::traits::awaitable_value_t<Awaitable>> {
   using result_t = iocoro::traits::awaitable_value_t<Awaitable>;
-  using traits = detail::timeout_result_traits<result_t>;
+  using result_traits = iocoro::traits::timeout_result_traits<result_t>;
 
   IOCORO_ENSURE(ex, "with_timeout_detached: requires a non-empty io_executor");
 
   if (timeout <= std::chrono::steady_clock::duration::zero()) {
-    co_return traits::timed_out();
+    co_return result_traits::timed_out();
   }
 
   auto timer = std::make_shared<steady_timer>(ex);
@@ -230,12 +192,12 @@ auto with_timeout_detached(io_executor ex, Awaitable op,
 
   auto ec = std::get<1>(std::move(v));
   if (!ec) {
-    co_return traits::timed_out();
+    co_return result_traits::timed_out();
   }
 
   // Timer wait completed due to cancellation/executor shutdown.
   // Treat it as a timer error rather than a timeout.
-  co_return traits::from_error(ec);
+  co_return result_traits::from_error(ec);
 }
 
 template <class Awaitable>
