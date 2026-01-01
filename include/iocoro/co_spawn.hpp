@@ -78,16 +78,14 @@ auto co_spawn(any_executor ex, awaitable<T> a, Token&& token) {
 /// Generic forwarding overload for io_executor: converts to any_executor and forwards all
 /// arguments.
 template <typename... Args>
-auto co_spawn(io_executor ex, Args&&... args)
-  -> decltype(co_spawn(std::declval<any_executor>(), std::declval<Args>()...)) {
+auto co_spawn(io_executor ex, Args&&... args) {
   return co_spawn(any_executor{ex}, std::forward<Args>(args)...);
 }
 
 /// Generic forwarding overload for thread_pool_executor: picks an executor and forwards all
 /// arguments.
 template <typename... Args>
-auto co_spawn(thread_pool_executor pex, Args&&... args)
-  -> decltype(co_spawn(std::declval<io_executor>(), std::declval<Args>()...)) {
+auto co_spawn(thread_pool_executor pex, Args&&... args) {
   return co_spawn(pex.pick_executor(), std::forward<Args>(args)...);
 }
 
