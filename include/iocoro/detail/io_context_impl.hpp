@@ -90,8 +90,13 @@ class io_context_impl {
   void post(unique_function<void()> f);
   void dispatch(unique_function<void()> f);
 
-  auto schedule_timer(std::chrono::milliseconds timeout, std::unique_ptr<operation_base> op)
-    -> timer_event_handle;
+  template <class Rep, class Period>
+  auto schedule_timer(std::chrono::duration<Rep, Period> d,
+                      std::unique_ptr<operation_base> op) -> timer_event_handle {
+    return schedule_timer(std::chrono::steady_clock::now() + d, std::move(op));
+  }
+  auto schedule_timer(std::chrono::steady_clock::time_point expiry,
+                      std::unique_ptr<operation_base> op) -> timer_event_handle;
 
   auto register_fd_read(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
   auto register_fd_write(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;

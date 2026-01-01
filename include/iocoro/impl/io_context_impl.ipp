@@ -130,16 +130,11 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
 }
 
 inline auto io_context_impl::schedule_timer(
-  std::chrono::milliseconds timeout,
+  std::chrono::steady_clock::time_point expiry,
   std::unique_ptr<operation_base> op
 ) -> timer_event_handle {
-  IOCORO_ASSERT(timeout.count() >= 0, "io_context_impl: negative schedule_timer timeout");
-  if (timeout.count() < 0) {
-    timeout = std::chrono::milliseconds{0};
-  }
-
   auto entry = std::make_shared<detail::timer_entry>();
-  entry->expiry = std::chrono::steady_clock::now() + timeout;
+  entry->expiry = expiry;
   entry->op = std::move(op);
   entry->state.store(timer_state::pending, std::memory_order_release);
 

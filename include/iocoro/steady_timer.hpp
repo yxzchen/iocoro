@@ -55,6 +55,10 @@ class steady_timer {
   /// Returns the number of operations cancelled (0 or 1).
   auto cancel() noexcept -> std::size_t;
 
+  time_point expiry() {
+    return expiry_;
+  }
+
   void set_write_handle(detail::io_context_impl::timer_event_handle h) noexcept {
     handle_ = h;
   }

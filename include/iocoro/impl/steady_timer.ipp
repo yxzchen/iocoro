@@ -69,8 +69,8 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
       : public detail::operation_base
       , private detail::one_shot_completion {
    public:
-    timer_wait_operation(steady_timer* timer, milliseconds timeout, std::shared_ptr<wait_state> st)
-        : operation_base(timer->ctx_impl_), timer_(timer), timeout_(timeout), st_(std::move(st)) {}
+    timer_wait_operation(steady_timer* timer, std::shared_ptr<wait_state> st)
+        : operation_base(timer->ctx_impl_), timer_(timer), st_(std::move(st)) {}
 
     void on_ready() noexcept override {
       complete(std::error_code{});
@@ -82,7 +82,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
 
    private:
     void do_start(std::unique_ptr<operation_base> self) override {
-      auto handle = impl_->schedule_timer(timeout_, std::move(self));
+      auto handle = impl_->schedule_timer(timer_->expiry(), std::move(self));
       timer_->set_write_handle(handle);
     }
 
@@ -99,13 +99,11 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
     }
 
     steady_timer* timer_ = nullptr;
-    milliseconds timeout_;
     std::shared_ptr<wait_state> st_;
   };
 
   struct timer_awaiter final {
     steady_timer* self;
-    milliseconds timeout;
     std::shared_ptr<wait_state> st{};
 
     bool await_ready() const noexcept { return false; }
@@ -116,7 +114,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
       st->ex = detail::get_current_executor();
 
       // Create and register timer operation
-      auto op = std::make_unique<timer_wait_operation>(self, timeout, st);
+      auto op = std::make_unique<timer_wait_operation>(self, st);
       op->start(std::move(op));
     }
 
@@ -125,7 +123,7 @@ inline auto steady_timer::async_wait(use_awaitable_t) -> awaitable<std::error_co
     }
   };
 
-  co_return co_await timer_awaiter{this, ms};
+  co_return co_await timer_awaiter{this};
 }
 
 }  // namespace iocoro
