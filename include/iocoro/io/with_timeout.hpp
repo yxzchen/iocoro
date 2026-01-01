@@ -13,7 +13,7 @@
 #include <iocoro/io_executor.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
-#include <iocoro/traits/awaitable_traits.hpp>
+#include <iocoro/traits/awaitable_value.hpp>
 #include <iocoro/when_any.hpp>
 
 #include <atomic>

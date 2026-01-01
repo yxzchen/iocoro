@@ -5,7 +5,7 @@
 #include <iocoro/executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool_executor.hpp>
-#include <iocoro/traits/awaitable_traits.hpp>
+#include <iocoro/traits/awaitable_value.hpp>
 
 namespace iocoro {
 
