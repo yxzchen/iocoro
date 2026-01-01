@@ -51,6 +51,7 @@ struct awaitable_promise_base {
     return final_awaiter{this};
   }
 
+  auto get_executor() noexcept { return ex_; }
   void set_executor(any_executor ex) noexcept { ex_ = std::move(ex); }
 
   void detach() noexcept {

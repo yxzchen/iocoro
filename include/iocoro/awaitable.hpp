@@ -41,6 +41,13 @@ class awaitable {
   /// coroutine frame lifetime.
   auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
 
+  auto get_executor() const noexcept -> any_executor {
+    if (!coro_) {
+      return any_executor{};
+    }
+    return coro_.promise().get_executor();
+  }
+
   bool await_ready() const noexcept { return false; }
   auto await_suspend(std::coroutine_handle<> h) noexcept -> std::coroutine_handle<> {
     coro_.promise().set_continuation(h);
@@ -84,6 +91,13 @@ class awaitable<void> {
 
   /// Release ownership of the coroutine handle without destroying it.
   auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
+
+  auto get_executor() const noexcept -> any_executor {
+    if (!coro_) {
+      return any_executor{};
+    }
+    return coro_.promise().get_executor();
+  }
 
   bool await_ready() const noexcept { return false; }
   auto await_suspend(std::coroutine_handle<> h) noexcept -> std::coroutine_handle<> {

@@ -53,7 +53,7 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   auto entry = detail::spawn_entry_point<value_type>(std::move(state));
 
   co_spawn(ex, detail::execute_and_store_result<value_type>(ex, st, std::move(entry)), detached);
-  return detail::get_result_awaitable<value_type>(std::move(st));
+  return detail::await_result<value_type>(std::move(st));
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, invoking a

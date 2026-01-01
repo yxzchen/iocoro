@@ -236,7 +236,7 @@ auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_wait_state<
 /// Returns an awaitable that retrieves the result from a spawn_wait_state.
 /// Used internally by co_spawn(use_awaitable) to return an awaitable to the caller.
 template <typename T>
-auto get_result_awaitable(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
+auto await_result(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
   co_return co_await spawn_result_awaiter<T>{std::move(st)};
 }
 
