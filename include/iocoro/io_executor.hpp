@@ -14,7 +14,6 @@ namespace iocoro {
 class steady_timer;
 
 namespace detail {
-struct operation_base;
 namespace socket {
 class socket_impl_base;
 }  // namespace socket
@@ -74,7 +73,6 @@ class io_executor {
   friend class work_guard;
 
   friend class steady_timer;
-  friend struct detail::operation_base;
   friend class detail::socket::socket_impl_base;
 
   void add_work_guard() const noexcept {
