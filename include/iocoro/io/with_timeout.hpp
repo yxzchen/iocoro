@@ -55,12 +55,12 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
   }
 
   auto timer = std::make_shared<steady_timer>(ex);
-  (void)timer->expires_after(std::chrono::duration_cast<steady_timer::duration>(timeout));
+  (void)timer->expires_after(timeout);
 
   std::atomic<bool> fired{false};
 
   auto watcher = co_spawn(
-    ex,
+    co_await this_coro::executor,
     [timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
