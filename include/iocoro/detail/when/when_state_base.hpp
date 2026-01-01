@@ -57,12 +57,15 @@ struct when_awaiter {
   std::shared_ptr<State> st;
 
   bool await_ready() const noexcept {
-    std::scoped_lock lk{st->m};
-    return (st->remaining.load(std::memory_order_relaxed) == 0);
+    return false;
   }
 
   bool await_suspend(std::coroutine_handle<> h) {
     std::scoped_lock lk{st->m};
+    if (st->remaining.load(std::memory_order_relaxed) == 0) {
+      return false;
+    }
+    
     IOCORO_ENSURE(!st->waiter, "when_all/when_any: multiple awaiters are not supported");
     st->waiter = h;
     st->ex = get_current_executor();
