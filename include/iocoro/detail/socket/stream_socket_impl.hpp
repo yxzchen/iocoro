@@ -44,7 +44,9 @@ class stream_socket_impl {
 
   ~stream_socket_impl() = default;
 
-  auto get_io_context_impl() const noexcept -> io_context_impl* { return base_.get_io_context_impl(); }
+  auto get_io_context_impl() const noexcept -> io_context_impl* {
+    return base_.get_io_context_impl();
+  }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
 
   /// Open a new native socket (best-effort, non-blocking).
@@ -77,6 +79,9 @@ class stream_socket_impl {
   /// - The socket takes ownership of `fd` and is ready for I/O operations.
   /// - The fd is set to non-blocking mode (best-effort).
   auto assign(int fd) noexcept -> std::error_code {
+    IOCORO_ASSERT(state_ == conn_state::disconnected);
+    IOCORO_ASSERT(!read_in_flight_ && !write_in_flight_ && !connect_in_flight_);
+
     auto ec = base_.assign(fd);
     if (ec) {
       return ec;
