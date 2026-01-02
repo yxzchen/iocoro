@@ -74,3 +74,5 @@ class endpoint_storage {
 };
 
 }  // namespace iocoro::ip::detail
+
+#include <iocoro/impl/ip/endpoint_storage.ipp>

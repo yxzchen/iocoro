@@ -60,4 +60,6 @@ class thread_pool {
 
 }  // namespace iocoro
 
+#include <iocoro/impl/thread_pool.ipp>
+
 

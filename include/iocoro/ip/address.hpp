@@ -128,3 +128,5 @@ class address {
 };
 
 }  // namespace iocoro::ip
+
+#include <iocoro/impl/ip/address.ipp>

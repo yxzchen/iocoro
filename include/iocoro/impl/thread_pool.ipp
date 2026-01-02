@@ -1,5 +1,4 @@
 #include <iocoro/thread_pool.hpp>
-#include <iocoro/thread_pool_executor.hpp>
 
 namespace iocoro {
 
@@ -54,10 +53,4 @@ inline auto thread_pool::pick_executor() noexcept -> io_executor {
   return contexts_[i % contexts_.size()]->get_executor();
 }
 
-inline auto thread_pool::get_executor() noexcept -> thread_pool_executor {
-  return thread_pool_executor{*this};
-}
-
 }  // namespace iocoro
-
-
