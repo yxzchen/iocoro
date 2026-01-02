@@ -1,11 +1,18 @@
 #include <iocoro/thread_pool.hpp>
 
+#include <exception>
+
 namespace iocoro {
 
 inline auto thread_pool::get_executor() noexcept -> executor_type { return executor_type{state_}; }
 
 inline auto thread_pool::size() const noexcept -> std::size_t {
   return state_ ? state_->n_threads : 0;
+}
+
+inline void thread_pool::set_exception_handler(exception_handler_t handler) noexcept {
+  std::scoped_lock lock{state_->mutex};
+  state_->on_task_exception = std::move(handler);
 }
 
 inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
@@ -47,7 +54,25 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
 
     // Execute task outside the lock
     if (task) {
-      task();
+      try {
+        task();
+      } catch (...) {
+        // Get exception handler under lock
+        exception_handler_t handler;
+        {
+          std::scoped_lock lock{s->mutex};
+          handler = s->on_task_exception;
+        }
+
+        // Call handler if set, otherwise swallow exception
+        if (handler) {
+          try {
+            handler(std::current_exception());
+          } catch (...) {
+            // Swallow exceptions from handler to prevent thread termination
+          }
+        }
+      }
     }
   }
 }

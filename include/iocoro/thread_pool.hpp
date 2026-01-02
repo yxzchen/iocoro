@@ -10,6 +10,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
+#include <exception>
+#include <functional>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -35,6 +37,9 @@ class thread_pool {
   class basic_executor_type;
   typedef basic_executor_type executor_type;
 
+  /// Type for exception handler callback
+  using exception_handler_t = std::function<void(std::exception_ptr)>;
+
   explicit thread_pool(std::size_t n_threads);
 
   thread_pool(thread_pool const&) = delete;
@@ -54,6 +59,11 @@ class thread_pool {
 
   auto size() const noexcept -> std::size_t;
 
+  /// Set exception handler for tasks that throw exceptions.
+  /// If not set, exceptions are silently swallowed.
+  /// The handler is called on the worker thread where the exception occurred.
+  void set_exception_handler(exception_handler_t handler) noexcept;
+
  private:
   // Shared state that outlives the pool object
   struct state {
@@ -65,6 +75,9 @@ class thread_pool {
     std::atomic<std::size_t> work_guard_count{0};
 
     std::size_t n_threads;
+
+    // Exception handler (protected by mutex since it can be set at runtime)
+    exception_handler_t on_task_exception;
   };
 
   std::shared_ptr<state> state_;
