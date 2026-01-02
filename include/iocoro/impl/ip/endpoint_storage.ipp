@@ -1,4 +1,4 @@
-#include <iocoro/ip/detail/endpoint_storage.hpp>
+#include <iocoro/detail/ip/endpoint_storage.hpp>
 
 #include <iocoro/assert.hpp>
 
@@ -14,8 +14,12 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-namespace iocoro::ip {
-namespace detail {
+namespace iocoro::detail {
+namespace ip {
+
+using ::iocoro::ip::address;
+using ::iocoro::ip::address_v4;
+using ::iocoro::ip::address_v6;
 
 namespace {
 
@@ -245,5 +249,5 @@ inline void endpoint_storage::init_v6(address_v6 addr, std::uint16_t port) noexc
   size_ = sizeof(sockaddr_in6);
 }
 
-}  // namespace detail
-}  // namespace iocoro::ip
+}  // namespace ip
+}  // namespace iocoro::detail

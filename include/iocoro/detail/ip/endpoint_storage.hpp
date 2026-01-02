@@ -11,7 +11,7 @@
 
 #include <sys/socket.h>
 
-namespace iocoro::ip::detail {
+namespace iocoro::detail::ip {
 
 /// Protocol-agnostic storage for an IP endpoint (sockaddr_storage + helpers).
 ///
@@ -26,11 +26,11 @@ class endpoint_storage {
  public:
   endpoint_storage() noexcept;
 
-  endpoint_storage(address_v4 addr, std::uint16_t port) noexcept;
-  endpoint_storage(address_v6 addr, std::uint16_t port) noexcept;
-  endpoint_storage(ip::address addr, std::uint16_t port) noexcept;
+  endpoint_storage(::iocoro::ip::address_v4 addr, std::uint16_t port) noexcept;
+  endpoint_storage(::iocoro::ip::address_v6 addr, std::uint16_t port) noexcept;
+  endpoint_storage(::iocoro::ip::address addr, std::uint16_t port) noexcept;
 
-  auto address() const noexcept -> ip::address;
+  auto address() const noexcept -> ::iocoro::ip::address;
   auto port() const noexcept -> std::uint16_t;
 
   auto data() const noexcept -> sockaddr const*;
@@ -66,13 +66,13 @@ class endpoint_storage {
     -> std::strong_ordering;
 
  private:
-  void init_v4(address_v4 addr, std::uint16_t port) noexcept;
-  void init_v6(address_v6 addr, std::uint16_t port) noexcept;
+  void init_v4(::iocoro::ip::address_v4 addr, std::uint16_t port) noexcept;
+  void init_v6(::iocoro::ip::address_v6 addr, std::uint16_t port) noexcept;
 
   sockaddr_storage storage_{};
   socklen_t size_{0};
 };
 
-}  // namespace iocoro::ip::detail
+}  // namespace iocoro::detail::ip
 
 #include <iocoro/impl/ip/endpoint_storage.ipp>

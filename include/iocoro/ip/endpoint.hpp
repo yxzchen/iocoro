@@ -8,7 +8,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/ip/address.hpp>
-#include <iocoro/ip/detail/endpoint_storage.hpp>
+#include <iocoro/detail/ip/endpoint_storage.hpp>
 
 #include <compare>
 #include <cstdint>
@@ -25,7 +25,7 @@ namespace iocoro::ip {
 /// - `iocoro::detail::socket_handle_base<Impl>` (elsewhere) is a protocol-agnostic handle wrapper
 ///   used by socket-like facades.
 /// - `iocoro::ip::endpoint<Protocol>` is the protocol-typed IP endpoint facade.
-/// - The underlying storage and parsing logic lives in `iocoro::ip::detail::endpoint_storage`,
+/// - The underlying storage and parsing logic lives in `iocoro::detail::ip::endpoint_storage`,
 ///   which MUST NOT depend on Protocol.
 template <class Protocol>
 class endpoint {
@@ -56,7 +56,7 @@ class endpoint {
   ///
   /// Returns invalid_argument on parse failure.
   static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
-    auto r = detail::endpoint_storage::from_string(s);
+    auto r = ::iocoro::detail::ip::endpoint_storage::from_string(s);
     if (!r) {
       return unexpected(r.error());
     }
@@ -70,7 +70,7 @@ class endpoint {
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint, std::error_code> {
-    auto r = detail::endpoint_storage::from_native(addr, len);
+    auto r = ::iocoro::detail::ip::endpoint_storage::from_native(addr, len);
     if (!r) {
       return unexpected(r.error());
     }
@@ -78,7 +78,7 @@ class endpoint {
   }
 
   /// Copy the native sockaddr representation into the user-provided buffer.
-  /// See `detail::endpoint_storage::to_native()` for contract.
+  /// See `iocoro::detail::ip::endpoint_storage::to_native()` for contract.
   auto to_native(sockaddr* addr, socklen_t len) const noexcept
     -> expected<socklen_t, std::error_code> {
     return storage_.to_native(addr, len);
@@ -92,9 +92,9 @@ class endpoint {
   }
 
  private:
-  explicit endpoint(detail::endpoint_storage st) noexcept : storage_(std::move(st)) {}
+  explicit endpoint(::iocoro::detail::ip::endpoint_storage st) noexcept : storage_(std::move(st)) {}
 
-  detail::endpoint_storage storage_{};
+  ::iocoro::detail::ip::endpoint_storage storage_{};
 };
 
 }  // namespace iocoro::ip
