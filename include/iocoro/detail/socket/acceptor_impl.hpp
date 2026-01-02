@@ -3,7 +3,7 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/any_executor.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 
@@ -99,3 +99,5 @@ class acceptor_impl {
 };
 
 }  // namespace iocoro::detail::socket
+
+#include <iocoro/impl/socket/acceptor_impl.ipp>

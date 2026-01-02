@@ -67,3 +67,5 @@ namespace iocoro::detail {
 // -------------------- UNREACHABLE --------------------
 
 #define IOCORO_UNREACHABLE() ::iocoro::detail::unreachable_fail(__FILE__, __LINE__, __func__)
+
+#include <iocoro/impl/assert.ipp>

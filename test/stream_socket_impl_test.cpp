@@ -3,7 +3,6 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
-#include <iocoro/impl.hpp>
 #include <iocoro/io/async_read_until.hpp>
 #include <iocoro/io/async_write.hpp>
 #include <iocoro/io_context.hpp>

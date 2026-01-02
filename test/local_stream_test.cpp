@@ -2,7 +2,6 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
-#include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/local/endpoint.hpp>
 #include <iocoro/local/stream.hpp>

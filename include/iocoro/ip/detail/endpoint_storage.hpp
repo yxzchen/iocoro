@@ -41,7 +41,7 @@ class endpoint_storage {
 
   auto to_string() const -> std::string;
 
-  static auto from_string(std::string_view s) -> expected<endpoint_storage, std::error_code>;
+  static auto from_string(std::string const& s) -> expected<endpoint_storage, std::error_code>;
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint_storage, std::error_code>;
 
@@ -74,3 +74,5 @@ class endpoint_storage {
 };
 
 }  // namespace iocoro::ip::detail
+
+#include <iocoro/ip/impl/endpoint_storage.ipp>

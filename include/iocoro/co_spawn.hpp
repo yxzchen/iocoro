@@ -2,9 +2,8 @@
 
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/spawn.hpp>
-#include <iocoro/executor.hpp>
+#include <iocoro/any_executor.hpp>
 #include <iocoro/io_executor.hpp>
-#include <iocoro/thread_pool_executor.hpp>
 #include <iocoro/traits/awaitable_result.hpp>
 
 namespace iocoro {
@@ -78,20 +77,6 @@ auto co_spawn(any_executor ex, awaitable<T> a, Token&& token) {
   return co_spawn(
     ex, [a = std::move(a)]() mutable -> awaitable<T> { return std::move(a); },
     std::forward<Token>(token));
-}
-
-/// Generic forwarding overload for io_executor: converts to any_executor and forwards all
-/// arguments.
-template <typename... Args>
-auto co_spawn(io_executor ex, Args&&... args) {
-  return co_spawn(any_executor{ex}, std::forward<Args>(args)...);
-}
-
-/// Generic forwarding overload for thread_pool_executor: picks an executor and forwards all
-/// arguments.
-template <typename... Args>
-auto co_spawn(thread_pool_executor pex, Args&&... args) {
-  return co_spawn(pex.pick_executor(), std::forward<Args>(args)...);
 }
 
 }  // namespace iocoro

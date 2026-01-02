@@ -4,7 +4,6 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/this_coro.hpp>
 #include <iocoro/when_any.hpp>

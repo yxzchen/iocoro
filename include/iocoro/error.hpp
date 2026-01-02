@@ -62,3 +62,5 @@ template <>
 struct is_error_code_enum<iocoro::error> : std::true_type {};
 
 }  // namespace std
+
+#include <iocoro/impl/error.ipp>

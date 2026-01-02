@@ -25,7 +25,7 @@ namespace iocoro::ip {
 /// - `iocoro::detail::socket_handle_base<Impl>` (elsewhere) is a protocol-agnostic handle wrapper
 ///   used by socket-like facades.
 /// - `iocoro::ip::endpoint<Protocol>` is the protocol-typed IP endpoint facade.
-/// - The underlying storage and parsing logic lives in `iocoro::ip::detail::endpoint_storage`,
+/// - The underlying storage and parsing logic lives in `iocoro::detail::ip::endpoint_storage`,
 ///   which MUST NOT depend on Protocol.
 template <class Protocol>
 class endpoint {
@@ -55,7 +55,7 @@ class endpoint {
   /// - "[::1]:80" (IPv6 must use brackets to avoid ambiguity)
   ///
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> expected<endpoint, std::error_code> {
+  static auto from_string(std::string const& s) -> expected<endpoint, std::error_code> {
     auto r = detail::endpoint_storage::from_string(s);
     if (!r) {
       return unexpected(r.error());
@@ -78,7 +78,7 @@ class endpoint {
   }
 
   /// Copy the native sockaddr representation into the user-provided buffer.
-  /// See `detail::endpoint_storage::to_native()` for contract.
+  /// See `iocoro::detail::ip::endpoint_storage::to_native()` for contract.
   auto to_native(sockaddr* addr, socklen_t len) const noexcept
     -> expected<socklen_t, std::error_code> {
     return storage_.to_native(addr, len);

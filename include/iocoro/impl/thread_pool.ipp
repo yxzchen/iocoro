@@ -1,30 +1,95 @@
 #include <iocoro/thread_pool.hpp>
 
-#include <iocoro/thread_pool_executor.hpp>
+#include <exception>
 
 namespace iocoro {
+
+inline auto thread_pool::get_executor() noexcept -> executor_type { return executor_type{state_}; }
+
+inline auto thread_pool::size() const noexcept -> std::size_t {
+  return state_ ? state_->n_threads : 0;
+}
+
+inline void thread_pool::set_exception_handler(exception_handler_t handler) noexcept {
+  std::scoped_lock lock{state_->mutex};
+  state_->on_task_exception = std::move(handler);
+}
+
+inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
+  while (true) {
+    detail::unique_function<void()> task;
+
+    {
+      std::unique_lock lock{s->mutex};
+
+      // Wait for:
+      // - task available, OR
+      // - stop requested AND no work guards remain (so we can exit)
+      s->cv.wait(lock, [&] {
+        if (!s->tasks.empty()) {
+          return true;
+        }
+
+        if (s->stopped.load(std::memory_order_acquire)) {
+          return s->work_guard_count.load(std::memory_order_acquire) == 0;
+        }
+
+        return false;
+      });
+
+      auto const stopped = s->stopped.load(std::memory_order_acquire);
+      auto const has_tasks = !s->tasks.empty();
+      auto const has_guards = s->work_guard_count.load(std::memory_order_acquire) > 0;
+
+      if (stopped && !has_tasks && !has_guards) {
+        return;
+      }
+
+      // Get task if available
+      if (has_tasks) {
+        task = std::move(s->tasks.front());
+        s->tasks.pop();
+      }
+    }
+
+    // Execute task outside the lock
+    if (task) {
+      try {
+        task();
+      } catch (...) {
+        // Get exception handler under lock
+        exception_handler_t handler;
+        {
+          std::scoped_lock lock{s->mutex};
+          handler = s->on_task_exception;
+        }
+
+        // Call handler if set, otherwise swallow exception
+        if (handler) {
+          try {
+            handler(std::current_exception());
+          } catch (...) {
+            // Swallow exceptions from handler to prevent thread termination
+          }
+        }
+      }
+    }
+  }
+}
 
 inline thread_pool::thread_pool(std::size_t n_threads) {
   IOCORO_ENSURE(n_threads > 0, "thread_pool: n_threads must be > 0");
 
-  contexts_.reserve(n_threads);
-  guards_.reserve(n_threads);
+  // Create shared state
+  state_ = std::make_shared<state>();
+  state_->n_threads = n_threads;
+
   threads_.reserve(n_threads);
 
+  // Start worker threads
   for (std::size_t i = 0; i < n_threads; ++i) {
-    contexts_.push_back(std::make_unique<io_context>());
-  }
-
-  // Keep each shard alive until the pool is stopped/joined.
-  for (auto& ctx : contexts_) {
-    guards_.push_back(make_work_guard(*ctx));
-  }
-
-  // Start one thread per shard. Each thread sets the shard's thread id internally.
-  for (std::size_t i = 0; i < contexts_.size(); ++i) {
-    threads_.emplace_back([this, i] {
-      (void)contexts_[i]->run();
-    });
+    auto s = state_;
+    threads_.emplace_back([s] { worker_loop(s); });
   }
 }
 
@@ -34,11 +99,12 @@ inline thread_pool::~thread_pool() {
 }
 
 inline void thread_pool::stop() noexcept {
-  for (auto& ctx : contexts_) {
-    if (ctx) {
-      ctx->stop();
-    }
+  {
+    std::scoped_lock lock{state_->mutex};
+    state_->stopped.store(true, std::memory_order_release);
   }
+
+  state_->cv.notify_all();
 }
 
 inline void thread_pool::join() noexcept {
@@ -49,16 +115,4 @@ inline void thread_pool::join() noexcept {
   }
 }
 
-inline auto thread_pool::pick_executor() noexcept -> io_executor {
-  IOCORO_ENSURE(!contexts_.empty(), "thread_pool: no shards");
-  auto const i = rr_.fetch_add(1, std::memory_order_relaxed);
-  return contexts_[i % contexts_.size()]->get_executor();
-}
-
-inline auto thread_pool::get_executor() noexcept -> thread_pool_executor {
-  return thread_pool_executor{*this};
-}
-
 }  // namespace iocoro
-
-

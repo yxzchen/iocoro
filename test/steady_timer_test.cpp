@@ -4,7 +4,6 @@
 #include <iocoro/completion_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/io_executor.hpp>
-#include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/steady_timer.hpp>
 

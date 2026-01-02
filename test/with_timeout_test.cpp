@@ -3,7 +3,6 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/impl.hpp>
 #include <iocoro/io/with_timeout.hpp>
 #include <iocoro/io_context.hpp>
 

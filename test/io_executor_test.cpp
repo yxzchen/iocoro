@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/io_executor.hpp>
-#include <iocoro/impl.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/work_guard.hpp>
 
