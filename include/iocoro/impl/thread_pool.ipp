@@ -10,30 +10,40 @@ inline auto thread_pool::size() const noexcept -> std::size_t {
   return state_ ? state_->n_threads : 0;
 }
 
-inline void thread_pool::worker_loop() {
-  // Set up executor context for coroutines
-  detail::executor_guard ex_guard{any_executor{get_executor()}};
-
+inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
   while (true) {
     detail::unique_function<void()> task;
 
     {
-      std::unique_lock lock{state_->mutex};
+      std::unique_lock lock{s->mutex};
 
-      // Wait for: task available OR stopped
-      state_->cv.wait(lock, [this] {
-        return !state_->tasks.empty() || state_->stopped.load(std::memory_order_acquire);
+      // Wait for:
+      // - task available, OR
+      // - stop requested AND no work guards remain (so we can exit)
+      s->cv.wait(lock, [&] {
+        if (!s->tasks.empty()) {
+          return true;
+        }
+
+        if (s->stopped.load(std::memory_order_acquire)) {
+          return s->work_guard_count.load(std::memory_order_acquire) == 0;
+        }
+
+        return false;
       });
 
-      // Exit only if stopped AND queue is drained
-      if (state_->stopped.load(std::memory_order_acquire) && state_->tasks.empty()) {
+      auto const stopped = s->stopped.load(std::memory_order_acquire);
+      auto const has_tasks = !s->tasks.empty();
+      auto const has_guards = s->work_guard_count.load(std::memory_order_acquire) > 0;
+
+      if (stopped && !has_tasks && !has_guards) {
         return;
       }
 
       // Get task if available
-      if (!state_->tasks.empty()) {
-        task = std::move(state_->tasks.front());
-        state_->tasks.pop();
+      if (has_tasks) {
+        task = std::move(s->tasks.front());
+        s->tasks.pop();
       }
     }
 
@@ -55,8 +65,9 @@ inline thread_pool::thread_pool(std::size_t n_threads) {
 
   // Start worker threads
   for (std::size_t i = 0; i < n_threads; ++i) {
-    threads_.emplace_back([this] {
-      worker_loop();
+    auto s = state_;
+    threads_.emplace_back([s] {
+      worker_loop(s);
     });
   }
 }

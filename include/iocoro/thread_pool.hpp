@@ -3,6 +3,7 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/work_guard.hpp>
 
@@ -70,7 +71,7 @@ class thread_pool {
   std::vector<std::thread> threads_;
 
   // Helper methods
-  void worker_loop();
+  static void worker_loop(std::shared_ptr<state> s);
 };
 
 /// A lightweight executor that schedules work onto a thread_pool.
@@ -101,7 +102,10 @@ class thread_pool::basic_executor_type {
         return;
       }
 
-      state_->tasks.emplace(std::forward<F>(f));
+      state_->tasks.emplace([ex = *this, fn = std::forward<F>(f)]() mutable {
+        detail::executor_guard g{any_executor{ex}};
+        fn();
+      });
     }
 
     state_->cv.notify_one();
@@ -110,13 +114,20 @@ class thread_pool::basic_executor_type {
   template <class F>
     requires std::is_invocable_v<F&>
   void dispatch(F&& f) const noexcept {
-    // TODO: Check executor equivalence via detail::current_executor()
-    // For now, always post
-    post(std::forward<F>(f));
-  }
+    if (!state_) {
+      return;
+    }
 
-  auto pick_executor() const -> executor_type {
-    return *this;
+    auto const cur_any = detail::get_current_executor();
+    if (cur_any) {
+      auto const* cur = detail::any_executor_access::target<basic_executor_type>(cur_any);
+      if (cur != nullptr && cur->equals(*this)) {
+        f();
+        return;
+      }
+    }
+
+    post(std::forward<F>(f));
   }
 
   auto stopped() const noexcept -> bool {
