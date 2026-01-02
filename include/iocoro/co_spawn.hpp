@@ -79,11 +79,4 @@ auto co_spawn(any_executor ex, awaitable<T> a, Token&& token) {
     std::forward<Token>(token));
 }
 
-/// Generic forwarding overload for io_executor: converts to any_executor and forwards all
-/// arguments.
-template <typename... Args>
-auto co_spawn(io_executor ex, Args&&... args) {
-  return co_spawn(any_executor{ex}, std::forward<Args>(args)...);
-}
-
 }  // namespace iocoro
