@@ -1,12 +1,13 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detail/basic_io_handle.hpp>
+#include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/error.hpp>
 
-#include <iocoro/detail/net/basic_acceptor_impl.hpp>
+#include <iocoro/detail/socket/acceptor_impl.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
 
 #include <concepts>
@@ -14,14 +15,19 @@
 #include <functional>
 #include <system_error>
 
+// Native socket APIs for endpoint conversion.
+#include <sys/socket.h>
+#include <cerrno>
+
 namespace iocoro::net {
 
 /// Protocol-typed acceptor facade (network semantic layer).
 ///
 /// This is a networking facade layered on top of:
-/// - `iocoro::detail::basic_io_handle<Impl>`: a small, reusable PImpl wrapper that provides
+/// - `iocoro::detail::socket_handle_base<Impl>`: a small, reusable PImpl wrapper that provides
 ///   fd lifecycle and common cancellation/option APIs.
-/// - `iocoro::detail::net::basic_acceptor_impl<Protocol>`: protocol-injected implementation.
+/// - `iocoro::detail::socket::acceptor_impl`: protocol-agnostic acceptor implementation.
+/// - Protocol semantics (endpoint conversion, socket type/protocol) are handled here in the facade.
 ///
 /// Important:
 /// - This type is protocol-typed (via `Protocol` template parameter).
@@ -29,14 +35,14 @@ namespace iocoro::net {
 /// - `async_accept()` returns a connected `basic_stream_socket<Protocol>` and adopts the
 ///   accepted native fd internally.
 template <class Protocol>
-class basic_acceptor : public ::iocoro::detail::basic_io_handle<
-                         ::iocoro::detail::net::basic_acceptor_impl<Protocol>> {
+class basic_acceptor
+    : public ::iocoro::detail::socket_handle_base<::iocoro::detail::socket::acceptor_impl> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
   using socket = basic_stream_socket<Protocol>;
-  using impl_type = ::iocoro::detail::net::basic_acceptor_impl<Protocol>;
-  using base_type = ::iocoro::detail::basic_io_handle<impl_type>;
+  using impl_type = ::iocoro::detail::socket::acceptor_impl;
+  using base_type = ::iocoro::detail::socket_handle_base<impl_type>;
 
   basic_acceptor() = delete;
 
@@ -64,19 +70,29 @@ class basic_acceptor : public ::iocoro::detail::basic_io_handle<
     requires std::invocable<Configure, basic_acceptor&>
   auto listen(endpoint const& ep, int backlog, Configure&& configure) -> std::error_code {
     if (!this->is_open()) {
-      if (auto ec = this->impl_->open(ep.family())) {
+      if (auto ec = this->impl_->open(ep.family(), Protocol::type(), Protocol::protocol())) {
         return ec;
       }
     }
     std::invoke(std::forward<Configure>(configure), *this);
-    if (auto ec = this->impl_->bind(ep)) {
+    if (auto ec = this->impl_->bind(ep.data(), ep.size())) {
       return ec;
     }
     return this->impl_->listen(backlog);
   }
 
   auto local_endpoint() const -> expected<endpoint, std::error_code> {
-    return this->impl_->local_endpoint();
+    auto const fd = this->impl_->native_handle();
+    if (fd < 0) {
+      return unexpected(error::not_open);
+    }
+
+    sockaddr_storage ss{};
+    socklen_t len = sizeof(ss);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
+      return unexpected(std::error_code(errno, std::generic_category()));
+    }
+    return endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
 
   /// Accept and return the connected native fd (low-level building block).

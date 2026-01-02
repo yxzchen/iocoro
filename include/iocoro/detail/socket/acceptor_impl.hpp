@@ -1,0 +1,101 @@
+#pragma once
+
+#include <iocoro/assert.hpp>
+#include <iocoro/awaitable.hpp>
+#include <iocoro/error.hpp>
+#include <iocoro/executor.hpp>
+#include <iocoro/io_executor.hpp>
+#include <iocoro/expected.hpp>
+
+#include <iocoro/detail/socket/socket_impl_base.hpp>
+
+#include <cstdint>
+#include <mutex>
+#include <system_error>
+
+// Native socket APIs (generic / non-domain-specific).
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <cerrno>
+
+namespace iocoro::detail::socket {
+
+/// Protocol-agnostic acceptor implementation.
+///
+/// Boundary:
+/// - Does NOT know about endpoint types or Protocol tags.
+/// - Accepts native `(sockaddr*, socklen_t)` views.
+/// - Socket creation requires explicit (domain, type, protocol) parameters.
+///
+/// Concurrency:
+/// - Multiple concurrent async_accept() calls are serialized via a FIFO queue.
+/// - At most one accept operation is active at a time.
+class acceptor_impl {
+ public:
+  acceptor_impl() noexcept = delete;
+  explicit acceptor_impl(io_executor ex) noexcept : base_(ex) {}
+
+  acceptor_impl(acceptor_impl const&) = delete;
+  auto operator=(acceptor_impl const&) -> acceptor_impl& = delete;
+  acceptor_impl(acceptor_impl&&) = delete;
+  auto operator=(acceptor_impl&&) -> acceptor_impl& = delete;
+
+  ~acceptor_impl() = default;
+
+  auto get_io_context_impl() const noexcept -> io_context_impl* { return base_.get_io_context_impl(); }
+  auto native_handle() const noexcept -> int { return base_.native_handle(); }
+  auto is_open() const noexcept -> bool { return base_.is_open(); }
+
+  void cancel() noexcept { cancel_read(); }
+
+  void cancel_read() noexcept;
+
+  void cancel_write() noexcept { IOCORO_UNREACHABLE(); }
+
+  void close() noexcept;
+
+  template <class Option>
+  auto set_option(Option const& opt) -> std::error_code {
+    return base_.set_option(opt);
+  }
+
+  template <class Option>
+  auto get_option(Option& opt) -> std::error_code {
+    return base_.get_option(opt);
+  }
+
+  /// Open a new native socket.
+  auto open(int domain, int type, int protocol) -> std::error_code;
+
+  /// Bind to a native endpoint.
+  auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
+
+  /// Start listening for connections.
+  auto listen(int backlog) -> std::error_code;
+
+  /// Accept a new connection.
+  ///
+  /// Concurrency:
+  /// - Only one async_accept() call is allowed at a time.
+  /// - If an accept is already in progress, returns error::busy.
+  ///
+  /// Returns:
+  /// - a native connected fd on success (to be adopted by a stream socket)
+  /// - error_code on failure
+  auto async_accept() -> awaitable<expected<int, std::error_code>>;
+
+ private:
+  static auto set_nonblocking(int fd) noexcept -> bool;
+
+  static auto set_cloexec(int fd) noexcept -> bool;
+
+  socket_impl_base base_;
+
+  mutable std::mutex mtx_{};
+  bool listening_{false};
+  bool accept_active_{false};
+  std::uint64_t accept_epoch_{0};
+};
+
+}  // namespace iocoro::detail::socket

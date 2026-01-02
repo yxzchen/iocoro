@@ -1,42 +1,47 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detail/basic_io_handle.hpp>
+#include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/shutdown.hpp>
+#include <iocoro/error.hpp>
 
-#include <iocoro/detail/net/basic_stream_socket_impl.hpp>
+#include <iocoro/detail/socket/stream_socket_impl.hpp>
 
 #include <cstddef>
 #include <span>
 #include <system_error>
+
+// Native socket APIs for endpoint conversion.
+#include <sys/socket.h>
+#include <cerrno>
 
 namespace iocoro::net {
 
 /// Protocol-typed stream socket facade (network semantic layer).
 ///
 /// Layering / responsibilities (important):
-/// - `iocoro::detail::basic_io_handle<Impl>` is a small protocol-agnostic PImpl wrapper
+/// - `iocoro::detail::socket_handle_base<Impl>` is a small protocol-agnostic PImpl wrapper
 ///   (fd lifecycle, cancel/close, socket options, native_handle).
 /// - `iocoro::net::basic_stream_socket<Protocol>` is the protocol-typed *network facade*
 ///   providing connect/read/write/endpoint/shutdown semantics.
-/// - The protocol-injected implementation is
-/// `iocoro::detail::net::basic_stream_socket_impl<Protocol>`,
-///   built on top of `iocoro::detail::socket::stream_socket_impl` (protocol-agnostic stream IO).
+/// - The underlying implementation is `iocoro::detail::socket::stream_socket_impl`
+///   (protocol-agnostic stream IO).
+/// - Protocol semantics (endpoint conversion, socket type/protocol) are handled here in the facade.
 ///
 /// Construction:
 /// - No default constructor: a socket must be bound to an io_executor (or io_context) up-front.
 /// - Protocol is fixed by the template parameter; there is no "rebind protocol" behavior.
 template <class Protocol>
-class basic_stream_socket : public ::iocoro::detail::basic_io_handle<
-                              ::iocoro::detail::net::basic_stream_socket_impl<Protocol>> {
+class basic_stream_socket
+    : public ::iocoro::detail::socket_handle_base<::iocoro::detail::socket::stream_socket_impl> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
-  using impl_type = ::iocoro::detail::net::basic_stream_socket_impl<Protocol>;
-  using base_type = ::iocoro::detail::basic_io_handle<impl_type>;
+  using impl_type = ::iocoro::detail::socket::stream_socket_impl;
+  using base_type = ::iocoro::detail::socket_handle_base<impl_type>;
 
   basic_stream_socket() = delete;
 
@@ -50,7 +55,14 @@ class basic_stream_socket : public ::iocoro::detail::basic_io_handle<
   auto operator=(basic_stream_socket&&) -> basic_stream_socket& = default;
 
   auto async_connect(endpoint const& ep) -> awaitable<std::error_code> {
-    co_return co_await this->impl_->async_connect(ep);
+    // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
+    if (!this->impl_->is_open()) {
+      auto ec = this->impl_->open(ep.family(), Protocol::type(), Protocol::protocol());
+      if (ec) {
+        co_return ec;
+      }
+    }
+    co_return co_await this->impl_->async_connect(ep.data(), ep.size());
   }
 
   auto async_read_some(std::span<std::byte> buffer)
@@ -64,10 +76,37 @@ class basic_stream_socket : public ::iocoro::detail::basic_io_handle<
   }
 
   auto local_endpoint() const -> expected<endpoint, std::error_code> {
-    return this->impl_->local_endpoint();
+    auto const fd = this->impl_->native_handle();
+    if (fd < 0) {
+      return unexpected(error::not_open);
+    }
+
+    sockaddr_storage ss{};
+    socklen_t len = sizeof(ss);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
+      return unexpected(std::error_code(errno, std::generic_category()));
+    }
+    return endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
+
   auto remote_endpoint() const -> expected<endpoint, std::error_code> {
-    return this->impl_->remote_endpoint();
+    auto const fd = this->impl_->native_handle();
+    if (fd < 0) {
+      return unexpected(error::not_open);
+    }
+    if (!this->impl_->is_connected()) {
+      return unexpected(error::not_connected);
+    }
+
+    sockaddr_storage ss{};
+    socklen_t len = sizeof(ss);
+    if (::getpeername(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
+      if (errno == ENOTCONN) {
+        return unexpected(error::not_connected);
+      }
+      return unexpected(std::error_code(errno, std::generic_category()));
+    }
+    return endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
   }
 
   auto shutdown(shutdown_type what) -> std::error_code { return this->impl_->shutdown(what); }

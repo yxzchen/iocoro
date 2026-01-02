@@ -266,78 +266,69 @@ TEST(tcp_acceptor_test, close_aborts_waiting_accept) {
   EXPECT_EQ(got, iocoro::error::operation_aborted);
 }
 
-TEST(tcp_acceptor_test, multiple_async_accept_are_queued_and_all_succeed) {
+TEST(tcp_acceptor_test, concurrent_async_accept_returns_busy) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
-  auto ec = iocoro::sync_wait_for(ctx, 2s, [&]() -> iocoro::awaitable<std::error_code> {
+  auto ec = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
     iocoro::ip::tcp::acceptor a{ex};
     auto ep = iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0};
     if (auto e = a.listen(ep, 16)) {
       co_return e;
     }
 
-    auto le = a.local_endpoint();
-    if (!le) co_return le.error();
-    auto port = le->port();
-
-    std::optional<std::uint16_t> r1{};
-    std::optional<std::uint16_t> r2{};
+    std::atomic<bool> first_accept_started{false};
     std::error_code e1{};
     std::error_code e2{};
 
+    // First async_accept should block (no incoming connection).
     auto t1 = iocoro::co_spawn(
       ex,
       [&]() -> iocoro::awaitable<void> {
+        first_accept_started.store(true, std::memory_order_release);
         auto r = co_await a.async_accept();
         if (!r) {
           e1 = r.error();
-          co_return;
         }
-        auto re = r->remote_endpoint();
-        if (!re) {
-          e1 = re.error();
-          co_return;
-        }
-        r1 = re->port();
       },
       iocoro::use_awaitable);
 
+    // Wait for first accept to start.
+    for (int i = 0; i < 50 && !first_accept_started.load(std::memory_order_acquire); ++i) {
+      (void)co_await iocoro::co_sleep(1ms);
+    }
+    (void)co_await iocoro::co_sleep(5ms);
+
+    // Second async_accept should immediately return error::busy.
     auto t2 = iocoro::co_spawn(
       ex,
       [&]() -> iocoro::awaitable<void> {
         auto r = co_await a.async_accept();
         if (!r) {
           e2 = r.error();
-          co_return;
         }
-        auto re = r->remote_endpoint();
-        if (!re) {
-          e2 = re.error();
-          co_return;
-        }
-        r2 = re->port();
       },
       iocoro::use_awaitable);
 
-    // Connect two clients (sequentially).
-    unique_fd c1 = connect_to(port);
-    if (!c1) co_return std::error_code(errno, std::generic_category());
-    unique_fd c2 = connect_to(port);
-    if (!c2) co_return std::error_code(errno, std::generic_category());
-
+    // Let second accept complete (should be immediate with error::busy).
     try {
-      co_await std::move(t1);
       co_await std::move(t2);
     } catch (...) {
     }
 
-    if (e1) co_return e1;
-    if (e2) co_return e2;
-    if (!r1.has_value() || !r2.has_value())
+    // Cancel first accept.
+    a.cancel();
+
+    try {
+      co_await std::move(t1);
+    } catch (...) {
+    }
+
+    // Verify: first accept was cancelled, second got busy.
+    if (e1 != iocoro::error::operation_aborted)
       co_return iocoro::make_error_code(iocoro::error::invalid_argument);
-    if (*r1 == 0 || *r2 == 0) co_return iocoro::make_error_code(iocoro::error::invalid_argument);
-    if (*r1 == *r2) co_return iocoro::make_error_code(iocoro::error::invalid_argument);
+    if (e2 != iocoro::error::busy)
+      co_return iocoro::make_error_code(iocoro::error::invalid_argument);
 
     co_return std::error_code{};
   }());
