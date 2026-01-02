@@ -2,41 +2,38 @@
 
 namespace iocoro {
 
-// Thread-local storage for thread identification - per-pool instance
-thread_local thread_pool const* thread_pool::current_pool_ = nullptr;
-
 inline auto thread_pool::get_executor() noexcept -> executor_type {
-  return executor_type{*this};
+  return executor_type{state_};
 }
 
-inline auto thread_pool::running_in_pool_thread() const noexcept -> bool {
-  return current_pool_ == this;
+inline auto thread_pool::size() const noexcept -> std::size_t {
+  return state_ ? state_->n_threads : 0;
 }
 
 inline void thread_pool::worker_loop() {
-  // Set thread-local pool pointer for dispatch() checks
-  current_pool_ = this;
+  // Set up executor context for coroutines
+  detail::executor_guard ex_guard{any_executor{get_executor()}};
 
   while (true) {
     detail::unique_function<void()> task;
 
     {
-      std::unique_lock lock{queue_mutex_};
+      std::unique_lock lock{state_->mutex};
 
       // Wait for: task available OR stopped
-      queue_cv_.wait(lock, [this] {
-        return !tasks_.empty() || stopped_.load(std::memory_order_acquire);
+      state_->cv.wait(lock, [this] {
+        return !state_->tasks.empty() || state_->stopped.load(std::memory_order_acquire);
       });
 
-      // Exit if stopped AND queue is drained
-      if (stopped_.load(std::memory_order_acquire) && tasks_.empty()) {
+      // Exit only if stopped AND queue is drained
+      if (state_->stopped.load(std::memory_order_acquire) && state_->tasks.empty()) {
         return;
       }
 
       // Get task if available
-      if (!tasks_.empty()) {
-        task = std::move(tasks_.front());
-        tasks_.pop();
+      if (!state_->tasks.empty()) {
+        task = std::move(state_->tasks.front());
+        state_->tasks.pop();
       }
     }
 
@@ -47,8 +44,12 @@ inline void thread_pool::worker_loop() {
   }
 }
 
-inline thread_pool::thread_pool(std::size_t n_threads) : n_threads_(n_threads) {
+inline thread_pool::thread_pool(std::size_t n_threads) {
   IOCORO_ENSURE(n_threads > 0, "thread_pool: n_threads must be > 0");
+
+  // Create shared state
+  state_ = std::make_shared<state>();
+  state_->n_threads = n_threads;
 
   threads_.reserve(n_threads);
 
@@ -66,8 +67,10 @@ inline thread_pool::~thread_pool() {
 }
 
 inline void thread_pool::stop() noexcept {
-  stopped_.store(true, std::memory_order_release);
-  queue_cv_.notify_all();
+  if (state_) {
+    state_->stopped.store(true, std::memory_order_release);
+    state_->cv.notify_all();
+  }
 }
 
 inline void thread_pool::join() noexcept {

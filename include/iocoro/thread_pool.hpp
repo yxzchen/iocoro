@@ -24,6 +24,7 @@ namespace iocoro {
 /// - Maintains a single shared task queue protected by a mutex.
 /// - Starts N worker threads that all pull tasks from the shared queue.
 /// - Provides automatic load balancing across available threads.
+/// - Executors hold shared ownership of pool state for lifetime safety.
 ///
 /// Notes:
 /// - This is intentionally minimal and does not attempt to provide advanced scheduling
@@ -50,39 +51,35 @@ class thread_pool {
   /// Join all worker threads (best-effort, idempotent).
   void join() noexcept;
 
-  auto size() const noexcept -> std::size_t { return n_threads_; }
+  auto size() const noexcept -> std::size_t;
 
  private:
-  // Shared task queue
-  mutable std::mutex queue_mutex_;
-  std::condition_variable queue_cv_;
-  std::queue<detail::unique_function<void()>> tasks_;
+  // Shared state that outlives the pool object
+  struct state {
+    mutable std::mutex mutex;
+    std::condition_variable cv;
+    std::queue<detail::unique_function<void()>> tasks;
 
-  // Thread pool
+    std::atomic<bool> stopped{false};
+    std::atomic<std::size_t> work_guard_count{0};
+
+    std::size_t n_threads;
+  };
+
+  std::shared_ptr<state> state_;
   std::vector<std::thread> threads_;
-  std::size_t n_threads_;
-
-  // Control flags
-  std::atomic<bool> stopped_{false};
-
-  // Work guard support (keeps pool accepting work)
-  std::atomic<std::size_t> work_guard_counter_{0};
-
-  // Thread identification for dispatch() - per-pool instance
-  static thread_local thread_pool const* current_pool_;
 
   // Helper methods
   void worker_loop();
-  auto running_in_pool_thread() const noexcept -> bool;
 };
 
 /// A lightweight executor that schedules work onto a thread_pool.
 ///
-/// This is a non-owning handle: the referenced thread_pool must outlive this object.
+/// Holds shared ownership of pool state for lifetime safety.
 class thread_pool::basic_executor_type {
  public:
   basic_executor_type() noexcept = default;
-  explicit basic_executor_type(thread_pool& pool) noexcept : pool_(&pool) {}
+  explicit basic_executor_type(std::shared_ptr<state> s) noexcept : state_(std::move(s)) {}
 
   basic_executor_type(basic_executor_type const&) noexcept = default;
   auto operator=(basic_executor_type const&) noexcept -> basic_executor_type& = default;
@@ -92,68 +89,68 @@ class thread_pool::basic_executor_type {
   template <class F>
     requires std::is_invocable_v<F&>
   void post(F&& f) const noexcept {
-    IOCORO_ENSURE(pool_ != nullptr, "thread_pool::executor: empty pool_");
+    if (!state_) {
+      return;
+    }
 
     {
-      std::scoped_lock lock{pool_->queue_mutex_};
+      std::scoped_lock lock{state_->mutex};
 
       // Reject new tasks if stopped
-      if (pool_->stopped_.load(std::memory_order_acquire)) {
+      if (state_->stopped.load(std::memory_order_acquire)) {
         return;
       }
 
-      pool_->tasks_.emplace([ex = *this, f = std::forward<F>(f)]() mutable {
-        // Set up executor context for coroutines
-        detail::executor_guard g{any_executor{ex}};
-        f();
-      });
+      state_->tasks.emplace(std::forward<F>(f));
     }
 
-    pool_->queue_cv_.notify_one();
+    state_->cv.notify_one();
   }
 
   template <class F>
     requires std::is_invocable_v<F&>
   void dispatch(F&& f) const noexcept {
-    IOCORO_ENSURE(pool_ != nullptr, "thread_pool::executor: empty pool_");
+    // TODO: Check executor equivalence via detail::current_executor()
+    // For now, always post
+    post(std::forward<F>(f));
+  }
 
-    if (pool_->running_in_pool_thread()) {
-      // We're on a pool thread, execute inline
-      detail::executor_guard g{any_executor{*this}};
-      f();
-    } else {
-      // Not on pool thread, must post
-      post(std::forward<F>(f));
-    }
+  auto pick_executor() const -> executor_type {
+    return *this;
   }
 
   auto stopped() const noexcept -> bool {
-    return pool_ == nullptr || pool_->stopped_.load(std::memory_order_acquire);
+    return !state_ || state_->stopped.load(std::memory_order_acquire);
   }
 
-  explicit operator bool() const noexcept { return pool_ != nullptr; }
+  explicit operator bool() const noexcept { return state_ != nullptr; }
+
+  // Executor equality for dispatch inline判断
+  auto equals(basic_executor_type const& other) const noexcept -> bool {
+    return state_.get() == other.state_.get();
+  }
 
  private:
   friend class work_guard<basic_executor_type>;
 
   void add_work_guard() const noexcept {
-    if (pool_) {
-      pool_->work_guard_counter_.fetch_add(1, std::memory_order_acq_rel);
+    if (state_) {
+      state_->work_guard_count.fetch_add(1, std::memory_order_acq_rel);
     }
   }
 
   void remove_work_guard() const noexcept {
-    if (pool_) {
-      auto old = pool_->work_guard_counter_.fetch_sub(1, std::memory_order_acq_rel);
+    if (state_) {
+      auto old = state_->work_guard_count.fetch_sub(1, std::memory_order_acq_rel);
       IOCORO_ENSURE(old > 0, "remove_work_guard without add_work_guard");
       if (old == 1) {
-        // Last guard removed, wake threads so they can exit if no work
-        pool_->queue_cv_.notify_all();
+        // Last guard removed, wake threads
+        state_->cv.notify_all();
       }
     }
   }
 
-  thread_pool* pool_ = nullptr;
+  std::shared_ptr<thread_pool::state> state_;
 };
 
 }  // namespace iocoro
