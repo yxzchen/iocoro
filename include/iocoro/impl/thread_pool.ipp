@@ -2,9 +2,7 @@
 
 namespace iocoro {
 
-inline auto thread_pool::get_executor() noexcept -> executor_type {
-  return executor_type{state_};
-}
+inline auto thread_pool::get_executor() noexcept -> executor_type { return executor_type{state_}; }
 
 inline auto thread_pool::size() const noexcept -> std::size_t {
   return state_ ? state_->n_threads : 0;
@@ -66,9 +64,7 @@ inline thread_pool::thread_pool(std::size_t n_threads) {
   // Start worker threads
   for (std::size_t i = 0; i < n_threads; ++i) {
     auto s = state_;
-    threads_.emplace_back([s] {
-      worker_loop(s);
-    });
+    threads_.emplace_back([s] { worker_loop(s); });
   }
 }
 
@@ -78,10 +74,16 @@ inline thread_pool::~thread_pool() {
 }
 
 inline void thread_pool::stop() noexcept {
-  if (state_) {
-    state_->stopped.store(true, std::memory_order_release);
-    state_->cv.notify_all();
+  if (!state_) {
+    return;
   }
+
+  {
+    std::scoped_lock lock{state_->mutex};
+    state_->stopped.store(true, std::memory_order_release);
+  }
+
+  state_->cv.notify_all();
 }
 
 inline void thread_pool::join() noexcept {
