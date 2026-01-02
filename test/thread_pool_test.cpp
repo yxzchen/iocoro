@@ -21,7 +21,7 @@ using namespace std::chrono_literals;
 // ========== Basic Functionality Tests ==========
 
 TEST(thread_pool_test, post_runs_on_multiple_threads) {
-  iocoro::thread_pool pool{4};
+  iocoro::thread_pool pool{16};
   auto ex = pool.get_executor();
 
   std::mutex m;
@@ -1035,10 +1035,15 @@ TEST(thread_pool_test, executor_copy_semantics) {
   std::promise<void> done;
   auto fut = done.get_future();
 
-  ex1.post([&] { counter.fetch_add(1); });
+  ex1.post([&] {
+    // When counter goes from 1->2, trigger done
+    if (counter.fetch_add(1, std::memory_order_acq_rel) == 1) {
+      done.set_value();
+    }
+  });
   ex3.post([&] {
-    counter.fetch_add(1);
-    if (counter.load() == 2) {
+    // When counter goes from 1->2, trigger done
+    if (counter.fetch_add(1, std::memory_order_acq_rel) == 1) {
       done.set_value();
     }
   });
