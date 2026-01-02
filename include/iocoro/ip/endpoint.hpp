@@ -56,7 +56,7 @@ class endpoint {
   ///
   /// Returns invalid_argument on parse failure.
   static auto from_string(std::string const& s) -> expected<endpoint, std::error_code> {
-    auto r = ::iocoro::ip::detail::endpoint_storage::from_string(s);
+    auto r = detail::endpoint_storage::from_string(s);
     if (!r) {
       return unexpected(r.error());
     }
@@ -70,7 +70,7 @@ class endpoint {
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint, std::error_code> {
-    auto r = ::iocoro::ip::detail::endpoint_storage::from_native(addr, len);
+    auto r = detail::endpoint_storage::from_native(addr, len);
     if (!r) {
       return unexpected(r.error());
     }
@@ -92,9 +92,9 @@ class endpoint {
   }
 
  private:
-  explicit endpoint(::iocoro::ip::detail::endpoint_storage st) noexcept : storage_(std::move(st)) {}
+  explicit endpoint(detail::endpoint_storage st) noexcept : storage_(std::move(st)) {}
 
-  ::iocoro::ip::detail::endpoint_storage storage_{};
+  detail::endpoint_storage storage_{};
 };
 
 }  // namespace iocoro::ip

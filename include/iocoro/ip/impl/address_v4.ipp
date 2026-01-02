@@ -1,4 +1,4 @@
-#include <iocoro/ip/detail/address_v4.hpp>
+#include <iocoro/ip/address_v4.hpp>
 
 #include <cstdint>
 #include <cstring>
@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-namespace iocoro::ip::detail {
+namespace iocoro::ip {
 
 inline auto address_v4::to_string() const -> std::string {
   auto addr = in_addr{};
@@ -34,4 +34,4 @@ inline auto address_v4::from_string(std::string const& s) -> expected<address_v4
   return address_v4{b};
 }
 
-}  // namespace iocoro::ip::detail
+}  // namespace iocoro::ip

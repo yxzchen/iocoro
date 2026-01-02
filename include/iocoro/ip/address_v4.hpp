@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace iocoro::ip::detail {
+namespace iocoro::ip {
 
 /// IPv4 address value type.
 class address_v4 {
@@ -42,6 +42,6 @@ class address_v4 {
   bytes_type bytes_{};
 };
 
-}  // namespace iocoro::ip::detail
+}  // namespace iocoro::ip
 
 #include <iocoro/ip/impl/address_v4.ipp>

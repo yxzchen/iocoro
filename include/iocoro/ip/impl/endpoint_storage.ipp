@@ -34,18 +34,18 @@ inline auto parse_port(std::string const& p) -> expected<std::uint16_t, std::err
 }  // namespace
 
 inline endpoint_storage::endpoint_storage() noexcept {
-  init_v4(::iocoro::ip::address_v4::any(), 0);
+  init_v4(address_v4::any(), 0);
 }
 
-inline endpoint_storage::endpoint_storage(::iocoro::ip::address_v4 addr, std::uint16_t port) noexcept {
+inline endpoint_storage::endpoint_storage(address_v4 addr, std::uint16_t port) noexcept {
   init_v4(addr, port);
 }
 
-inline endpoint_storage::endpoint_storage(::iocoro::ip::address_v6 addr, std::uint16_t port) noexcept {
+inline endpoint_storage::endpoint_storage(address_v6 addr, std::uint16_t port) noexcept {
   init_v6(addr, port);
 }
 
-inline endpoint_storage::endpoint_storage(::iocoro::ip::address addr, std::uint16_t port) noexcept {
+inline endpoint_storage::endpoint_storage(ip::address addr, std::uint16_t port) noexcept {
   if (addr.is_v4()) {
     init_v4(addr.to_v4(), port);
   } else {
@@ -53,20 +53,20 @@ inline endpoint_storage::endpoint_storage(::iocoro::ip::address addr, std::uint1
   }
 }
 
-inline auto endpoint_storage::address() const noexcept -> ::iocoro::ip::address {
+inline auto endpoint_storage::address() const noexcept -> ip::address {
   IOCORO_ASSERT(family() == AF_INET || family() == AF_INET6,
                 "endpoint_storage::address(): invalid address family");
   if (family() == AF_INET) {
     auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
-    ::iocoro::ip::address_v4::bytes_type b{};
+    address_v4::bytes_type b{};
     std::memcpy(b.data(), &sa->sin_addr.s_addr, 4);
-    return ::iocoro::ip::address{::iocoro::ip::address_v4{b}};
+    return ip::address{address_v4{b}};
   }
   if (family() == AF_INET6) {
     auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
-    ::iocoro::ip::address_v6::bytes_type b{};
+    address_v6::bytes_type b{};
     std::memcpy(b.data(), sa->sin6_addr.s6_addr, 16);
-    return ::iocoro::ip::address{::iocoro::ip::address_v6{b, sa->sin6_scope_id}};
+    return ip::address{address_v6{b, sa->sin6_scope_id}};
   }
   IOCORO_UNREACHABLE();
 }

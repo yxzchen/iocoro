@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace iocoro::ip::detail {
+namespace iocoro::ip {
 
 /// IPv6 address value type.
 class address_v6 {
@@ -51,6 +51,6 @@ class address_v6 {
   std::uint32_t scope_id_{0};
 };
 
-}  // namespace iocoro::ip::detail
+}  // namespace iocoro::ip
 
 #include <iocoro/ip/impl/address_v6.ipp>

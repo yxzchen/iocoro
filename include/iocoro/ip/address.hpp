@@ -1,17 +1,13 @@
 #pragma once
 
-#include <iocoro/ip/detail/address_v4.hpp>
-#include <iocoro/ip/detail/address_v6.hpp>
+#include <iocoro/ip/address_v4.hpp>
+#include <iocoro/ip/address_v6.hpp>
 
 #include <string>
 #include <string_view>
 #include <variant>
 
 namespace iocoro::ip {
-
-// Re-export detail types to ip namespace for public API
-using address_v4 = ::iocoro::ip::detail::address_v4;
-using address_v6 = ::iocoro::ip::detail::address_v6;
 
 /// Generic IP address value type (v4 or v6).
 class address {

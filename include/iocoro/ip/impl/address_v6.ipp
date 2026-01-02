@@ -1,4 +1,4 @@
-#include <iocoro/ip/detail/address_v6.hpp>
+#include <iocoro/ip/address_v6.hpp>
 
 #include <charconv>
 #include <cstdint>
@@ -9,7 +9,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-namespace iocoro::ip::detail {
+namespace iocoro::ip {
 
 inline auto address_v6::to_string() const -> std::string {
   auto addr = in6_addr{};
@@ -60,4 +60,4 @@ inline auto address_v6::from_string(std::string const& s) -> expected<address_v6
   return address_v6{b, scope};
 }
 
-}  // namespace iocoro::ip::detail
+}  // namespace iocoro::ip
