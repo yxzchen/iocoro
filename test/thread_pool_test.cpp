@@ -16,16 +16,16 @@ namespace {
 using namespace std::chrono_literals;
 
 TEST(thread_pool, post_runs_on_multiple_threads) {
-  iocoro::thread_pool pool{4};
+  iocoro::thread_pool pool{16};
   auto ex = pool.get_executor();
 
   std::mutex m;
   std::condition_variable cv;
   std::unordered_set<std::thread::id> threads;
 
-  std::atomic<int> remaining{200};
+  std::atomic<int> remaining{2000};
 
-  for (int i = 0; i < 200; ++i) {
+  for (int i = 0; i < 2000; ++i) {
     ex.post([&] {
       {
         std::scoped_lock lk{m};
