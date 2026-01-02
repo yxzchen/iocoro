@@ -20,7 +20,6 @@
 #include <iocoro/io_context.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool.hpp>
-#include <iocoro/thread_pool_executor.hpp>
 #include <iocoro/work_guard.hpp>
 
 // Timers & composition

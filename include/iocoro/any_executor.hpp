@@ -43,7 +43,7 @@ class any_executor {
   any_executor() = default;
 
   template <executor Ex>
-  explicit any_executor(Ex ex) : impl_(std::make_shared<model<Ex>>(std::move(ex))) {}
+  any_executor(Ex ex) : impl_(std::make_shared<model<Ex>>(std::move(ex))) {}
 
   void post(detail::unique_function<void()> fn) const noexcept {
     ensure_impl()->post(std::move(fn));

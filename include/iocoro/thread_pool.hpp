@@ -1,20 +1,19 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/io_executor.hpp>
 #include <iocoro/work_guard.hpp>
 
 #include <atomic>
 #include <cstddef>
 #include <memory>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace iocoro {
-
-class thread_pool_executor;
 
 /// A simple thread pool that runs multiple io_context instances (shards).
 ///
@@ -28,6 +27,9 @@ class thread_pool_executor;
 ///   policies. It is primarily a building block for higher-level executors.
 class thread_pool {
  public:
+  class basic_executor_type;
+  typedef basic_executor_type executor_type;
+
   explicit thread_pool(std::size_t n_threads);
 
   thread_pool(thread_pool const&) = delete;
@@ -37,7 +39,7 @@ class thread_pool {
 
   ~thread_pool();
 
-  auto get_executor() noexcept -> thread_pool_executor;
+  auto get_executor() noexcept -> executor_type;
 
   /// Stop all shards (best-effort, idempotent).
   void stop() noexcept;
@@ -58,8 +60,46 @@ class thread_pool {
   std::atomic<std::size_t> rr_{0};
 };
 
+/// A lightweight executor that schedules work onto a thread_pool.
+///
+/// This is a non-owning handle: the referenced thread_pool must outlive this object.
+class thread_pool::basic_executor_type {
+ public:
+  basic_executor_type() noexcept = default;
+  explicit basic_executor_type(thread_pool& pool) noexcept : pool_(&pool) {}
+
+  basic_executor_type(basic_executor_type const&) noexcept = default;
+  auto operator=(basic_executor_type const&) noexcept -> basic_executor_type& = default;
+  basic_executor_type(basic_executor_type&&) noexcept = default;
+  auto operator=(basic_executor_type&&) noexcept -> basic_executor_type& = default;
+
+  template <class F>
+    requires std::is_invocable_v<F&>
+  void post(F&& f) const noexcept {
+    IOCORO_ENSURE(pool_ != nullptr, "thread_pool::executor: empty pool_");
+    pool_->pick_executor().post(std::forward<F>(f));
+  }
+
+  template <class F>
+    requires std::is_invocable_v<F&>
+  void dispatch(F&& f) const noexcept {
+    IOCORO_ENSURE(pool_ != nullptr, "thread_pool::executor: empty pool_");
+    pool_->pick_executor().dispatch(std::forward<F>(f));
+  }
+
+  auto pick_executor() const -> io_executor {
+    IOCORO_ENSURE(pool_ != nullptr, "thread_pool::executor: empty pool_");
+    return pool_->pick_executor();
+  }
+
+  auto stopped() const noexcept -> bool { return pool_ == nullptr; }
+
+  explicit operator bool() const noexcept { return pool_ != nullptr; }
+
+ private:
+  thread_pool* pool_ = nullptr;
+};
+
 }  // namespace iocoro
 
 #include <iocoro/impl/thread_pool.ipp>
-
-

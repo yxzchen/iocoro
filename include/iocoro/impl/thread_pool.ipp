@@ -2,6 +2,10 @@
 
 namespace iocoro {
 
+inline auto thread_pool::get_executor() noexcept -> executor_type {
+  return executor_type{*this};
+}
+
 inline thread_pool::thread_pool(std::size_t n_threads) {
   IOCORO_ENSURE(n_threads > 0, "thread_pool: n_threads must be > 0");
 
