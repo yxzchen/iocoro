@@ -65,26 +65,29 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
     co_return unexpected(error::not_open);
   }
 
-  // Queue-based serialization (FIFO).
-  auto st = std::make_shared<accept_turn_state>();
-  {
-    std::scoped_lock lk{mtx_};
-    accept_queue_.push_back(st);
-  }
-
-  co_await accept_turn_awaiter{this, st};
-
-  // Ensure we always release our turn and wake the next queued accept.
-  auto turn_guard = finally([this, st] { complete_turn(st); });
-
+  // Single async_accept constraint: only one in-flight accept allowed.
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
     if (!listening_) {
       co_return unexpected(error::not_listening);
     }
+    if (accept_active_) {
+      co_return unexpected(error::busy);
+    }
+    accept_active_ = true;
     my_epoch = accept_epoch_;
   }
+
+  // RAII guard to ensure accept_active_ is cleared on all exit paths.
+  struct accept_guard {
+    acceptor_impl* self;
+    ~accept_guard() {
+      std::scoped_lock lk{self->mtx_};
+      self->accept_active_ = false;
+    }
+  };
+  accept_guard guard{this};
 
   for (;;) {
     // Cancellation check to close the "cancel between accept() and wait_read_ready()" race.
@@ -167,67 +170,6 @@ inline auto acceptor_impl::set_cloexec(int fd) noexcept -> bool {
     return true;
   }
   return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
-}
-
-inline auto acceptor_impl::try_acquire_turn(std::shared_ptr<accept_turn_state> const& st) noexcept
-  -> bool {
-  std::scoped_lock lk{mtx_};
-  cleanup_expired_queue_front();
-  IOCORO_ENSURE(!accept_queue_.empty(),
-                "acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
-  if (accept_active_) {
-    return false;
-  }
-
-  auto front = accept_queue_.front().lock();
-  IOCORO_ENSURE(static_cast<bool>(front),
-                "acceptor_impl: accept_queue_ front expired after cleanup");
-  if (front.get() != st.get()) {
-    return false;
-  }
-  accept_active_ = true;
-  return true;
-}
-
-inline void acceptor_impl::cleanup_expired_queue_front() noexcept {
-  while (!accept_queue_.empty() && accept_queue_.front().expired()) {
-    accept_queue_.pop_front();
-  }
-}
-
-inline void acceptor_impl::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
-  std::shared_ptr<accept_turn_state> next{};
-  {
-    std::scoped_lock lk{mtx_};
-
-    // Remove ourselves from the queue (FIFO invariant: active turn is always at front).
-    cleanup_expired_queue_front();
-    IOCORO_ENSURE(!accept_queue_.empty(),
-                  "acceptor_impl: completing turn but accept_queue_ is empty");
-    auto front = accept_queue_.front().lock();
-    IOCORO_ENSURE(static_cast<bool>(front),
-                  "acceptor_impl: accept_queue_ front expired while completing turn");
-    IOCORO_ENSURE(front.get() == st.get(),
-                  "acceptor_impl: FIFO invariant broken; completing state is not queue front");
-    accept_queue_.pop_front();
-
-    accept_active_ = false;
-    cleanup_expired_queue_front();
-
-    if (!accept_queue_.empty()) {
-      next = accept_queue_.front().lock();
-      IOCORO_ENSURE(static_cast<bool>(next),
-                    "acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
-      accept_active_ = true;
-    }
-  }
-
-  // Resume next waiter (if it actually suspended).
-  // Asynchronously schedule the next waiter's coroutine on its own executor.
-  // This avoids blocking the current coroutine's completion and prevents stack depth issues.
-  if (next && next->h && next->ex) {
-    next->ex.post([next]() mutable { next->h.resume(); });
-  }
 }
 
 }  // namespace iocoro::detail::socket

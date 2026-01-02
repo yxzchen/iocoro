@@ -9,9 +9,7 @@
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
-#include <coroutine>
 #include <cstdint>
-#include <deque>
 #include <mutex>
 #include <system_error>
 
@@ -78,6 +76,10 @@ class acceptor_impl {
 
   /// Accept a new connection.
   ///
+  /// Concurrency:
+  /// - Only one async_accept() call is allowed at a time.
+  /// - If an accept is already in progress, returns error::busy.
+  ///
   /// Returns:
   /// - a native connected fd on success (to be adopted by a stream socket)
   /// - error_code on failure
@@ -88,57 +90,12 @@ class acceptor_impl {
 
   static auto set_cloexec(int fd) noexcept -> bool;
 
-  struct accept_turn_state {
-    std::coroutine_handle<> h{};
-    any_executor ex{};
-  };
-
-  struct accept_turn_awaiter {
-    acceptor_impl* self;
-    std::shared_ptr<accept_turn_state> st;
-
-    accept_turn_awaiter(acceptor_impl* self_, std::shared_ptr<accept_turn_state> st_)
-        : self(self_), st(st_) {}
-
-    bool await_ready() noexcept { return self->try_acquire_turn(st); }
-
-    bool await_suspend(std::coroutine_handle<> h) noexcept {
-      st->h = h;
-      st->ex = detail::get_current_executor();
-      return true;
-    }
-
-    void await_resume() noexcept {}
-  };
-
-  auto try_acquire_turn(std::shared_ptr<accept_turn_state> const& st) noexcept -> bool;
-
-  void cleanup_expired_queue_front() noexcept;
-
-  void complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept;
-
-  template <class F>
-  class final_action {
-   public:
-    explicit final_action(F f) noexcept : f_(std::move(f)) {}
-    ~final_action() { f_(); }
-
-   private:
-    F f_;
-  };
-  template <class F>
-  static auto finally(F f) noexcept -> final_action<F> {
-    return final_action<F>(std::move(f));
-  }
-
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
   bool listening_{false};
   bool accept_active_{false};
   std::uint64_t accept_epoch_{0};
-
-  std::deque<std::weak_ptr<accept_turn_state>> accept_queue_{};
 };
 
 }  // namespace iocoro::detail::socket
