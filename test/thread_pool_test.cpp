@@ -565,16 +565,14 @@ TEST(thread_pool_test, exception_handler_is_called) {
     } catch (const std::runtime_error& e) {
       EXPECT_STREQ(e.what(), "test exception");
     }
+
+    // Signal completion after exception is handled
+    done.set_value();
   });
 
   // Post task that throws
   ex.post([&] {
     throw std::runtime_error("test exception");
-  });
-
-  // Post task to signal completion
-  ex.post([&] {
-    done.set_value();
   });
 
   EXPECT_EQ(fut.wait_for(2s), std::future_status::ready);
@@ -627,31 +625,31 @@ TEST(thread_pool_test, exception_handler_can_be_changed) {
   std::atomic<int> handler1_count{0};
   std::atomic<int> handler2_count{0};
 
-  // Set first handler
-  pool.set_exception_handler([&](std::exception_ptr) {
-    handler1_count.fetch_add(1);
-  });
-
   std::promise<void> done1;
   auto fut1 = done1.get_future();
 
+  // Set first handler
+  pool.set_exception_handler([&](std::exception_ptr) {
+    handler1_count.fetch_add(1);
+    done1.set_value();
+  });
+
   ex.post([&] { throw std::runtime_error("first"); });
-  ex.post([&] { done1.set_value(); });
 
   EXPECT_EQ(fut1.wait_for(1s), std::future_status::ready);
   EXPECT_EQ(handler1_count.load(), 1);
   EXPECT_EQ(handler2_count.load(), 0);
 
-  // Change handler
-  pool.set_exception_handler([&](std::exception_ptr) {
-    handler2_count.fetch_add(1);
-  });
-
   std::promise<void> done2;
   auto fut2 = done2.get_future();
 
+  // Change handler
+  pool.set_exception_handler([&](std::exception_ptr) {
+    handler2_count.fetch_add(1);
+    done2.set_value();
+  });
+
   ex.post([&] { throw std::runtime_error("second"); });
-  ex.post([&] { done2.set_value(); });
 
   EXPECT_EQ(fut2.wait_for(1s), std::future_status::ready);
   EXPECT_EQ(handler1_count.load(), 1);
@@ -663,22 +661,29 @@ TEST(thread_pool_test, exception_handler_exception_is_swallowed) {
   auto ex = pool.get_executor();
 
   std::atomic<int> handler_called{0};
-  std::promise<void> done;
-  auto fut = done.get_future();
+  std::promise<void> handler_done;
+  auto handler_fut = handler_done.get_future();
+
+  std::promise<void> task_done;
+  auto task_fut = task_done.get_future();
 
   // Set handler that itself throws
   pool.set_exception_handler([&](std::exception_ptr) {
     handler_called.fetch_add(1);
+    handler_done.set_value();
     throw std::runtime_error("exception in handler");
   });
 
   ex.post([&] { throw std::runtime_error("task exception"); });
 
-  // This task should still execute despite handler throwing
-  ex.post([&] { done.set_value(); });
-
-  EXPECT_EQ(fut.wait_for(2s), std::future_status::ready);
+  // Wait for exception handler to complete
+  EXPECT_EQ(handler_fut.wait_for(2s), std::future_status::ready);
   EXPECT_EQ(handler_called.load(), 1);
+
+  // This task should still execute despite handler throwing
+  ex.post([&] { task_done.set_value(); });
+
+  EXPECT_EQ(task_fut.wait_for(2s), std::future_status::ready);
 }
 
 TEST(thread_pool_test, different_exception_types_are_handled) {
@@ -688,6 +693,7 @@ TEST(thread_pool_test, different_exception_types_are_handled) {
   std::atomic<int> runtime_error_count{0};
   std::atomic<int> logic_error_count{0};
   std::atomic<int> other_error_count{0};
+  std::atomic<int> total_exceptions{0};
   std::promise<void> done;
   auto fut = done.get_future();
 
@@ -703,12 +709,16 @@ TEST(thread_pool_test, different_exception_types_are_handled) {
     } catch (...) {
       other_error_count.fetch_add(1);
     }
+
+    // Signal when all 3 exceptions have been handled
+    if (total_exceptions.fetch_add(1, std::memory_order_acq_rel) == 2) {
+      done.set_value();
+    }
   });
 
   ex.post([&] { throw std::runtime_error("runtime"); });
   ex.post([&] { throw std::logic_error("logic"); });
   ex.post([&] { throw 42; });
-  ex.post([&] { done.set_value(); });
 
   EXPECT_EQ(fut.wait_for(2s), std::future_status::ready);
   EXPECT_EQ(runtime_error_count.load(), 1);
