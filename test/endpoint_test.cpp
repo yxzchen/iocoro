@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <iocoro/impl.hpp>
 #include <iocoro/iocoro.hpp>
 #include <iocoro/ip.hpp>
 

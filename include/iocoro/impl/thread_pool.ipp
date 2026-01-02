@@ -1,5 +1,4 @@
 #include <iocoro/thread_pool.hpp>
-
 #include <iocoro/thread_pool_executor.hpp>
 
 namespace iocoro {

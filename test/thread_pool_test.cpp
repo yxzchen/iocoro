@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/iocoro.hpp>
-#include <iocoro/impl.hpp>
 #include <iocoro/thread_pool_executor.hpp>
 
 #include <atomic>

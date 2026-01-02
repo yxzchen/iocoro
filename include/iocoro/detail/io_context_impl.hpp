@@ -159,3 +159,5 @@ class io_context_impl {
 };
 
 }  // namespace iocoro::detail
+
+#include <iocoro/impl/io_context_impl.ipp>

@@ -2,7 +2,6 @@
 
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_base.hpp>
-#include <iocoro/impl.hpp>
 
 #include <atomic>
 #include <chrono>
