@@ -20,7 +20,7 @@ using namespace std::chrono_literals;
 
 // ========== Basic Functionality Tests ==========
 
-TEST(thread_pool, post_runs_on_multiple_threads) {
+TEST(thread_pool_test, post_runs_on_multiple_threads) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -55,7 +55,7 @@ TEST(thread_pool, post_runs_on_multiple_threads) {
   }
 }
 
-TEST(thread_pool, single_thread_pool) {
+TEST(thread_pool_test, single_thread_pool) {
   iocoro::thread_pool pool{1};
   auto ex = pool.get_executor();
 
@@ -77,12 +77,12 @@ TEST(thread_pool, single_thread_pool) {
   EXPECT_EQ(counter.load(), num_tasks);
 }
 
-TEST(thread_pool, size_returns_thread_count) {
+TEST(thread_pool_test, size_returns_thread_count) {
   iocoro::thread_pool pool{8};
   EXPECT_EQ(pool.size(), 8u);
 }
 
-TEST(thread_pool, executes_large_number_of_tasks) {
+TEST(thread_pool_test, executes_large_number_of_tasks) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -105,7 +105,7 @@ TEST(thread_pool, executes_large_number_of_tasks) {
   EXPECT_EQ(completed.load(), num_tasks);
 }
 
-TEST(thread_pool, tasks_with_return_values) {
+TEST(thread_pool_test, tasks_with_return_values) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -131,7 +131,7 @@ TEST(thread_pool, tasks_with_return_values) {
 
 // ========== Stop and Destruction Tests ==========
 
-TEST(thread_pool, stop_prevents_new_tasks) {
+TEST(thread_pool_test, stop_prevents_new_tasks) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -146,7 +146,7 @@ TEST(thread_pool, stop_prevents_new_tasks) {
   EXPECT_FALSE(task_executed.load());
 }
 
-TEST(thread_pool, stop_is_idempotent) {
+TEST(thread_pool_test, stop_is_idempotent) {
   iocoro::thread_pool pool{2};
 
   pool.stop();
@@ -157,7 +157,7 @@ TEST(thread_pool, stop_is_idempotent) {
   pool.join();  // join should also be idempotent
 }
 
-TEST(thread_pool, executor_stopped_returns_true_after_stop) {
+TEST(thread_pool_test, executor_stopped_returns_true_after_stop) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -168,7 +168,7 @@ TEST(thread_pool, executor_stopped_returns_true_after_stop) {
   EXPECT_TRUE(ex.stopped());
 }
 
-TEST(thread_pool, destructor_completes_pending_tasks) {
+TEST(thread_pool_test, destructor_completes_pending_tasks) {
   std::atomic<int> completed{0};
 
   {
@@ -188,7 +188,7 @@ TEST(thread_pool, destructor_completes_pending_tasks) {
   EXPECT_EQ(completed.load(), 100);
 }
 
-TEST(thread_pool, can_stop_and_join_explicitly) {
+TEST(thread_pool_test, can_stop_and_join_explicitly) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -208,7 +208,7 @@ TEST(thread_pool, can_stop_and_join_explicitly) {
 
 // ========== Work Guard Tests ==========
 
-TEST(thread_pool, work_guard_basic_usage) {
+TEST(thread_pool_test, work_guard_basic_usage) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -231,7 +231,7 @@ TEST(thread_pool, work_guard_basic_usage) {
   guard.reset();
 }
 
-TEST(thread_pool, multiple_work_guards_basic) {
+TEST(thread_pool_test, multiple_work_guards_basic) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -257,7 +257,7 @@ TEST(thread_pool, multiple_work_guards_basic) {
   guard3.reset();
 }
 
-TEST(thread_pool, work_guard_prevents_thread_exit_after_stop) {
+TEST(thread_pool_test, work_guard_prevents_thread_exit_after_stop) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -290,7 +290,7 @@ TEST(thread_pool, work_guard_prevents_thread_exit_after_stop) {
   pool.join();
 }
 
-TEST(thread_pool, work_guard_allows_exit_when_no_tasks_remain) {
+TEST(thread_pool_test, work_guard_allows_exit_when_no_tasks_remain) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -317,7 +317,7 @@ TEST(thread_pool, work_guard_allows_exit_when_no_tasks_remain) {
 
 // ========== Executor Functionality Tests ==========
 
-TEST(thread_pool, dispatch_runs_inline_on_same_executor) {
+TEST(thread_pool_test, dispatch_runs_inline_on_same_executor) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -341,7 +341,7 @@ TEST(thread_pool, dispatch_runs_inline_on_same_executor) {
   EXPECT_EQ(task_thread_id, dispatch_thread_id);
 }
 
-TEST(thread_pool, dispatch_posts_on_different_executor) {
+TEST(thread_pool_test, dispatch_posts_on_different_executor) {
   iocoro::thread_pool pool1{1};
   iocoro::thread_pool pool2{1};
 
@@ -368,7 +368,7 @@ TEST(thread_pool, dispatch_posts_on_different_executor) {
   EXPECT_NE(thread1_id, thread2_id);
 }
 
-TEST(thread_pool, default_constructed_executor_is_empty) {
+TEST(thread_pool_test, default_constructed_executor_is_empty) {
   iocoro::thread_pool::executor_type ex;
 
   EXPECT_FALSE(ex);
@@ -382,7 +382,7 @@ TEST(thread_pool, default_constructed_executor_is_empty) {
   EXPECT_FALSE(executed.load());
 }
 
-TEST(thread_pool, multiple_executors_share_same_pool) {
+TEST(thread_pool_test, multiple_executors_share_same_pool) {
   iocoro::thread_pool pool{4};
 
   auto ex1 = pool.get_executor();
@@ -419,7 +419,7 @@ TEST(thread_pool, multiple_executors_share_same_pool) {
 
 // ========== Concurrency Safety Tests ==========
 
-TEST(thread_pool, concurrent_post_from_multiple_threads) {
+TEST(thread_pool_test, concurrent_post_from_multiple_threads) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -451,7 +451,7 @@ TEST(thread_pool, concurrent_post_from_multiple_threads) {
   EXPECT_EQ(counter.load(), threads * tasks_per_thread);
 }
 
-TEST(thread_pool, concurrent_stop_and_post) {
+TEST(thread_pool_test, concurrent_stop_and_post) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -480,7 +480,7 @@ TEST(thread_pool, concurrent_stop_and_post) {
   EXPECT_GT(executed.load(), 0);
 }
 
-TEST(thread_pool, tasks_can_post_more_tasks) {
+TEST(thread_pool_test, tasks_can_post_more_tasks) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -512,7 +512,7 @@ TEST(thread_pool, tasks_can_post_more_tasks) {
 
 // ========== Exception Handling Tests ==========
 
-TEST(thread_pool, exception_in_task_is_swallowed_by_default) {
+TEST(thread_pool_test, exception_in_task_is_swallowed_by_default) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -545,7 +545,7 @@ TEST(thread_pool, exception_in_task_is_swallowed_by_default) {
   EXPECT_EQ(after_exception.load(), 10);
 }
 
-TEST(thread_pool, exception_handler_is_called) {
+TEST(thread_pool_test, exception_handler_is_called) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -581,7 +581,7 @@ TEST(thread_pool, exception_handler_is_called) {
   EXPECT_EQ(exception_count.load(), 1);
 }
 
-TEST(thread_pool, multiple_exceptions_are_all_handled) {
+TEST(thread_pool_test, multiple_exceptions_are_all_handled) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -612,7 +612,7 @@ TEST(thread_pool, multiple_exceptions_are_all_handled) {
   EXPECT_EQ(exception_count.load(), 10);
 }
 
-TEST(thread_pool, exception_handler_can_be_changed) {
+TEST(thread_pool_test, exception_handler_can_be_changed) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -650,7 +650,7 @@ TEST(thread_pool, exception_handler_can_be_changed) {
   EXPECT_EQ(handler2_count.load(), 1);
 }
 
-TEST(thread_pool, exception_handler_exception_is_swallowed) {
+TEST(thread_pool_test, exception_handler_exception_is_swallowed) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -673,7 +673,7 @@ TEST(thread_pool, exception_handler_exception_is_swallowed) {
   EXPECT_EQ(handler_called.load(), 1);
 }
 
-TEST(thread_pool, different_exception_types_are_handled) {
+TEST(thread_pool_test, different_exception_types_are_handled) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -710,7 +710,7 @@ TEST(thread_pool, different_exception_types_are_handled) {
 
 // ========== Task Chaining and Nesting Tests ==========
 
-TEST(thread_pool, chained_tasks) {
+TEST(thread_pool_test, chained_tasks) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -740,7 +740,7 @@ TEST(thread_pool, chained_tasks) {
 
 // ========== Coroutine Integration Tests ==========
 
-TEST(thread_pool, co_spawn_accepts_thread_pool_executor) {
+TEST(thread_pool_test, co_spawn_accepts_thread_pool_executor) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -766,7 +766,7 @@ TEST(thread_pool, co_spawn_accepts_thread_pool_executor) {
   EXPECT_TRUE(saw_executor.load(std::memory_order_acquire));
 }
 
-TEST(thread_pool, multiple_coroutines_on_pool) {
+TEST(thread_pool_test, multiple_coroutines_on_pool) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -795,7 +795,7 @@ TEST(thread_pool, multiple_coroutines_on_pool) {
 
 // ========== Performance and Load Balancing Tests ==========
 
-TEST(thread_pool, load_balancing_across_threads) {
+TEST(thread_pool_test, load_balancing_across_threads) {
   iocoro::thread_pool pool{8};
   auto ex = pool.get_executor();
 
@@ -835,7 +835,7 @@ TEST(thread_pool, load_balancing_across_threads) {
   }
 }
 
-TEST(thread_pool, mixed_short_and_long_tasks) {
+TEST(thread_pool_test, mixed_short_and_long_tasks) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -876,7 +876,7 @@ TEST(thread_pool, mixed_short_and_long_tasks) {
 
 // ========== Edge Cases Tests ==========
 
-TEST(thread_pool, empty_lambda) {
+TEST(thread_pool_test, empty_lambda) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -890,7 +890,7 @@ TEST(thread_pool, empty_lambda) {
   EXPECT_EQ(fut.wait_for(1s), std::future_status::ready);
 }
 
-TEST(thread_pool, capture_by_value) {
+TEST(thread_pool_test, capture_by_value) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -906,7 +906,7 @@ TEST(thread_pool, capture_by_value) {
   EXPECT_EQ(fut.get(), 42);
 }
 
-TEST(thread_pool, capture_by_move) {
+TEST(thread_pool_test, capture_by_move) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -922,7 +922,7 @@ TEST(thread_pool, capture_by_move) {
   EXPECT_EQ(fut.get(), 42);
 }
 
-TEST(thread_pool, post_after_all_tasks_complete) {
+TEST(thread_pool_test, post_after_all_tasks_complete) {
   iocoro::thread_pool pool{2};
   auto ex = pool.get_executor();
 
@@ -958,7 +958,7 @@ TEST(thread_pool, post_after_all_tasks_complete) {
   EXPECT_EQ(counter.load(), 10);
 }
 
-TEST(thread_pool, stress_test_rapid_task_submission) {
+TEST(thread_pool_test, stress_test_rapid_task_submission) {
   iocoro::thread_pool pool{8};
   auto ex = pool.get_executor();
 
@@ -979,7 +979,7 @@ TEST(thread_pool, stress_test_rapid_task_submission) {
   EXPECT_EQ(counter.load(), num_tasks);
 }
 
-TEST(thread_pool, interleaved_post_and_dispatch) {
+TEST(thread_pool_test, interleaved_post_and_dispatch) {
   iocoro::thread_pool pool{4};
   auto ex = pool.get_executor();
 
@@ -1007,7 +1007,7 @@ TEST(thread_pool, interleaved_post_and_dispatch) {
   EXPECT_EQ(dispatch_count.load(), iterations);
 }
 
-TEST(thread_pool, executor_copy_semantics) {
+TEST(thread_pool_test, executor_copy_semantics) {
   iocoro::thread_pool pool{2};
   auto ex1 = pool.get_executor();
   auto ex2 = ex1;  // Copy
@@ -1029,7 +1029,7 @@ TEST(thread_pool, executor_copy_semantics) {
   EXPECT_EQ(counter.load(), 2);
 }
 
-TEST(thread_pool, verify_fifo_ordering_single_thread) {
+TEST(thread_pool_test, verify_fifo_ordering_single_thread) {
   iocoro::thread_pool pool{1};  // Single thread ensures ordering
   auto ex = pool.get_executor();
 
@@ -1059,7 +1059,7 @@ TEST(thread_pool, verify_fifo_ordering_single_thread) {
   }
 }
 
-TEST(thread_pool, nested_executors_from_different_pools) {
+TEST(thread_pool_test, nested_executors_from_different_pools) {
   iocoro::thread_pool pool1{2};
   iocoro::thread_pool pool2{2};
 
