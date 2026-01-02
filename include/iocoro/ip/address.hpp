@@ -1,88 +1,17 @@
 #pragma once
 
-#include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/ip/detail/address_v4.hpp>
+#include <iocoro/ip/detail/address_v6.hpp>
 
-#include <array>
-#include <compare>
-#include <cstdint>
-#include <cstring>
 #include <string>
 #include <string_view>
 #include <variant>
 
 namespace iocoro::ip {
 
-/// IPv4 address value type.
-class address_v4 {
- public:
-  using bytes_type = std::array<std::uint8_t, 4>;
-
-  constexpr address_v4() noexcept = default;
-  explicit constexpr address_v4(bytes_type bytes) noexcept : bytes_(bytes) {}
-
-  static constexpr auto any() noexcept -> address_v4 { return address_v4{}; }
-  static constexpr auto loopback() noexcept -> address_v4 { return address_v4{{127, 0, 0, 1}}; }
-
-  constexpr auto to_bytes() const noexcept -> bytes_type { return bytes_; }
-
-  constexpr auto is_unspecified() const noexcept -> bool { return bytes_ == bytes_type{}; }
-  constexpr auto is_loopback() const noexcept -> bool { return bytes_ == loopback().bytes_; }
-
-  friend constexpr auto operator==(address_v4 const&, address_v4 const&) noexcept -> bool = default;
-  friend constexpr auto operator<=>(address_v4 const&, address_v4 const&) noexcept = default;
-
-  /// Human-readable representation. (Stub-friendly; implementation may evolve.)
-  auto to_string() const -> std::string;
-
-  /// Parse a textual IPv4 address.
-  ///
-  /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> expected<address_v4, std::error_code>;
-
- private:
-  bytes_type bytes_{};
-};
-
-/// IPv6 address value type.
-class address_v6 {
- public:
-  using bytes_type = std::array<std::uint8_t, 16>;
-
-  constexpr address_v6() noexcept = default;
-  explicit constexpr address_v6(bytes_type bytes, std::uint32_t scope_id = 0) noexcept
-      : bytes_(bytes), scope_id_(scope_id) {}
-
-  static constexpr auto any() noexcept -> address_v6 { return address_v6{}; }
-  static constexpr auto loopback() noexcept -> address_v6 {
-    auto b = bytes_type{};
-    b[15] = 1;
-    return address_v6{b};
-  }
-
-  constexpr auto to_bytes() const noexcept -> bytes_type { return bytes_; }
-  constexpr auto scope_id() const noexcept -> std::uint32_t { return scope_id_; }
-
-  constexpr auto is_unspecified() const noexcept -> bool { return bytes_ == bytes_type{}; }
-  constexpr auto is_loopback() const noexcept -> bool {
-    return bytes_ == loopback().bytes_ && scope_id_ == 0;
-  }
-
-  friend constexpr auto operator==(address_v6 const&, address_v6 const&) noexcept -> bool = default;
-  friend constexpr auto operator<=>(address_v6 const&, address_v6 const&) noexcept = default;
-
-  auto to_string() const -> std::string;
-
-  /// Parse a textual IPv6 address.
-  ///
-  /// Supports an optional numeric scope_id suffix: "fe80::1%2".
-  /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string_view s) -> expected<address_v6, std::error_code>;
-
- private:
-  bytes_type bytes_{};
-  std::uint32_t scope_id_{0};
-};
+// Re-export detail types to ip namespace for public API
+using address_v4 = ::iocoro::ip::detail::address_v4;
+using address_v6 = ::iocoro::ip::detail::address_v6;
 
 /// Generic IP address value type (v4 or v6).
 class address {
@@ -116,8 +45,8 @@ class address {
   /// Selection:
   /// - If the string contains ':', it is treated as IPv6.
   /// - Otherwise, IPv4.
-  static auto from_string(std::string_view s) -> expected<address, std::error_code> {
-    if (s.find(':') != std::string_view::npos) {
+  static auto from_string(std::string const& s) -> expected<address, std::error_code> {
+    if (s.find(':') != std::string::npos) {
       return address_v6::from_string(s).transform([](address_v6 a) { return address{a}; });
     }
     return address_v4::from_string(s).transform([](address_v4 a) { return address{a}; });
@@ -128,5 +57,3 @@ class address {
 };
 
 }  // namespace iocoro::ip
-
-#include <iocoro/impl/ip/address.ipp>

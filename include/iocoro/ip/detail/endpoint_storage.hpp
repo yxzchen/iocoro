@@ -11,7 +11,7 @@
 
 #include <sys/socket.h>
 
-namespace iocoro::detail::ip {
+namespace iocoro::ip::detail {
 
 /// Protocol-agnostic storage for an IP endpoint (sockaddr_storage + helpers).
 ///
@@ -41,7 +41,7 @@ class endpoint_storage {
 
   auto to_string() const -> std::string;
 
-  static auto from_string(std::string_view s) -> expected<endpoint_storage, std::error_code>;
+  static auto from_string(std::string const& s) -> expected<endpoint_storage, std::error_code>;
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> expected<endpoint_storage, std::error_code>;
 
@@ -73,6 +73,6 @@ class endpoint_storage {
   socklen_t size_{0};
 };
 
-}  // namespace iocoro::detail::ip
+}  // namespace iocoro::ip::detail
 
-#include <iocoro/impl/ip/endpoint_storage.ipp>
+#include <iocoro/ip/impl/endpoint_storage.ipp>

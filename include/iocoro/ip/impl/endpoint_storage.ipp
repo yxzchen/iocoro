@@ -1,4 +1,4 @@
-#include <iocoro/detail/ip/endpoint_storage.hpp>
+#include <iocoro/ip/detail/endpoint_storage.hpp>
 
 #include <iocoro/assert.hpp>
 
@@ -7,23 +7,17 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
-#include <string_view>
 
 // Native socket address types (POSIX).
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-namespace iocoro::detail {
-namespace ip {
-
-using ::iocoro::ip::address;
-using ::iocoro::ip::address_v4;
-using ::iocoro::ip::address_v6;
+namespace iocoro::ip::detail {
 
 namespace {
 
-inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error_code> {
+inline auto parse_port(std::string const& p) -> expected<std::uint16_t, std::error_code> {
   if (p.empty()) {
     return unexpected(error::invalid_argument);
   }
@@ -39,17 +33,19 @@ inline auto parse_port(std::string_view p) -> expected<std::uint16_t, std::error
 
 }  // namespace
 
-inline endpoint_storage::endpoint_storage() noexcept { init_v4(address_v4::any(), 0); }
+inline endpoint_storage::endpoint_storage() noexcept {
+  init_v4(::iocoro::ip::address_v4::any(), 0);
+}
 
-inline endpoint_storage::endpoint_storage(address_v4 addr, std::uint16_t port) noexcept {
+inline endpoint_storage::endpoint_storage(::iocoro::ip::address_v4 addr, std::uint16_t port) noexcept {
   init_v4(addr, port);
 }
 
-inline endpoint_storage::endpoint_storage(address_v6 addr, std::uint16_t port) noexcept {
+inline endpoint_storage::endpoint_storage(::iocoro::ip::address_v6 addr, std::uint16_t port) noexcept {
   init_v6(addr, port);
 }
 
-inline endpoint_storage::endpoint_storage(ip::address addr, std::uint16_t port) noexcept {
+inline endpoint_storage::endpoint_storage(::iocoro::ip::address addr, std::uint16_t port) noexcept {
   if (addr.is_v4()) {
     init_v4(addr.to_v4(), port);
   } else {
@@ -57,20 +53,20 @@ inline endpoint_storage::endpoint_storage(ip::address addr, std::uint16_t port) 
   }
 }
 
-inline auto endpoint_storage::address() const noexcept -> ip::address {
+inline auto endpoint_storage::address() const noexcept -> ::iocoro::ip::address {
   IOCORO_ASSERT(family() == AF_INET || family() == AF_INET6,
                 "endpoint_storage::address(): invalid address family");
   if (family() == AF_INET) {
     auto const* sa = reinterpret_cast<sockaddr_in const*>(&storage_);
-    address_v4::bytes_type b{};
+    ::iocoro::ip::address_v4::bytes_type b{};
     std::memcpy(b.data(), &sa->sin_addr.s_addr, 4);
-    return ip::address{address_v4{b}};
+    return ::iocoro::ip::address{::iocoro::ip::address_v4{b}};
   }
   if (family() == AF_INET6) {
     auto const* sa = reinterpret_cast<sockaddr_in6 const*>(&storage_);
-    address_v6::bytes_type b{};
+    ::iocoro::ip::address_v6::bytes_type b{};
     std::memcpy(b.data(), sa->sin6_addr.s6_addr, 16);
-    return ip::address{address_v6{b, sa->sin6_scope_id}};
+    return ::iocoro::ip::address{::iocoro::ip::address_v6{b, sa->sin6_scope_id}};
   }
   IOCORO_UNREACHABLE();
 }
@@ -123,7 +119,7 @@ inline auto endpoint_storage::to_string() const -> std::string {
   return addr_str + ":" + std::to_string(port());
 }
 
-inline auto endpoint_storage::from_string(std::string_view s)
+inline auto endpoint_storage::from_string(std::string const& s)
   -> expected<endpoint_storage, std::error_code> {
   if (s.empty()) {
     return unexpected(error::invalid_argument);
@@ -132,7 +128,7 @@ inline auto endpoint_storage::from_string(std::string_view s)
   // Bracketed IPv6: [addr]:port
   if (s.front() == '[') {
     auto const close = s.find(']');
-    if (close == std::string_view::npos || close + 2 > s.size() || s[close + 1] != ':') {
+    if (close == std::string::npos || close + 2 > s.size() || s[close + 1] != ':') {
       return unexpected(error::invalid_argument);
     }
     auto host = s.substr(1, close - 1);
@@ -153,14 +149,14 @@ inline auto endpoint_storage::from_string(std::string_view s)
 
   // IPv4: host:port (reject raw IPv6 without brackets).
   auto const pos = s.rfind(':');
-  if (pos == std::string_view::npos) {
+  if (pos == std::string::npos) {
     return unexpected(error::invalid_argument);
   }
   auto host = s.substr(0, pos);
   auto port_str = s.substr(pos + 1);
 
   // If host contains ':' here, it's an unbracketed IPv6; reject.
-  if (host.find(':') != std::string_view::npos) {
+  if (host.find(':') != std::string::npos) {
     return unexpected(error::invalid_argument);
   }
 
@@ -249,5 +245,4 @@ inline void endpoint_storage::init_v6(address_v6 addr, std::uint16_t port) noexc
   size_ = sizeof(sockaddr_in6);
 }
 
-}  // namespace ip
-}  // namespace iocoro::detail
+}  // namespace iocoro::ip::detail
