@@ -65,14 +65,14 @@ class thread_pool {
   // Control flags
   std::atomic<bool> stopped_{false};
 
-  // Work guard support (prevents premature shutdown)
+  // Work guard support (keeps pool accepting work)
   std::atomic<std::size_t> work_guard_counter_{0};
 
-  // Thread identification for dispatch()
-  static thread_local std::size_t thread_id_;
+  // Thread identification for dispatch() - per-pool instance
+  static thread_local thread_pool const* current_pool_;
 
   // Helper methods
-  void worker_loop(std::size_t tid);
+  void worker_loop();
   auto running_in_pool_thread() const noexcept -> bool;
 };
 
@@ -96,6 +96,12 @@ class thread_pool::basic_executor_type {
 
     {
       std::scoped_lock lock{pool_->queue_mutex_};
+
+      // Reject new tasks if stopped
+      if (pool_->stopped_.load(std::memory_order_acquire)) {
+        return;
+      }
+
       pool_->tasks_.emplace([ex = *this, f = std::forward<F>(f)]() mutable {
         // Set up executor context for coroutines
         detail::executor_guard g{any_executor{ex}};
