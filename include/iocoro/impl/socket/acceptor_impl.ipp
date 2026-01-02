@@ -1,9 +1,8 @@
-#include <iocoro/detail/net/basic_acceptor_impl.hpp>
+#include <iocoro/detail/socket/acceptor_impl.hpp>
 
-namespace iocoro::detail::net {
+namespace iocoro::detail::socket {
 
-template <class Protocol>
-inline void basic_acceptor_impl<Protocol>::cancel_read() noexcept {
+inline void acceptor_impl::cancel_read() noexcept {
   {
     std::scoped_lock lk{mtx_};
     ++accept_epoch_;
@@ -11,8 +10,7 @@ inline void basic_acceptor_impl<Protocol>::cancel_read() noexcept {
   base_.cancel_read();
 }
 
-template <class Protocol>
-inline void basic_acceptor_impl<Protocol>::close() noexcept {
+inline void acceptor_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
     ++accept_epoch_;
@@ -22,9 +20,8 @@ inline void basic_acceptor_impl<Protocol>::close() noexcept {
   base_.close();
 }
 
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::open(int family) -> std::error_code {
-  auto ec = base_.open(family, Protocol::type(), Protocol::protocol());
+inline auto acceptor_impl::open(int domain, int type, int protocol) -> std::error_code {
+  auto ec = base_.open(domain, type, protocol);
   if (ec) {
     return ec;
   }
@@ -33,20 +30,18 @@ inline auto basic_acceptor_impl<Protocol>::open(int family) -> std::error_code {
   return {};
 }
 
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::bind(endpoint_type const& ep) -> std::error_code {
+inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> std::error_code {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     return error::not_open;
   }
-  if (::bind(fd, ep.data(), ep.size()) != 0) {
+  if (::bind(fd, addr, len) != 0) {
     return std::error_code(errno, std::generic_category());
   }
   return {};
 }
 
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::listen(int backlog) -> std::error_code {
+inline auto acceptor_impl::listen(int backlog) -> std::error_code {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     return error::not_open;
@@ -64,25 +59,7 @@ inline auto basic_acceptor_impl<Protocol>::listen(int backlog) -> std::error_cod
   return {};
 }
 
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::local_endpoint() const
-  -> expected<endpoint_type, std::error_code> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
-    return unexpected(error::not_open);
-  }
-
-  sockaddr_storage ss{};
-  socklen_t len = sizeof(ss);
-  if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
-  }
-  return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
-}
-
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::async_accept()
-  -> awaitable<expected<int, std::error_code>> {
+inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_code>> {
   auto const listen_fd = base_.native_handle();
   if (listen_fd < 0) {
     co_return unexpected(error::not_open);
@@ -170,8 +147,7 @@ inline auto basic_acceptor_impl<Protocol>::async_accept()
   }
 }
 
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::set_nonblocking(int fd) noexcept -> bool {
+inline auto acceptor_impl::set_nonblocking(int fd) noexcept -> bool {
   int flags = ::fcntl(fd, F_GETFL, 0);
   if (flags < 0) {
     return false;
@@ -182,8 +158,7 @@ inline auto basic_acceptor_impl<Protocol>::set_nonblocking(int fd) noexcept -> b
   return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::set_cloexec(int fd) noexcept -> bool {
+inline auto acceptor_impl::set_cloexec(int fd) noexcept -> bool {
   int flags = ::fcntl(fd, F_GETFD, 0);
   if (flags < 0) {
     return false;
@@ -194,20 +169,19 @@ inline auto basic_acceptor_impl<Protocol>::set_cloexec(int fd) noexcept -> bool 
   return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
 }
 
-template <class Protocol>
-inline auto basic_acceptor_impl<Protocol>::try_acquire_turn(
-  std::shared_ptr<accept_turn_state> const& st) noexcept -> bool {
+inline auto acceptor_impl::try_acquire_turn(std::shared_ptr<accept_turn_state> const& st) noexcept
+  -> bool {
   std::scoped_lock lk{mtx_};
   cleanup_expired_queue_front();
   IOCORO_ENSURE(!accept_queue_.empty(),
-                "basic_acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
+                "acceptor_impl: accept_queue_ unexpectedly empty; turn state must be queued");
   if (accept_active_) {
     return false;
   }
 
   auto front = accept_queue_.front().lock();
   IOCORO_ENSURE(static_cast<bool>(front),
-                "basic_acceptor_impl: accept_queue_ front expired after cleanup");
+                "acceptor_impl: accept_queue_ front expired after cleanup");
   if (front.get() != st.get()) {
     return false;
   }
@@ -215,16 +189,13 @@ inline auto basic_acceptor_impl<Protocol>::try_acquire_turn(
   return true;
 }
 
-template <class Protocol>
-inline void basic_acceptor_impl<Protocol>::cleanup_expired_queue_front() noexcept {
+inline void acceptor_impl::cleanup_expired_queue_front() noexcept {
   while (!accept_queue_.empty() && accept_queue_.front().expired()) {
     accept_queue_.pop_front();
   }
 }
 
-template <class Protocol>
-inline void basic_acceptor_impl<Protocol>::complete_turn(
-  std::shared_ptr<accept_turn_state> const& st) noexcept {
+inline void acceptor_impl::complete_turn(std::shared_ptr<accept_turn_state> const& st) noexcept {
   std::shared_ptr<accept_turn_state> next{};
   {
     std::scoped_lock lk{mtx_};
@@ -232,13 +203,12 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(
     // Remove ourselves from the queue (FIFO invariant: active turn is always at front).
     cleanup_expired_queue_front();
     IOCORO_ENSURE(!accept_queue_.empty(),
-                  "basic_acceptor_impl: completing turn but accept_queue_ is empty");
+                  "acceptor_impl: completing turn but accept_queue_ is empty");
     auto front = accept_queue_.front().lock();
     IOCORO_ENSURE(static_cast<bool>(front),
-                  "basic_acceptor_impl: accept_queue_ front expired while completing turn");
-    IOCORO_ENSURE(
-      front.get() == st.get(),
-      "basic_acceptor_impl: FIFO invariant broken; completing state is not queue front");
+                  "acceptor_impl: accept_queue_ front expired while completing turn");
+    IOCORO_ENSURE(front.get() == st.get(),
+                  "acceptor_impl: FIFO invariant broken; completing state is not queue front");
     accept_queue_.pop_front();
 
     accept_active_ = false;
@@ -247,7 +217,7 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(
     if (!accept_queue_.empty()) {
       next = accept_queue_.front().lock();
       IOCORO_ENSURE(static_cast<bool>(next),
-                    "basic_acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
+                    "acceptor_impl: accept_queue_ front expired unexpectedly (post-cleanup)");
       accept_active_ = true;
     }
   }
@@ -260,4 +230,4 @@ inline void basic_acceptor_impl<Protocol>::complete_turn(
   }
 }
 
-}  // namespace iocoro::detail::net
+}  // namespace iocoro::detail::socket

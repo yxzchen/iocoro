@@ -21,28 +21,29 @@
 #include <unistd.h>
 #include <cerrno>
 
-namespace iocoro::detail::net {
+namespace iocoro::detail::socket {
 
-/// Generic acceptor implementation for sockaddr-based protocols, parameterized by Protocol.
+/// Protocol-agnostic acceptor implementation.
 ///
 /// Boundary:
-/// - Depends on `Protocol::type()` / `Protocol::protocol()` only for socket creation.
-/// - Endpoint semantics are NOT interpreted here; the endpoint is treated as a native view:
-///   `data()/size()/family()` plus conversion helpers.
-template <class Protocol>
-class basic_acceptor_impl {
+/// - Does NOT know about endpoint types or Protocol tags.
+/// - Accepts native `(sockaddr*, socklen_t)` views.
+/// - Socket creation requires explicit (domain, type, protocol) parameters.
+///
+/// Concurrency:
+/// - Multiple concurrent async_accept() calls are serialized via a FIFO queue.
+/// - At most one accept operation is active at a time.
+class acceptor_impl {
  public:
-  using endpoint_type = typename Protocol::endpoint;
+  acceptor_impl() noexcept = delete;
+  explicit acceptor_impl(io_executor ex) noexcept : base_(ex) {}
 
-  basic_acceptor_impl() noexcept = delete;
-  explicit basic_acceptor_impl(io_executor ex) noexcept : base_(ex) {}
+  acceptor_impl(acceptor_impl const&) = delete;
+  auto operator=(acceptor_impl const&) -> acceptor_impl& = delete;
+  acceptor_impl(acceptor_impl&&) = delete;
+  auto operator=(acceptor_impl&&) -> acceptor_impl& = delete;
 
-  basic_acceptor_impl(basic_acceptor_impl const&) = delete;
-  auto operator=(basic_acceptor_impl const&) -> basic_acceptor_impl& = delete;
-  basic_acceptor_impl(basic_acceptor_impl&&) = delete;
-  auto operator=(basic_acceptor_impl&&) -> basic_acceptor_impl& = delete;
-
-  ~basic_acceptor_impl() = default;
+  ~acceptor_impl() = default;
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return base_.get_io_context_impl(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
@@ -66,13 +67,14 @@ class basic_acceptor_impl {
     return base_.get_option(opt);
   }
 
-  auto open(int family) -> std::error_code;
+  /// Open a new native socket.
+  auto open(int domain, int type, int protocol) -> std::error_code;
 
-  auto bind(endpoint_type const& ep) -> std::error_code;
+  /// Bind to a native endpoint.
+  auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
 
+  /// Start listening for connections.
   auto listen(int backlog) -> std::error_code;
-
-  auto local_endpoint() const -> expected<endpoint_type, std::error_code>;
 
   /// Accept a new connection.
   ///
@@ -92,10 +94,10 @@ class basic_acceptor_impl {
   };
 
   struct accept_turn_awaiter {
-    basic_acceptor_impl* self;
+    acceptor_impl* self;
     std::shared_ptr<accept_turn_state> st;
 
-    accept_turn_awaiter(basic_acceptor_impl* self_, std::shared_ptr<accept_turn_state> st_)
+    accept_turn_awaiter(acceptor_impl* self_, std::shared_ptr<accept_turn_state> st_)
         : self(self_), st(st_) {}
 
     bool await_ready() noexcept { return self->try_acquire_turn(st); }
@@ -129,7 +131,7 @@ class basic_acceptor_impl {
     return final_action<F>(std::move(f));
   }
 
-  socket::socket_impl_base base_;
+  socket_impl_base base_;
 
   mutable std::mutex mtx_{};
   bool listening_{false};
@@ -139,4 +141,4 @@ class basic_acceptor_impl {
   std::deque<std::weak_ptr<accept_turn_state>> accept_queue_{};
 };
 
-}  // namespace iocoro::detail::net
+}  // namespace iocoro::detail::socket
