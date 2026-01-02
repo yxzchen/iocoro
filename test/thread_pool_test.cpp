@@ -587,12 +587,17 @@ TEST(thread_pool_test, multiple_exceptions_are_all_handled) {
 
   std::atomic<int> exception_count{0};
   std::atomic<int> normal_tasks{0};
+  std::atomic<int> total_completed{0};
   std::promise<void> done;
   auto fut = done.get_future();
 
   // Set exception handler
   pool.set_exception_handler([&](std::exception_ptr eptr) {
     exception_count.fetch_add(1);
+    // Count exception tasks as completed too
+    if (total_completed.fetch_add(1, std::memory_order_acq_rel) == 99) {
+      done.set_value();
+    }
   });
 
   // Post mix of normal and throwing tasks
@@ -601,7 +606,9 @@ TEST(thread_pool_test, multiple_exceptions_are_all_handled) {
       if (i % 10 == 0) {
         throw std::runtime_error("exception from task " + std::to_string(i));
       }
-      if (normal_tasks.fetch_add(1) == 89) {
+      normal_tasks.fetch_add(1);
+      // Count normal tasks as completed
+      if (total_completed.fetch_add(1, std::memory_order_acq_rel) == 99) {
         done.set_value();
       }
     });
@@ -610,6 +617,7 @@ TEST(thread_pool_test, multiple_exceptions_are_all_handled) {
   EXPECT_EQ(fut.wait_for(2s), std::future_status::ready);
   EXPECT_EQ(normal_tasks.load(), 90);
   EXPECT_EQ(exception_count.load(), 10);
+  EXPECT_EQ(total_completed.load(), 100);
 }
 
 TEST(thread_pool_test, exception_handler_can_be_changed) {
