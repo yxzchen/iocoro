@@ -5,7 +5,7 @@ namespace iocoro {
 inline auto thread_pool::get_executor() noexcept -> executor_type { return executor_type{state_}; }
 
 inline auto thread_pool::size() const noexcept -> std::size_t {
-  return state_->n_threads;
+  return state_ ? state_->n_threads : 0;
 }
 
 inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
