@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detail/basic_socket_handle.hpp>
+#include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
@@ -19,7 +19,7 @@ namespace iocoro::net {
 /// Protocol-typed acceptor facade (network semantic layer).
 ///
 /// This is a networking facade layered on top of:
-/// - `iocoro::detail::basic_socket_handle<Impl>`: a small, reusable PImpl wrapper that provides
+/// - `iocoro::detail::socket_handle_base<Impl>`: a small, reusable PImpl wrapper that provides
 ///   fd lifecycle and common cancellation/option APIs.
 /// - `iocoro::detail::net::basic_acceptor_impl<Protocol>`: protocol-injected implementation.
 ///
@@ -29,14 +29,14 @@ namespace iocoro::net {
 /// - `async_accept()` returns a connected `basic_stream_socket<Protocol>` and adopts the
 ///   accepted native fd internally.
 template <class Protocol>
-class basic_acceptor : public ::iocoro::detail::basic_socket_handle<
+class basic_acceptor : public ::iocoro::detail::socket_handle_base<
                          ::iocoro::detail::net::basic_acceptor_impl<Protocol>> {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
   using socket = basic_stream_socket<Protocol>;
   using impl_type = ::iocoro::detail::net::basic_acceptor_impl<Protocol>;
-  using base_type = ::iocoro::detail::basic_socket_handle<impl_type>;
+  using base_type = ::iocoro::detail::socket_handle_base<impl_type>;
 
   basic_acceptor() = delete;
 
