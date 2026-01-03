@@ -116,7 +116,7 @@ struct resolver<Protocol>::resolve_awaiter {
   struct result_state {
     std::coroutine_handle<> continuation;
     any_executor ex;
-    expected<results_type, std::error_code> result{unexpected(error::not_implemented)};
+    expected<results_type, std::error_code> result{};
   };
   std::shared_ptr<result_state> state;
 
@@ -136,44 +136,48 @@ struct resolver<Protocol>::resolve_awaiter {
     auto host_copy = host;
     auto service_copy = service;
 
-    pool_ex.post([state = state, host_copy = std::move(host_copy),
-                  service_copy = std::move(service_copy)]() {
-      // Build hints for getaddrinfo based on Protocol.
-      addrinfo hints;
-      std::memset(&hints, 0, sizeof(hints));
-      hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6.
-      hints.ai_socktype = Protocol::type();
-      hints.ai_protocol = Protocol::protocol();
+    pool_ex.post(
+      [state = state, host_copy = std::move(host_copy), service_copy = std::move(service_copy)]() {
+        try {
+          // Build hints for getaddrinfo based on Protocol.
+          addrinfo hints;
+          std::memset(&hints, 0, sizeof(hints));
+          hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6.
+          hints.ai_socktype = Protocol::type();
+          hints.ai_protocol = Protocol::protocol();
 
-      // Execute getaddrinfo (blocking system call).
-      addrinfo* result_list = nullptr;
-      int const ret =
-        ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
-                      service_copy.empty() ? nullptr : service_copy.c_str(), &hints, &result_list);
+          // Execute getaddrinfo (blocking system call).
+          addrinfo* result_list = nullptr;
+          int const ret = ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
+                                        service_copy.empty() ? nullptr : service_copy.c_str(),
+                                        &hints, &result_list);
 
-      if (ret != 0) {
-        // getaddrinfo error.
-        // Map EAI_* error codes to std::error_code.
-        // For now, use generic_category. A proper implementation could define
-        // a custom error category for getaddrinfo errors.
-        state->result = unexpected(std::error_code(ret, std::generic_category()));
-      } else {
-        // Success: convert addrinfo list to Protocol::endpoint list.
-        results_type endpoints;
-        for (auto* ai = result_list; ai != nullptr; ai = ai->ai_next) {
-          auto ep_result = endpoint::from_native(ai->ai_addr, ai->ai_addrlen);
-          if (ep_result) {
-            endpoints.push_back(std::move(*ep_result));
+          if (ret != 0) {
+            // getaddrinfo error.
+            // Map EAI_* error codes to std::error_code.
+            // For now, use generic_category. A proper implementation could define
+            // a custom error category for getaddrinfo errors.
+            state->result = unexpected(std::error_code(ret, std::generic_category()));
+          } else {
+            // Success: convert addrinfo list to Protocol::endpoint list.
+            results_type endpoints;
+            for (auto* ai = result_list; ai != nullptr; ai = ai->ai_next) {
+              auto ep_result = endpoint::from_native(ai->ai_addr, ai->ai_addrlen);
+              if (ep_result) {
+                endpoints.push_back(std::move(*ep_result));
+              }
+              // Silently skip addresses that cannot be converted (e.g., unsupported family).
+            }
+            ::freeaddrinfo(result_list);
+            state->result = std::move(endpoints);
           }
-          // Silently skip addresses that cannot be converted (e.g., unsupported family).
+        } catch (...) {
+          state->result = unexpected(error::internal_error);
         }
-        ::freeaddrinfo(result_list);
-        state->result = std::move(endpoints);
-      }
 
-      // Post coroutine resumption back to the captured io_executor.
-      state->ex.post([state]() { state->continuation.resume(); });
-    });
+        // Post coroutine resumption back to the captured io_executor.
+        state->ex.post([state]() { state->continuation.resume(); });
+      });
   }
 
   auto await_resume() -> expected<results_type, std::error_code> {
