@@ -1,7 +1,8 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
 #include <iocoro/any_executor.hpp>
+#include <iocoro/assert.hpp>
+#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
 
@@ -71,10 +72,12 @@ struct awaitable_promise_base {
     if (!continuation_) {
       return;
     }
+    post_resume(continuation_);
+  }
 
-    IOCORO_ENSURE(ex_, "awaitable_promise: resume_continuation() requires executor");
-
-    ex_.post([h = continuation_]() { h.resume(); });
+  void post_resume(std::coroutine_handle<> h) noexcept {
+    IOCORO_ENSURE(ex_, "awaitable_promise: post_resume() requires executor");
+    ex_.post([h]() mutable { h.resume(); });
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
@@ -98,6 +101,30 @@ struct awaitable_promise_base {
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
     return awaiter{ex_};
+  }
+
+  auto await_transform(this_coro::switch_to_t t) noexcept {
+    struct awaiter {
+      awaitable_promise_base* self;
+      any_executor target;
+
+      bool await_ready() noexcept {
+        auto cur = detail::get_current_executor();
+        return cur && (cur == target);
+      }
+
+      auto await_suspend(std::coroutine_handle<> h) noexcept -> bool {
+        IOCORO_ENSURE(target, "this_coro::switch_to: empty executor");
+
+        self->ex_ = std::move(target);
+        self->post_resume(h);
+        return true;
+      }
+
+      void await_resume() noexcept {}
+    };
+
+    return awaiter{this, std::move(t.ex)};
   }
 };
 
