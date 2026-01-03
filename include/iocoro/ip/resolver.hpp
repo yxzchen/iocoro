@@ -58,21 +58,21 @@ class resolver {
   /// Construct a resolver with executors for async DNS resolution.
   ///
   /// Parameters:
-  /// - io_ex: io_executor for coroutine resumption. Typically obtained from io_context.get_executor().
+  /// - io_ex: Executor for coroutine resumption. Typically obtained from io_context.get_executor().
   ///          This executor schedules the coroutine to resume after DNS resolution completes.
   ///          The resolver will post the continuation to this executor.
   ///
-  /// - pool_ex: thread_pool executor for running blocking DNS operations (getaddrinfo). Typically
-  ///            obtained from thread_pool.get_executor(). DNS resolution is a blocking system call
-  ///            that should NOT run on the io_context thread. The resolver will post getaddrinfo
+  /// - pool_ex: Executor for running blocking DNS operations (getaddrinfo). Typically obtained
+  ///            from thread_pool.get_executor(). DNS resolution is a blocking system call that
+  ///            should NOT run on the io_context thread. The resolver will post getaddrinfo
   ///            work to this executor, which runs it on a worker thread.
   ///
   /// Example:
   ///   io_context io_ctx;
   ///   thread_pool pool{4};
   ///   tcp::resolver resolver{io_ctx.get_executor(), pool.get_executor()};
-  resolver(io_executor io_ex, thread_pool::executor_type pool_ex) noexcept
-      : io_ex_(io_ex), pool_ex_(pool_ex) {}
+  resolver(any_executor io_ex, any_executor pool_ex) noexcept
+      : io_ex_(std::move(io_ex)), pool_ex_(std::move(pool_ex)) {}
 
   resolver(resolver const&) = delete;
   auto operator=(resolver const&) -> resolver& = delete;
@@ -104,8 +104,8 @@ class resolver {
  private:
   struct resolve_awaiter;
 
-  io_executor io_ex_;                   // For coroutine resumption
-  thread_pool::executor_type pool_ex_;  // For blocking DNS calls
+  any_executor io_ex_;    // For coroutine resumption
+  any_executor pool_ex_;  // For blocking DNS calls
   std::shared_ptr<std::atomic<bool>> cancelled_{std::make_shared<std::atomic<bool>>(false)};
 };
 
@@ -117,8 +117,8 @@ class resolver {
 /// - On completion, the result is posted back to io_executor for coroutine resumption.
 template <class Protocol>
 struct resolver<Protocol>::resolve_awaiter {
-  io_executor io_ex;
-  thread_pool::executor_type pool_ex;
+  any_executor io_ex;
+  any_executor pool_ex;
   std::string host;
   std::string service;
   std::shared_ptr<std::atomic<bool>> cancelled;
@@ -131,11 +131,11 @@ struct resolver<Protocol>::resolve_awaiter {
   std::shared_ptr<result_state> state;
 
   // Explicit constructor to ensure proper initialization.
-  explicit resolve_awaiter(io_executor io_ex_, thread_pool::executor_type pool_ex_,
+  explicit resolve_awaiter(any_executor io_ex_, any_executor pool_ex_,
                           std::string host_, std::string service_,
                           std::shared_ptr<std::atomic<bool>> cancelled_)
-      : io_ex(io_ex_)
-      , pool_ex(pool_ex_)
+      : io_ex(std::move(io_ex_))
+      , pool_ex(std::move(pool_ex_))
       , host(std::move(host_))
       , service(std::move(service_))
       , cancelled(std::move(cancelled_))
