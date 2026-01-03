@@ -5,6 +5,7 @@
 
 #include <concepts>
 #include <memory>
+#include <type_traits>
 #include <typeinfo>
 #include <utility>
 #include <utility>
@@ -36,6 +37,7 @@ template <class Ex>
 concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
   { ex.post(std::move(fn)) } noexcept;
   { ex.dispatch(std::move(fn)) } noexcept;
+  { std::as_const(ex) == std::as_const(ex) } -> std::convertible_to<bool>;
 };
 
 class any_executor {
@@ -44,6 +46,16 @@ class any_executor {
 
   template <executor Ex>
   any_executor(Ex ex) : impl_(std::make_shared<model<Ex>>(std::move(ex))) {}
+
+  friend auto operator==(any_executor const& a, any_executor const& b) noexcept -> bool {
+    if (!a.impl_ || !b.impl_) {
+      return false;
+    }
+    return a.impl_->equals(*b.impl_);
+  }
+  friend auto operator!=(any_executor const& a, any_executor const& b) noexcept -> bool {
+    return !(a == b);
+  }
 
   void post(detail::unique_function<void()> fn) const noexcept {
     ensure_impl()->post(std::move(fn));
@@ -62,6 +74,7 @@ class any_executor {
     virtual ~concept_base() = default;
     virtual void post(detail::unique_function<void()>) noexcept = 0;
     virtual void dispatch(detail::unique_function<void()>) noexcept = 0;
+    virtual auto equals(concept_base const& other) const noexcept -> bool = 0;
     virtual auto target(std::type_info const& ti) const noexcept -> void const* = 0;
   };
 
@@ -73,6 +86,14 @@ class any_executor {
 
     void dispatch(detail::unique_function<void()> fn) noexcept override {
       ex_.dispatch(std::move(fn));
+    }
+
+    auto equals(concept_base const& other) const noexcept -> bool override {
+      auto const* p = dynamic_cast<model const*>(&other);
+      if (p == nullptr) {
+        return false;
+      }
+      return ex_ == p->ex_;
     }
 
     auto target(std::type_info const& ti) const noexcept -> void const* override {

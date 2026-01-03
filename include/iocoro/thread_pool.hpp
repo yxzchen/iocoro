@@ -139,7 +139,7 @@ class thread_pool::basic_executor_type {
     auto const cur_any = detail::get_current_executor();
     if (cur_any) {
       auto const* cur = detail::any_executor_access::target<basic_executor_type>(cur_any);
-      if (cur != nullptr && cur->equals(*this)) {
+      if (cur != nullptr && (*cur == *this)) {
         f();
         return;
       }
@@ -154,9 +154,13 @@ class thread_pool::basic_executor_type {
 
   explicit operator bool() const noexcept { return state_ != nullptr; }
 
-  // Executor equality for dispatch inline判断
-  auto equals(basic_executor_type const& other) const noexcept -> bool {
-    return state_.get() == other.state_.get();
+  friend auto operator==(basic_executor_type const& a,
+                         basic_executor_type const& b) noexcept -> bool {
+    return a.state_.get() == b.state_.get();
+  }
+  friend auto operator!=(basic_executor_type const& a,
+                         basic_executor_type const& b) noexcept -> bool {
+    return !(a == b);
   }
 
  private:

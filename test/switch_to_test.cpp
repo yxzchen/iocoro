@@ -39,7 +39,7 @@ TEST(switch_to_test, switches_executor_and_thread_pool_thread) {
       {
         auto cur_any = co_await iocoro::this_coro::executor;
         auto cur = iocoro::detail::require_executor<iocoro::thread_pool::executor_type>(cur_any);
-        r.started_on_ex1 = cur.equals(ex1);
+        r.started_on_ex1 = (cur == ex1);
       }
 
       co_await iocoro::this_coro::switch_to(iocoro::any_executor{ex2});
@@ -48,7 +48,7 @@ TEST(switch_to_test, switches_executor_and_thread_pool_thread) {
       {
         auto cur_any = co_await iocoro::this_coro::executor;
         auto cur = iocoro::detail::require_executor<iocoro::thread_pool::executor_type>(cur_any);
-        r.resumed_on_ex2 = cur.equals(ex2);
+        r.resumed_on_ex2 = (cur == ex2);
       }
 
       done.set_value(r);
