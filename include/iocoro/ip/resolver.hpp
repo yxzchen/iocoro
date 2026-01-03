@@ -115,6 +115,7 @@ struct resolver<Protocol>::resolve_awaiter {
   // Shared state between thread_pool worker and awaiting coroutine.
   struct result_state {
     std::coroutine_handle<> continuation;
+    any_executor ex;
     expected<results_type, std::error_code> result{unexpected(error::not_implemented)};
   };
   std::shared_ptr<result_state> state;
@@ -130,21 +131,20 @@ struct resolver<Protocol>::resolve_awaiter {
 
   void await_suspend(std::coroutine_handle<> h) {
     state->continuation = h;
-
-    // Build hints for getaddrinfo based on Protocol.
-    addrinfo hints;
-    std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6.
-    hints.ai_socktype = Protocol::type();
-    hints.ai_protocol = Protocol::protocol();
+    state->ex = ::iocoro::detail::get_current_executor();
 
     auto host_copy = host;
     auto service_copy = service;
 
-    auto io_ex = ::iocoro::detail::get_current_executor();
+    pool_ex.post([state = state, host_copy = std::move(host_copy),
+                  service_copy = std::move(service_copy)]() {
+      // Build hints for getaddrinfo based on Protocol.
+      addrinfo hints;
+      std::memset(&hints, 0, sizeof(hints));
+      hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6.
+      hints.ai_socktype = Protocol::type();
+      hints.ai_protocol = Protocol::protocol();
 
-    pool_ex.post([state = state, io_ex = io_ex, host_copy = std::move(host_copy),
-                  service_copy = std::move(service_copy), hints]() {
       // Execute getaddrinfo (blocking system call).
       addrinfo* result_list = nullptr;
       int const ret =
@@ -172,7 +172,7 @@ struct resolver<Protocol>::resolve_awaiter {
       }
 
       // Post coroutine resumption back to the captured io_executor.
-      io_ex.post([state]() { state->continuation.resume(); });
+      state->ex.post([state]() { state->continuation.resume(); });
     });
   }
 
