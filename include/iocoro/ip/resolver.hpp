@@ -106,6 +106,22 @@ class resolver {
   std::optional<any_executor> pool_ex_;  // Optional custom executor for blocking DNS calls
 };
 
+class addrinfo_error_category_impl : public std::error_category {
+ public:
+  auto name() const noexcept -> char const* override { return "addrinfo"; }
+
+  auto message(int ev) const -> std::string override {
+    // Use gai_strerror to get the error message for getaddrinfo errors.
+    char const* msg = ::gai_strerror(ev);
+    return msg ? msg : "unknown addrinfo error";
+  }
+};
+
+inline auto addrinfo_error_category() -> std::error_category const& {
+  static addrinfo_error_category_impl instance;
+  return instance;
+}
+
 template <class Protocol>
 struct resolver<Protocol>::resolve_awaiter {
   any_executor pool_ex;
@@ -154,10 +170,8 @@ struct resolver<Protocol>::resolve_awaiter {
 
           if (ret != 0) {
             // getaddrinfo error.
-            // Map EAI_* error codes to std::error_code.
-            // For now, use generic_category. A proper implementation could define
-            // a custom error category for getaddrinfo errors.
-            state->result = unexpected(std::error_code(ret, std::generic_category()));
+            // Map EAI_* error codes to addrinfo_error and create a proper error_code.
+            state->result = unexpected(std::error_code(ret, addrinfo_error_category()));
           } else {
             // Success: convert addrinfo list to Protocol::endpoint list.
             results_type endpoints;
