@@ -26,6 +26,36 @@ static auto should_skip_network_test(std::error_code ec) -> bool {
          ec.value() == -3;    // EAI_AGAIN (temporary failure)
 }
 
+TEST(resolver_test, resolve_with_default_pool) {
+  auto ctx = iocoro::io_context{};
+
+  struct test_result {
+    std::optional<std::error_code> error;
+    std::size_t count = 0;
+  };
+
+  auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<test_result> {
+    test_result r;
+    // Use default internal thread_pool (no pool executor provided).
+    auto resolver = iocoro::ip::tcp::resolver{};
+    auto resolve_result = co_await resolver.async_resolve("127.0.0.1", "80");
+
+    if (!resolve_result) {
+      r.error = resolve_result.error();
+      co_return r;
+    }
+
+    r.count = resolve_result->size();
+    co_return r;
+  }());
+
+  if (result.error) {
+    FAIL() << "Resolve failed: " << result.error->message();
+  }
+
+  EXPECT_EQ(result.count, 1u);
+}
+
 TEST(resolver_test, resolve_localhost_ipv4) {
   auto ctx = iocoro::io_context{};
   auto pool = iocoro::thread_pool{2};
@@ -38,7 +68,7 @@ TEST(resolver_test, resolve_localhost_ipv4) {
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<test_result> {
     test_result r;
-    auto resolver = iocoro::ip::tcp::resolver{ctx.get_executor(), pool.get_executor()};
+    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
     auto resolve_result = co_await resolver.async_resolve("localhost", "80");
 
     if (!resolve_result) {
@@ -86,7 +116,7 @@ TEST(resolver_test, resolve_ip_address_literal) {
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<test_result> {
     test_result r;
-    auto resolver = iocoro::ip::tcp::resolver{ctx.get_executor(), pool.get_executor()};
+    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
     auto resolve_result = co_await resolver.async_resolve("127.0.0.1", "8080");
 
     if (!resolve_result) {
@@ -130,7 +160,7 @@ TEST(resolver_test, resolve_ipv6_localhost) {
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<test_result> {
     test_result r;
-    auto resolver = iocoro::ip::tcp::resolver{ctx.get_executor(), pool.get_executor()};
+    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
     auto resolve_result = co_await resolver.async_resolve("::1", "443");
 
     if (!resolve_result) {
@@ -179,7 +209,7 @@ TEST(resolver_test, resolve_service_name) {
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<test_result> {
     test_result r;
-    auto resolver = iocoro::ip::tcp::resolver{ctx.get_executor(), pool.get_executor()};
+    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
     auto resolve_result = co_await resolver.async_resolve("127.0.0.1", "http");
 
     if (!resolve_result) {
@@ -211,7 +241,7 @@ TEST(resolver_test, cancel_pending_operation) {
   auto pool = iocoro::thread_pool{2};
 
   auto error = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::optional<std::error_code>> {
-    auto resolver = iocoro::ip::tcp::resolver{ctx.get_executor(), pool.get_executor()};
+    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
 
     // Cancel immediately (best-effort; getaddrinfo might complete before cancel is checked).
     resolver.cancel();
@@ -255,7 +285,7 @@ TEST(resolver_test, resolve_public_domain) {
 
   auto result = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<test_result> {
     test_result r;
-    auto resolver = iocoro::ip::tcp::resolver{ctx.get_executor(), pool.get_executor()};
+    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
     auto resolve_result = co_await resolver.async_resolve("example.com", "80");
 
     if (!resolve_result) {
@@ -292,7 +322,7 @@ TEST(resolver_test, multiple_resolves_sequentially) {
   auto pool = iocoro::thread_pool{2};
 
   int success_count = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<int> {
-    auto resolver = iocoro::ip::tcp::resolver{ctx.get_executor(), pool.get_executor()};
+    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
     int count = 0;
 
     // Resolve multiple hosts sequentially to test reusability.

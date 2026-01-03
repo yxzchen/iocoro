@@ -9,11 +9,13 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_executor.hpp>
+#include <iocoro/this_coro.hpp>
 #include <iocoro/thread_pool.hpp>
 
 #include <atomic>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -32,20 +34,21 @@ namespace iocoro::ip {
 ///
 /// Threading model:
 /// - DNS resolution (getaddrinfo) is executed on a thread_pool executor (blocking call).
-/// - Coroutine resumption happens on the io_executor.
+/// - Coroutine resumption happens on the calling coroutine's executor (captured via this_coro::executor).
 ///
 /// Lifecycle:
-/// - Requires both an io_executor (for async coordination) and a thread_pool executor
-///   (for blocking DNS operations).
+/// - Optionally accepts a custom thread_pool executor for DNS operations.
+/// - If not provided, uses an internal static thread_pool with 1 worker thread.
 ///
 /// Usage:
-///   ip::tcp::resolver resolver{io_ctx.get_executor(), pool.get_executor()};
+///   // Use default internal thread_pool:
+///   ip::tcp::resolver resolver;
 ///   auto result = co_await resolver.async_resolve("www.example.com", "80");
-///   if (result) {
-///     for (auto const& ep : *result) {
-///       // Connect to ep...
-///     }
-///   }
+///
+///   // Use custom thread_pool:
+///   thread_pool pool{4};
+///   ip::tcp::resolver resolver{pool.get_executor()};
+///   auto result = co_await resolver.async_resolve("www.example.com", "80");
 template <class Protocol>
 class resolver {
  public:
@@ -53,26 +56,20 @@ class resolver {
   using endpoint = typename Protocol::endpoint;
   using results_type = std::vector<endpoint>;
 
-  resolver() = delete;
-
-  /// Construct a resolver with executors for async DNS resolution.
+  /// Construct a resolver with optional custom executor for DNS resolution.
   ///
   /// Parameters:
-  /// - io_ex: Executor for coroutine resumption. Typically obtained from io_context.get_executor().
-  ///          This executor schedules the coroutine to resume after DNS resolution completes.
-  ///          The resolver will post the continuation to this executor.
+  /// - pool_ex: Optional executor for running blocking DNS operations (getaddrinfo).
+  ///            If not provided, uses an internal static thread_pool with 1 worker thread.
+  ///            DNS resolution is a blocking system call that should NOT run on the io_context
+  ///            thread. The resolver will post getaddrinfo work to this executor.
   ///
-  /// - pool_ex: Executor for running blocking DNS operations (getaddrinfo). Typically obtained
-  ///            from thread_pool.get_executor(). DNS resolution is a blocking system call that
-  ///            should NOT run on the io_context thread. The resolver will post getaddrinfo
-  ///            work to this executor, which runs it on a worker thread.
-  ///
-  /// Example:
-  ///   io_context io_ctx;
-  ///   thread_pool pool{4};
-  ///   tcp::resolver resolver{io_ctx.get_executor(), pool.get_executor()};
-  resolver(any_executor io_ex, any_executor pool_ex) noexcept
-      : io_ex_(std::move(io_ex)), pool_ex_(std::move(pool_ex)) {}
+  /// Note: The resolver automatically uses the calling coroutine's executor (via this_coro::executor)
+  ///       for resumption after DNS resolution completes.
+  resolver() noexcept = default;
+
+  explicit resolver(any_executor pool_ex) noexcept
+      : pool_ex_(std::move(pool_ex)) {}
 
   resolver(resolver const&) = delete;
   auto operator=(resolver const&) -> resolver& = delete;
@@ -91,7 +88,10 @@ class resolver {
   /// - Failure: std::error_code (from getaddrinfo or operation_aborted on cancel).
   ///
   /// Note: This function uses getaddrinfo, which is a blocking system call. To avoid blocking
-  /// the io_context thread, the call is executed on the thread_pool provided at construction.
+  /// the io_context thread, the call is executed on the thread_pool provided at construction
+  /// (or the internal default thread_pool if none was provided).
+  ///
+  /// The coroutine will resume on the executor it was called from (captured via this_coro::executor).
   auto async_resolve(std::string host, std::string service)
     -> awaitable<expected<results_type, std::error_code>>;
 
@@ -104,17 +104,21 @@ class resolver {
  private:
   struct resolve_awaiter;
 
-  any_executor io_ex_;    // For coroutine resumption
-  any_executor pool_ex_;  // For blocking DNS calls
+  /// Get the executor for running blocking DNS operations.
+  /// Returns custom executor if provided, otherwise returns the static default thread_pool executor.
+  auto get_pool_executor() const -> any_executor;
+
+  std::optional<any_executor> pool_ex_;  // Optional custom executor for blocking DNS calls
   std::shared_ptr<std::atomic<bool>> cancelled_{std::make_shared<std::atomic<bool>>(false)};
 };
 
 /// Internal awaiter for async_resolve.
 ///
 /// Design:
-/// - await_suspend posts getaddrinfo work to thread_pool.
+/// - Captures the calling coroutine's executor via this_coro::executor.
+/// - Posts getaddrinfo work to thread_pool.
 /// - The blocking getaddrinfo runs on a thread_pool worker.
-/// - On completion, the result is posted back to io_executor for coroutine resumption.
+/// - On completion, the result is posted back to the captured executor for coroutine resumption.
 template <class Protocol>
 struct resolver<Protocol>::resolve_awaiter {
   any_executor io_ex;
@@ -192,7 +196,7 @@ struct resolver<Protocol>::resolve_awaiter {
         state->result = std::move(endpoints);
       }
 
-      // Post coroutine resumption back to io_executor.
+      // Post coroutine resumption back to the captured io_executor.
       io_ex.post([state]() { state->continuation.resume(); });
     });
   }
