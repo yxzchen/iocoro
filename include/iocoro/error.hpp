@@ -27,6 +27,9 @@ enum class error {
   /// Socket is already connected.
   already_connected,
 
+  /// Datagram socket is not bound to a local address (required for receiving).
+  not_bound,
+
   /// End of file / orderly shutdown by peer (read returned 0).
   eof,
 

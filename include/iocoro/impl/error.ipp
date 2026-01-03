@@ -24,6 +24,8 @@ class error_category_impl : public std::error_category {
         return "not connected";
       case error::already_connected:
         return "already connected";
+      case error::not_bound:
+        return "not bound";
       case error::eof:
         return "end of file";
       case error::broken_pipe:

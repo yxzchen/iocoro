@@ -100,7 +100,6 @@ inline auto datagram_socket_impl::async_send_to(
   }
 
   std::uint64_t my_epoch = 0;
-  bool is_connected = false;
 
   {
     std::scoped_lock lk{mtx_};
@@ -109,16 +108,9 @@ inline auto datagram_socket_impl::async_send_to(
     }
     send_in_flight_ = true;
     my_epoch = send_epoch_;
-    is_connected = (state_ == dgram_state::connected);
-
-    // If connected, validate that the destination matches the connected endpoint.
-    if (is_connected) {
-      if (dest_len != connected_addr_len_ ||
-          std::memcmp(dest_addr, &connected_addr_, dest_len) != 0) {
-        send_in_flight_ = false;
-        co_return unexpected(error::invalid_argument);
-      }
-    }
+    // Note: For connected UDP sockets, the kernel ignores the dest_addr parameter
+    // and always sends to the connected endpoint (Linux behavior).
+    // We do not validate endpoint consistency here; the kernel handles it.
   }
 
   auto guard = finally([this] {
@@ -178,11 +170,15 @@ inline auto datagram_socket_impl::async_receive_from(
     co_return unexpected(error::not_open);
   }
 
-  // Check that the socket is bound.
+  // Check that the socket is bound or connected.
+  // Note: A connected UDP socket is implicitly bound by the kernel.
+  // State semantics:
+  //   - idle: socket is open but cannot receive (no local address)
+  //   - bound | connected: socket can receive (has local address)
   {
     std::scoped_lock lk{mtx_};
     if (state_ == dgram_state::idle) {
-      co_return unexpected(error::not_connected);  // Use not_connected to mean not_bound.
+      co_return unexpected(error::not_bound);
     }
   }
 
@@ -211,10 +207,20 @@ inline auto datagram_socket_impl::async_receive_from(
   // Retry loop for EINTR and EAGAIN.
   for (;;) {
     // Use MSG_TRUNC to detect truncation.
+    //
+    // Portability note (Linux-specific behavior):
+    //   On Linux, MSG_TRUNC causes recvfrom to return the actual datagram size,
+    //   even if it exceeds the buffer size. This allows us to detect truncation.
+    //
+    //   BSD systems also support MSG_TRUNC, but the exact semantics may vary slightly.
+    //   POSIX does not mandate MSG_TRUNC, so strictly portable code should handle
+    //   its absence (though it is widely available on modern UNIX-like systems).
+    //
+    //   This implementation assumes Linux-like MSG_TRUNC semantics.
     ssize_t n = ::recvfrom(fd, buffer.data(), buffer.size(), MSG_TRUNC, src_addr, src_len);
 
     if (n >= 0) {
-      // Check if the message was truncated.
+      // Check if the message was truncated (return value > buffer size).
       if (static_cast<std::size_t>(n) > buffer.size()) {
         co_return unexpected(error::message_size);
       }

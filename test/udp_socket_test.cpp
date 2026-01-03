@@ -25,10 +25,6 @@ static auto as_writable_bytes(std::string& s) -> std::span<std::byte> {
   return {reinterpret_cast<std::byte*>(s.data()), s.size()};
 }
 
-static auto to_string(std::span<std::byte const> data) -> std::string {
-  return {reinterpret_cast<char const*>(data.data()), data.size()};
-}
-
 // Test basic UDP send/receive on loopback.
 TEST(UdpSocketTest, BasicSendReceive) {
   iocoro::io_context ctx;
@@ -137,16 +133,6 @@ TEST(UdpSocketTest, ConnectedSocket) {
     recv_buf.resize(*recv_result);
     if (recv_buf != msg) {
       co_return "Message mismatch";
-    }
-
-    // Try to send to a different endpoint (should fail).
-    auto other_ep = iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 9999};
-    auto send_other_result = co_await sender.async_send_to(as_bytes(msg), other_ep);
-    if (send_other_result.has_value()) {
-      co_return "Should have failed to send to different endpoint";
-    }
-    if (send_other_result.error() != iocoro::error::invalid_argument) {
-      co_return "Wrong error code for mismatched endpoint";
     }
 
     co_return "OK";
