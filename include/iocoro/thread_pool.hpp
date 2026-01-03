@@ -2,8 +2,8 @@
 
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/executor_cast.hpp>
+#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/work_guard.hpp>
 
@@ -110,8 +110,10 @@ class thread_pool::basic_executor_type {
     {
       std::scoped_lock lock{state_->mutex};
 
-      // Reject new tasks if stopped
+      // Inline run new tasks if stopped
       if (state_->stopped.load(std::memory_order_acquire)) {
+        detail::executor_guard g{any_executor{*this}};
+        f();
         return;
       }
 

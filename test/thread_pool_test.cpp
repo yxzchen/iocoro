@@ -28,9 +28,9 @@ TEST(thread_pool_test, post_runs_on_multiple_threads) {
   std::condition_variable cv;
   std::unordered_set<std::thread::id> threads;
 
-  std::atomic<int> remaining{200};
+  std::atomic<int> remaining{2000};
 
-  for (int i = 0; i < 200; ++i) {
+  for (int i = 0; i < 2000; ++i) {
     ex.post([&] {
       {
         std::scoped_lock lk{m};
@@ -130,21 +130,6 @@ TEST(thread_pool_test, tasks_with_return_values) {
 }
 
 // ========== Stop and Destruction Tests ==========
-
-TEST(thread_pool_test, stop_prevents_new_tasks) {
-  iocoro::thread_pool pool{4};
-  auto ex = pool.get_executor();
-
-  pool.stop();
-
-  std::atomic<bool> task_executed{false};
-  ex.post([&] {
-    task_executed.store(true, std::memory_order_release);
-  });
-
-  std::this_thread::sleep_for(100ms);
-  EXPECT_FALSE(task_executed.load());
-}
 
 TEST(thread_pool_test, stop_is_idempotent) {
   iocoro::thread_pool pool{2};
