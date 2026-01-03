@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/local/endpoint.hpp>
+#include <iocoro/net/basic_stream_socket.hpp>
 #include <iocoro/net/protocol.hpp>
 
 #include <sys/socket.h>
@@ -17,6 +18,8 @@ struct dgram {
 
   static constexpr auto type() noexcept -> int { return SOCK_DGRAM; }
   static constexpr auto protocol() noexcept -> int { return 0; }
+
+  using socket = ::iocoro::net::basic_stream_socket<dgram>;
 };
 
 static_assert(::iocoro::net::protocol_tag<dgram>);

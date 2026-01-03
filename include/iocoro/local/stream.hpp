@@ -17,7 +17,6 @@ struct stream {
   static constexpr auto type() noexcept -> int { return SOCK_STREAM; }
   static constexpr auto protocol() noexcept -> int { return 0; }
 
-  // Fix API shape early (even if not tested yet).
   using socket = ::iocoro::net::basic_stream_socket<stream>;
   using acceptor = ::iocoro::net::basic_acceptor<stream>;
 };
