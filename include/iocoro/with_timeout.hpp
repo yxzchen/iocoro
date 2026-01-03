@@ -35,11 +35,14 @@ namespace iocoro {
 /// - When the timeout fires, this function:
 ///   - executes `on_timeout()` first
 ///   - then waits for `op` to finish (typically by being cancelled by `on_timeout()`).
-template <class Awaitable, class OnTimeout>
-  requires std::invocable<OnTimeout&> &&
-           requires { typename traits::awaitable_result_t<Awaitable>; }
+///
+/// Note: on_timeout is taken as unique_function to avoid -Wsubobject-linkage warnings
+/// when users pass lambdas with internal linkage.
+template <class Awaitable>
+  requires requires { typename traits::awaitable_result_t<Awaitable>; }
 auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::duration timeout,
-                  OnTimeout on_timeout) -> awaitable<traits::awaitable_result_t<Awaitable>> {
+                  detail::unique_function<void()> on_timeout)
+  -> awaitable<traits::awaitable_result_t<Awaitable>> {
   using result_t = traits::awaitable_result_t<Awaitable>;
   using result_traits = traits::timeout_result_traits<result_t>;
 
@@ -59,21 +62,15 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 
   std::atomic<bool> fired{false};
 
-  // Wrap on_timeout in shared_ptr<unique_function> to avoid -Wsubobject-linkage warnings
-  // and prevent move-related issues when capturing in coroutine frames.
-  // Using shared_ptr ensures the unique_function stays alive and isn't moved multiple times.
-  auto on_timeout_fn =
-    std::make_shared<detail::unique_function<void()>>(std::move(on_timeout));
-
   auto watcher = co_spawn(
     co_await this_coro::executor,
 
     // Capturing timer by value causes double free. Not sure why.
-    [&timer, &fired, on_timeout_fn]() mutable -> awaitable<void> {
+    [&timer, &fired, &on_timeout]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
         fired.store(true, std::memory_order_release);
-        (*on_timeout_fn)();
+        on_timeout();
       }
     },
     use_awaitable);
@@ -90,7 +87,7 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
   co_return r;
 }
 
-/// Syntax sugar 1: IO coroutine usage.
+/// Syntax sugar: IO coroutine usage.
 ///
 /// Strong requirement:
 /// - The current coroutine MUST be running on io_executor.
@@ -99,10 +96,10 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 /// This is purely:
 /// - with_timeout(co_await this_coro::executor, ...)
 /// and does not introduce any new semantics.
-template <class Awaitable, class OnTimeout>
-  requires std::invocable<OnTimeout&> &&
-           requires { typename traits::awaitable_result_t<Awaitable>; }
-auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout, OnTimeout on_timeout)
+template <class Awaitable>
+  requires requires { typename traits::awaitable_result_t<Awaitable>; }
+auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout,
+                  detail::unique_function<void()> on_timeout)
   -> awaitable<traits::awaitable_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
   IOCORO_ENSURE(ex_any, "with_timeout: requires a bound executor");
