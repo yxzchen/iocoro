@@ -59,15 +59,19 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 
   std::atomic<bool> fired{false};
 
+  // Wrap on_timeout in std::function to avoid -Wsubobject-linkage warnings
+  // when capturing lambda closures in coroutine frames.
+  std::function<void()> on_timeout_fn{std::move(on_timeout)};
+
   auto watcher = co_spawn(
     co_await this_coro::executor,
 
     // Capturing timer by value causes double free. Not sure why.
-    [&timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
+    [&timer, &fired, on_timeout_fn = std::move(on_timeout_fn)]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
         fired.store(true, std::memory_order_release);
-        on_timeout();
+        on_timeout_fn();
       }
     },
     use_awaitable);
