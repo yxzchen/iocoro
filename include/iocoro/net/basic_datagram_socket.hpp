@@ -88,9 +88,6 @@ class basic_datagram_socket
 
   /// Send a datagram to the specified destination.
   ///
-  /// Important: If the socket is connected, the destination endpoint must match
-  /// the connected endpoint, otherwise an error is returned.
-  ///
   /// The entire buffer is sent as a single datagram (message boundary preserved).
   auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
       -> awaitable<expected<std::size_t, std::error_code>> {
