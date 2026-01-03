@@ -61,7 +61,9 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
 
   auto watcher = co_spawn(
     co_await this_coro::executor,
-    [timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
+
+    // Capturing timer by value causes double free. Not sure why.
+    [&timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
         fired.store(true, std::memory_order_release);
