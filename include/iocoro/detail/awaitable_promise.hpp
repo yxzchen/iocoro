@@ -99,6 +99,25 @@ struct awaitable_promise_base {
     };
     return awaiter{ex_};
   }
+
+  auto await_transform(this_coro::switch_to_t t) noexcept {
+    struct awaiter {
+      awaitable_promise_base* self;
+      any_executor target;
+
+      bool await_ready() noexcept { return false; }
+
+      void await_suspend(std::coroutine_handle<> h) noexcept {
+        self->ex_ = std::move(target);
+        IOCORO_ENSURE(self->ex_, "this_coro::switch_to: empty executor");
+        self->ex_.post([h]() mutable { h.resume(); });
+      }
+
+      void await_resume() noexcept {}
+    };
+
+    return awaiter{this, std::move(t.ex)};
+  }
 };
 
 template <typename T>
