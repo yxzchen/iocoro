@@ -10,7 +10,6 @@
 #include <iocoro/expected.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool.hpp>
-#include <iocoro/work_guard.hpp>
 
 #include <atomic>
 #include <cstring>
@@ -154,17 +153,13 @@ struct resolver<Protocol>::resolve_awaiter {
     hints.ai_socktype = Protocol::type();
     hints.ai_protocol = Protocol::protocol();
 
-    // Create work_guard to prevent io_context from stopping before completion.
-    auto guard = make_work_guard(io_ex);
-
     // Post DNS resolution work to thread_pool (blocking call).
     // Copy strings to ensure safe lifetime in thread_pool worker.
     auto host_copy = host;
     auto service_copy = service;
 
-    pool_ex.post([state = state, io_ex = io_ex, guard = std::move(guard),
-                  host_copy = std::move(host_copy), service_copy = std::move(service_copy),
-                  hints, cancelled = cancelled]() mutable {
+    pool_ex.post([state = state, io_ex = io_ex, host_copy = std::move(host_copy),
+                  service_copy = std::move(service_copy), hints, cancelled = cancelled]() {
       // Execute getaddrinfo (blocking system call).
       addrinfo* result_list = nullptr;
       int const ret = ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
@@ -197,11 +192,8 @@ struct resolver<Protocol>::resolve_awaiter {
         state->result = std::move(endpoints);
       }
 
-      // Post coroutine resumption back to io_executor and release work_guard.
-      io_ex.post([state, guard = std::move(guard)]() mutable {
-        guard.reset();  // Release work_guard
-        state->continuation.resume();
-      });
+      // Post coroutine resumption back to io_executor.
+      io_ex.post([state]() { state->continuation.resume(); });
     });
   }
 

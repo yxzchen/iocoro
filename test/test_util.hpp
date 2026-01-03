@@ -4,6 +4,7 @@
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/work_guard.hpp>
 
 #include <chrono>
 #include <exception>
@@ -74,9 +75,13 @@ auto sync_wait(io_context& ctx, awaitable<T> a) -> T {
   auto ex = ctx.get_executor();
   ctx.restart();
 
+  // Create work_guard to prevent io_context from stopping before async operations complete.
+  auto guard = make_work_guard(ex);
+
   detail::sync_wait_state<T> st{};
-  co_spawn(ex, std::move(a), [&](expected<T, std::exception_ptr> r) mutable {
+  co_spawn(ex, std::move(a), [&, guard = std::move(guard)](expected<T, std::exception_ptr> r) mutable {
     detail::set_from_expected(st, std::move(r));
+    guard.reset();  // Release work_guard on completion
   });
 
   ctx.run();
@@ -95,9 +100,13 @@ auto sync_wait_for(io_context& ctx, std::chrono::duration<Rep, Period> timeout, 
   auto ex = ctx.get_executor();
   ctx.restart();
 
+  // Create work_guard to prevent io_context from stopping before async operations complete.
+  auto guard = make_work_guard(ex);
+
   detail::sync_wait_state<T> st{};
-  co_spawn(ex, std::move(a), [&](expected<T, std::exception_ptr> r) mutable {
+  co_spawn(ex, std::move(a), [&, guard = std::move(guard)](expected<T, std::exception_ptr> r) mutable {
     detail::set_from_expected(st, std::move(r));
+    guard.reset();  // Release work_guard on completion
   });
 
   ctx.run_for(std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
