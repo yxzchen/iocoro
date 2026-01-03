@@ -97,11 +97,9 @@ class datagram_socket_impl {
   }
 
   /// Bind to a local endpoint.
-  /// Opens the socket if not already open.
   auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
 
   /// Connect to a remote endpoint (fixes the peer for this socket).
-  /// Opens the socket if not already open.
   auto connect(sockaddr const* addr, socklen_t len) -> std::error_code;
 
   /// Send a datagram to the specified destination.

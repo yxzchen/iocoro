@@ -108,9 +108,6 @@ inline auto datagram_socket_impl::async_send_to(
     }
     send_in_flight_ = true;
     my_epoch = send_epoch_;
-    // Note: For connected UDP sockets, the kernel ignores the dest_addr parameter
-    // and always sends to the connected endpoint (Linux behavior).
-    // We do not validate endpoint consistency here; the kernel handles it.
   }
 
   auto guard = finally([this] {
