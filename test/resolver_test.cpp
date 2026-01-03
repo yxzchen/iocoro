@@ -236,44 +236,6 @@ TEST(resolver_test, resolve_service_name) {
   EXPECT_EQ(result.port, 80);
 }
 
-TEST(resolver_test, cancel_pending_operation) {
-  auto ctx = iocoro::io_context{};
-  auto pool = iocoro::thread_pool{2};
-
-  auto error = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::optional<std::error_code>> {
-    auto resolver = iocoro::ip::tcp::resolver{pool.get_executor()};
-
-    // Cancel immediately (best-effort; getaddrinfo might complete before cancel is checked).
-    resolver.cancel();
-
-    auto result = co_await resolver.async_resolve("localhost", "80");
-
-    if (!result) {
-      co_return result.error();
-    }
-
-    co_return std::nullopt;  // Success (cancel didn't take effect in time)
-  }());
-
-  pool.stop();
-  pool.join();
-
-  // Cancellation is best-effort. Either we get operation_aborted, or the resolve succeeded.
-  if (error) {
-    if (*error == std::error_code{iocoro::error::operation_aborted}) {
-      // Expected cancellation.
-      SUCCEED();
-    } else if (should_skip_network_test(*error)) {
-      GTEST_SKIP() << "Network unavailable: " << error->message();
-    } else {
-      std::cout << "Note: Unexpected error during cancel test: " << error->message() << "\n";
-    }
-  } else {
-    // Resolution completed before cancellation took effect (acceptable).
-    std::cout << "Note: Resolution completed before cancel\n";
-  }
-}
-
 TEST(resolver_test, resolve_public_domain) {
   auto ctx = iocoro::io_context{};
   auto pool = iocoro::thread_pool{2};

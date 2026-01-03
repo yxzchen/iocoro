@@ -85,22 +85,12 @@ class resolver {
   /// (or the internal default thread_pool if none was provided).
   auto async_resolve(std::string host, std::string service)
     -> awaitable<expected<results_type, std::error_code>> {
-    // Reset cancellation flag for this new operation.
-    cancelled_->store(false, std::memory_order_release);
-
     // Get the pool executor (custom or default static pool).
     auto pool_ex = pool_ex_ ? *pool_ex_ : get_default_executor();
 
     // Create and await the resolve_awaiter with explicit constructor.
-    co_return co_await resolve_awaiter{std::move(pool_ex), std::move(host), std::move(service),
-                                       cancelled_};
+    co_return co_await resolve_awaiter{std::move(pool_ex), std::move(host), std::move(service)};
   }
-
-  /// Cancel the pending resolve operation (best-effort).
-  ///
-  /// Note: getaddrinfo itself is not cancellable. This sets a flag that causes the
-  /// awaiter to return operation_aborted if checked before the result is processed.
-  void cancel() noexcept { cancelled_->store(true, std::memory_order_release); }
 
  private:
   struct resolve_awaiter;
@@ -114,7 +104,6 @@ class resolver {
   }
 
   std::optional<any_executor> pool_ex_;  // Optional custom executor for blocking DNS calls
-  std::shared_ptr<std::atomic<bool>> cancelled_{std::make_shared<std::atomic<bool>>(false)};
 };
 
 template <class Protocol>
@@ -122,7 +111,6 @@ struct resolver<Protocol>::resolve_awaiter {
   any_executor pool_ex;
   std::string host;
   std::string service;
-  std::shared_ptr<std::atomic<bool>> cancelled;
 
   // Shared state between thread_pool worker and awaiting coroutine.
   struct result_state {
@@ -132,12 +120,10 @@ struct resolver<Protocol>::resolve_awaiter {
   std::shared_ptr<result_state> state;
 
   // Explicit constructor to ensure proper initialization.
-  explicit resolve_awaiter(any_executor pool_ex_, std::string host_, std::string service_,
-                           std::shared_ptr<std::atomic<bool>> cancelled_)
+  explicit resolve_awaiter(any_executor pool_ex_, std::string host_, std::string service_)
       : pool_ex(std::move(pool_ex_)),
         host(std::move(host_)),
         service(std::move(service_)),
-        cancelled(std::move(cancelled_)),
         state(std::make_shared<result_state>()) {}
 
   bool await_ready() const noexcept { return false; }
@@ -158,20 +144,14 @@ struct resolver<Protocol>::resolve_awaiter {
     auto io_ex = ::iocoro::detail::get_current_executor();
 
     pool_ex.post([state = state, io_ex = io_ex, host_copy = std::move(host_copy),
-                  service_copy = std::move(service_copy), hints, cancelled = cancelled]() {
+                  service_copy = std::move(service_copy), hints]() {
       // Execute getaddrinfo (blocking system call).
       addrinfo* result_list = nullptr;
       int const ret =
         ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
                       service_copy.empty() ? nullptr : service_copy.c_str(), &hints, &result_list);
 
-      // Check cancellation flag before processing results.
-      if (cancelled->load(std::memory_order_acquire)) {
-        if (result_list) {
-          ::freeaddrinfo(result_list);
-        }
-        state->result = unexpected(error::operation_aborted);
-      } else if (ret != 0) {
+      if (ret != 0) {
         // getaddrinfo error.
         // Map EAI_* error codes to std::error_code.
         // For now, use generic_category. A proper implementation could define
