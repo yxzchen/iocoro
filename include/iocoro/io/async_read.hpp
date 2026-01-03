@@ -5,7 +5,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
-#include <iocoro/io/with_timeout.hpp>
+#include <iocoro/with_timeout.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -26,7 +26,8 @@ template <async_read_stream Stream, class Rep, class Period>
 auto async_read_some_timeout(Stream& s, std::span<std::byte> buf,
                              std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  return with_timeout_read(s, s.async_read_some(buf), timeout);
+  co_return co_await with_timeout(s.get_executor(), s.async_read_some(buf), timeout,
+                                  [&]() { s.cancel_read(); });
 }
 
 /// Composed operation: read exactly `buf.size()` bytes.
@@ -70,7 +71,8 @@ template <async_stream Stream, class Rep, class Period>
 auto async_read_timeout(Stream& s, std::span<std::byte> buf,
                         std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  return with_timeout_read(s, async_read(s, buf), timeout);
+  co_return co_await with_timeout(s.get_executor(), async_read(s, buf), timeout,
+                                  [&]() { s.cancel_read(); });
 }
 
 }  // namespace iocoro::io

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/co_spawn.hpp>
@@ -7,7 +8,6 @@
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/any_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/io_executor.hpp>
@@ -25,7 +25,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace iocoro::io {
+namespace iocoro {
 
 /// Await an I/O awaitable with a deadline.
 ///
@@ -104,24 +104,6 @@ auto with_timeout(Awaitable op, std::chrono::steady_clock::duration timeout, OnT
   co_return co_await with_timeout(ex, std::move(op), timeout, std::move(on_timeout));
 }
 
-template <class Stream, class Awaitable>
-  requires cancel_readable_stream<Stream> && io_executor_stream<Stream> &&
-           requires { typename traits::awaitable_result_t<Awaitable>; }
-auto with_timeout_read(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
-  -> awaitable<traits::awaitable_result_t<Awaitable>> {
-  co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
-                                  [&]() { s.cancel_read(); });
-}
-
-template <class Stream, class Awaitable>
-  requires cancel_writable_stream<Stream> && io_executor_stream<Stream> &&
-           requires { typename traits::awaitable_result_t<Awaitable>; }
-auto with_timeout_write(Stream& s, Awaitable op, std::chrono::steady_clock::duration timeout)
-  -> awaitable<traits::awaitable_result_t<Awaitable>> {
-  co_return co_await with_timeout(s.get_executor(), std::move(op), timeout,
-                                  [&]() { s.cancel_write(); });
-}
-
 /// Detached variant.
 ///
 /// Semantics:
@@ -177,4 +159,4 @@ auto with_timeout_detached(Awaitable op, std::chrono::steady_clock::duration tim
   co_return co_await with_timeout_detached(ex, std::move(op), timeout);
 }
 
-}  // namespace iocoro::io
+}  // namespace iocoro

@@ -109,8 +109,9 @@ struct awaitable_promise_base {
       any_executor target;
 
       bool await_ready() noexcept {
-        auto cur = detail::get_current_executor();
-        return cur && (cur == target);
+        // switch_to never short-circuits based on "current == target".
+        // The adapter does not inspect TLS or compare executors; it always schedules.
+        return false;
       }
 
       auto await_suspend(std::coroutine_handle<> h) noexcept -> bool {

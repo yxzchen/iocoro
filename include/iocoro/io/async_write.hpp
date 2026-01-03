@@ -5,7 +5,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
-#include <iocoro/io/with_timeout.hpp>
+#include <iocoro/with_timeout.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -26,7 +26,8 @@ template <async_write_stream Stream, class Rep, class Period>
 auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
                               std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  return with_timeout_write(s, s.async_write_some(buf), timeout);
+  co_return co_await with_timeout(s.get_executor(), s.async_write_some(buf), timeout,
+                                  [&]() { s.cancel_write(); });
 }
 
 /// Composed operation: write exactly `buf.size()` bytes.
@@ -69,7 +70,8 @@ template <async_stream Stream, class Rep, class Period>
 auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
                          std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  return with_timeout_write(s, async_write(s, buf), timeout);
+  co_return co_await with_timeout(s.get_executor(), async_write(s, buf), timeout,
+                                  [&]() { s.cancel_write(); });
 }
 
 }  // namespace iocoro::io
