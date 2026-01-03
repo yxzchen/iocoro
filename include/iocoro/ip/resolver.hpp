@@ -78,7 +78,11 @@ class resolver {
   ///
   /// Returns:
   /// - Success: results_type (may be empty if no addresses were resolved).
-  /// - Failure: std::error_code (from getaddrinfo or operation_aborted on cancel).
+  /// - Failure: std::error_code (from getaddrinfo).
+  ///
+  /// Cancellation:
+  /// - This resolver does NOT currently support cancellation. Once started, the underlying
+  ///   getaddrinfo() call will run to completion on the configured thread_pool executor.
   ///
   /// Note: This function uses getaddrinfo, which is a blocking system call. To avoid blocking
   /// the io_context thread, the call is executed on the thread_pool provided at construction
