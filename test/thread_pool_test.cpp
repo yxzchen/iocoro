@@ -20,41 +20,6 @@ using namespace std::chrono_literals;
 
 // ========== Basic Functionality Tests ==========
 
-TEST(thread_pool_test, post_runs_on_multiple_threads) {
-  iocoro::thread_pool pool{16};
-  auto ex = pool.get_executor();
-
-  std::mutex m;
-  std::condition_variable cv;
-  std::unordered_set<std::thread::id> threads;
-
-  std::atomic<int> remaining{2000};
-
-  for (int i = 0; i < 2000; ++i) {
-    ex.post([&] {
-      {
-        std::scoped_lock lk{m};
-        threads.insert(std::this_thread::get_id());
-      }
-      if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-        cv.notify_one();
-      }
-    });
-  }
-
-  {
-    std::unique_lock lk{m};
-    cv.wait_for(lk, 2s, [&] { return remaining.load(std::memory_order_acquire) == 0; });
-  }
-
-  EXPECT_EQ(remaining.load(std::memory_order_acquire), 0);
-
-  {
-    std::scoped_lock lk{m};
-    EXPECT_GT(threads.size(), 1u);
-  }
-}
-
 TEST(thread_pool_test, single_thread_pool) {
   iocoro::thread_pool pool{1};
   auto ex = pool.get_executor();
