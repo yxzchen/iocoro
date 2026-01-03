@@ -25,7 +25,12 @@ namespace iocoro::detail::socket {
 ///
 /// Design simplifications:
 /// - Once opened, the address family is fixed (no mixing IPv4/IPv6).
-/// - For connected sockets, send_to() validates that the destination matches the connected endpoint.
+/// - For connected sockets, send_to() uses send() internally (kernel handles destination).
+///
+/// State model:
+/// - idle: socket is open but has NO local address (cannot receive).
+/// - bound: socket has an EXPLICIT local address via bind() (can receive).
+/// - connected: socket has an IMPLICIT local address via connect() (can receive and send to fixed peer).
 ///
 /// Concurrency:
 /// - Send and receive operations are independent (can run concurrently).

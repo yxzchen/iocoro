@@ -100,6 +100,7 @@ inline auto datagram_socket_impl::async_send_to(
   }
 
   std::uint64_t my_epoch = 0;
+  bool is_connected = false;
 
   {
     std::scoped_lock lk{mtx_};
@@ -108,6 +109,7 @@ inline auto datagram_socket_impl::async_send_to(
     }
     send_in_flight_ = true;
     my_epoch = send_epoch_;
+    is_connected = (state_ == dgram_state::connected);
   }
 
   auto guard = finally([this] {
@@ -121,8 +123,20 @@ inline auto datagram_socket_impl::async_send_to(
 
   // Retry loop for EINTR and EAGAIN.
   for (;;) {
-    // MSG_NOSIGNAL prevents SIGPIPE on Linux.
-    ssize_t n = ::sendto(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL, dest_addr, dest_len);
+    ssize_t n;
+
+    if (is_connected) {
+      // For connected UDP sockets, use send() instead of sendto().
+      // Linux behavior:
+      //   - sendto(fd, ..., dest) with dest != nullptr requires dest to match the connected peer,
+      //     otherwise returns EINVAL.
+      //   - send(fd, ...) or sendto(fd, ..., nullptr, 0) always works correctly.
+      // We use send() for clarity and correctness.
+      n = ::send(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
+    } else {
+      // For unconnected sockets, use sendto() with explicit destination.
+      n = ::sendto(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL, dest_addr, dest_len);
+    }
 
     if (n >= 0) {
       co_return static_cast<std::size_t>(n);
@@ -167,11 +181,16 @@ inline auto datagram_socket_impl::async_receive_from(
     co_return unexpected(error::not_open);
   }
 
-  // Check that the socket is bound or connected.
-  // Note: A connected UDP socket is implicitly bound by the kernel.
+  // Check that the socket has a local address (required for receiving).
+  //
   // State semantics:
-  //   - idle: socket is open but cannot receive (no local address)
-  //   - bound | connected: socket can receive (has local address)
+  //   - idle: socket is open but has NO local address → cannot receive
+  //   - bound: socket has an EXPLICIT local address (via bind()) → can receive
+  //   - connected: socket has an IMPLICIT local address (kernel-assigned via connect()) → can receive
+  //
+  // Terminology note:
+  //   We use "has local address" instead of "is bound" to clarify that both
+  //   explicit bind() and implicit connect() satisfy the requirement.
   {
     std::scoped_lock lk{mtx_};
     if (state_ == dgram_state::idle) {
