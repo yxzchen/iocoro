@@ -9,7 +9,6 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_executor.hpp>
-#include <iocoro/this_coro.hpp>
 #include <iocoro/thread_pool.hpp>
 
 #include <atomic>
@@ -34,7 +33,7 @@ namespace iocoro::ip {
 ///
 /// Threading model:
 /// - DNS resolution (getaddrinfo) is executed on a thread_pool executor (blocking call).
-/// - Coroutine resumption happens on the calling coroutine's executor (captured via this_coro::executor).
+/// - Coroutine resumption happens on the calling coroutine's executor.
 ///
 /// Lifecycle:
 /// - Optionally accepts a custom thread_pool executor for DNS operations.
@@ -63,17 +62,11 @@ class resolver {
   ///            If not provided, uses an internal static thread_pool with 1 worker thread.
   ///            DNS resolution is a blocking system call that should NOT run on the io_context
   ///            thread. The resolver will post getaddrinfo work to this executor.
-  ///
-  /// Note: The resolver automatically uses the calling coroutine's executor (via this_coro::executor)
-  ///       for resumption after DNS resolution completes.
   resolver() noexcept = default;
-
-  explicit resolver(any_executor pool_ex) noexcept
-      : pool_ex_(std::move(pool_ex)) {}
+  explicit resolver(any_executor pool_ex) noexcept : pool_ex_(std::move(pool_ex)) {}
 
   resolver(resolver const&) = delete;
   auto operator=(resolver const&) -> resolver& = delete;
-
   resolver(resolver&&) noexcept = default;
   auto operator=(resolver&&) noexcept -> resolver& = default;
 
@@ -90,10 +83,18 @@ class resolver {
   /// Note: This function uses getaddrinfo, which is a blocking system call. To avoid blocking
   /// the io_context thread, the call is executed on the thread_pool provided at construction
   /// (or the internal default thread_pool if none was provided).
-  ///
-  /// The coroutine will resume on the executor it was called from (captured via this_coro::executor).
   auto async_resolve(std::string host, std::string service)
-    -> awaitable<expected<results_type, std::error_code>>;
+    -> awaitable<expected<results_type, std::error_code>> {
+    // Reset cancellation flag for this new operation.
+    cancelled_->store(false, std::memory_order_release);
+
+    // Get the pool executor (custom or default static pool).
+    auto pool_ex = pool_ex_ ? *pool_ex_ : get_default_executor();
+
+    // Create and await the resolve_awaiter with explicit constructor.
+    co_return co_await resolve_awaiter{std::move(pool_ex), std::move(host), std::move(service),
+                                       cancelled_};
+  }
 
   /// Cancel the pending resolve operation (best-effort).
   ///
@@ -105,23 +106,19 @@ class resolver {
   struct resolve_awaiter;
 
   /// Get the executor for running blocking DNS operations.
-  /// Returns custom executor if provided, otherwise returns the static default thread_pool executor.
-  auto get_pool_executor() const -> any_executor;
+  /// Returns custom executor if provided, otherwise returns the static default thread_pool
+  /// executor.
+  auto get_default_executor() const -> any_executor {
+    static thread_pool pool{1};
+    return pool.get_executor();
+  }
 
   std::optional<any_executor> pool_ex_;  // Optional custom executor for blocking DNS calls
   std::shared_ptr<std::atomic<bool>> cancelled_{std::make_shared<std::atomic<bool>>(false)};
 };
 
-/// Internal awaiter for async_resolve.
-///
-/// Design:
-/// - Captures the calling coroutine's executor via this_coro::executor.
-/// - Posts getaddrinfo work to thread_pool.
-/// - The blocking getaddrinfo runs on a thread_pool worker.
-/// - On completion, the result is posted back to the captured executor for coroutine resumption.
 template <class Protocol>
 struct resolver<Protocol>::resolve_awaiter {
-  any_executor io_ex;
   any_executor pool_ex;
   std::string host;
   std::string service;
@@ -135,15 +132,13 @@ struct resolver<Protocol>::resolve_awaiter {
   std::shared_ptr<result_state> state;
 
   // Explicit constructor to ensure proper initialization.
-  explicit resolve_awaiter(any_executor io_ex_, any_executor pool_ex_,
-                          std::string host_, std::string service_,
-                          std::shared_ptr<std::atomic<bool>> cancelled_)
-      : io_ex(std::move(io_ex_))
-      , pool_ex(std::move(pool_ex_))
-      , host(std::move(host_))
-      , service(std::move(service_))
-      , cancelled(std::move(cancelled_))
-      , state(std::make_shared<result_state>()) {}
+  explicit resolve_awaiter(any_executor pool_ex_, std::string host_, std::string service_,
+                           std::shared_ptr<std::atomic<bool>> cancelled_)
+      : pool_ex(std::move(pool_ex_)),
+        host(std::move(host_)),
+        service(std::move(service_)),
+        cancelled(std::move(cancelled_)),
+        state(std::make_shared<result_state>()) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -157,25 +152,25 @@ struct resolver<Protocol>::resolve_awaiter {
     hints.ai_socktype = Protocol::type();
     hints.ai_protocol = Protocol::protocol();
 
-    // Post DNS resolution work to thread_pool (blocking call).
-    // Copy strings to ensure safe lifetime in thread_pool worker.
     auto host_copy = host;
     auto service_copy = service;
+
+    auto io_ex = ::iocoro::detail::get_current_executor();
 
     pool_ex.post([state = state, io_ex = io_ex, host_copy = std::move(host_copy),
                   service_copy = std::move(service_copy), hints, cancelled = cancelled]() {
       // Execute getaddrinfo (blocking system call).
       addrinfo* result_list = nullptr;
-      int const ret = ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
-                                    service_copy.empty() ? nullptr : service_copy.c_str(), &hints,
-                                    &result_list);
+      int const ret =
+        ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
+                      service_copy.empty() ? nullptr : service_copy.c_str(), &hints, &result_list);
 
       // Check cancellation flag before processing results.
       if (cancelled->load(std::memory_order_acquire)) {
         if (result_list) {
           ::freeaddrinfo(result_list);
         }
-        state->result = unexpected(make_error_code(error::operation_aborted));
+        state->result = unexpected(error::operation_aborted);
       } else if (ret != 0) {
         // getaddrinfo error.
         // Map EAI_* error codes to std::error_code.
@@ -207,5 +202,3 @@ struct resolver<Protocol>::resolve_awaiter {
 };
 
 }  // namespace iocoro::ip
-
-#include <iocoro/ip/impl/resolver.ipp>
