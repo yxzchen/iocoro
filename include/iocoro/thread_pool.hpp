@@ -2,8 +2,8 @@
 
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/executor_cast.hpp>
+#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/work_guard.hpp>
 
@@ -107,21 +107,26 @@ class thread_pool::basic_executor_type {
       return;
     }
 
+    bool run_inline = false;
     {
       std::scoped_lock lock{state_->mutex};
 
-      // Reject new tasks if stopped
       if (state_->stopped.load(std::memory_order_acquire)) {
-        return;
+        run_inline = true;
+      } else {
+        state_->tasks.emplace([ex = *this, fn = std::forward<F>(f)]() mutable {
+          detail::executor_guard g{any_executor{ex}};
+          fn();
+        });
       }
-
-      state_->tasks.emplace([ex = *this, fn = std::forward<F>(f)]() mutable {
-        detail::executor_guard g{any_executor{ex}};
-        fn();
-      });
     }
 
-    state_->cv.notify_one();
+    if (run_inline) {
+      detail::executor_guard g{any_executor{*this}};
+      f();
+    } else {
+      state_->cv.notify_one();
+    }
   }
 
   template <class F>

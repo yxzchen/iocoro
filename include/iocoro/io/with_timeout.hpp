@@ -55,26 +55,27 @@ auto with_timeout(io_executor ex, Awaitable op, std::chrono::steady_clock::durat
   }
 
   auto timer = std::make_shared<steady_timer>(ex);
-  (void)timer->expires_after(timeout);
+  timer->expires_after(timeout);
 
   std::atomic<bool> fired{false};
 
   auto watcher = co_spawn(
     co_await this_coro::executor,
-    [timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
+
+    // Capturing timer by value causes double free. Not sure why.
+    [&timer, &fired, on_timeout = std::move(on_timeout)]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
         fired.store(true, std::memory_order_release);
         on_timeout();
       }
-      co_return;
     },
     use_awaitable);
 
   auto r = co_await std::move(op);
 
-  (void)timer->cancel();
-  (void)co_await std::move(watcher);
+  timer->cancel();
+  co_await std::move(watcher);
 
   if (fired.load(std::memory_order_acquire) && result_traits::is_operation_aborted(r)) {
     co_return result_traits::timed_out();
@@ -152,7 +153,7 @@ auto with_timeout_detached(io_executor ex, Awaitable op,
   auto [index, v] = co_await when_any(std::move(op), timer_wait());
 
   if (index == 0) {
-    (void)timer->cancel();
+    timer->cancel();
     co_return std::get<0>(std::move(v));
   }
 

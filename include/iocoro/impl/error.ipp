@@ -40,6 +40,8 @@ class error_category_impl : public std::error_category {
         return "timed out";
       case error::not_listening:
         return "not listening";
+      case error::internal_error:
+        return "internal error";
       default:
         return "unknown error";
     }

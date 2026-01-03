@@ -50,6 +50,9 @@ enum class error {
 
   /// Acceptor is open/bound but not in listening state (listen() not called successfully).
   not_listening,
+
+  /// Internal error (unexpected exception or system failure).
+  internal_error,
 };
 
 auto make_error_code(error e) -> std::error_code;
