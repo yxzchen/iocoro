@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/any_executor.hpp>
+#include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
@@ -24,7 +25,7 @@ namespace iocoro {
 ///   like post(fn).
 class strand_executor {
  public:
-  strand_executor() noexcept = default;
+  strand_executor() = delete;
 
   explicit strand_executor(any_executor base) : state_(std::make_shared<state>(std::move(base))) {}
 
@@ -34,12 +35,8 @@ class strand_executor {
   template <class F>
     requires std::is_invocable_v<F&>
   void post(F&& f) const noexcept {
-    if (!state_) {
-      return;
-    }
-    if (!state_->base) {
-      return;
-    }
+    IOCORO_ENSURE(state_, "strand_executor::post: empty state");
+    IOCORO_ENSURE(state_->base, "strand_executor::post: empty base executor");
 
     bool should_schedule = false;
     {
@@ -61,12 +58,8 @@ class strand_executor {
   template <class F>
     requires std::is_invocable_v<F&>
   void dispatch(F&& f) const noexcept {
-    if (!state_) {
-      return;
-    }
-    if (!state_->base) {
-      return;
-    }
+    IOCORO_ENSURE(state_, "strand_executor::dispatch: empty state");
+    IOCORO_ENSURE(state_->base, "strand_executor::dispatch: empty base executor");
 
     auto const cur_any = detail::get_current_executor();
     if (cur_any) {
@@ -90,6 +83,10 @@ class strand_executor {
   }
 
  private:
+  struct state;
+
+  explicit strand_executor(std::shared_ptr<state> st) noexcept : state_(std::move(st)) {}
+
   struct state {
     explicit state(any_executor base_) : base(std::move(base_)) {}
 
@@ -100,9 +97,11 @@ class strand_executor {
   };
 
   static void drain(std::shared_ptr<state> st) noexcept {
+    IOCORO_ENSURE(st, "strand_executor::drain: empty state");
+    IOCORO_ENSURE(st->base, "strand_executor::drain: empty base executor");
+
     // Make the strand visible as the current executor during the whole drain.
-    strand_executor ex{};
-    ex.state_ = st;
+    strand_executor ex{st};
     detail::executor_guard g{any_executor{ex}};
 
     for (;;) {
