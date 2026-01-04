@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iocoro/detail/unique_function.hpp>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -15,7 +17,7 @@ namespace detail {
 
 struct cancellation_callback_node {
   std::atomic<bool> active{true};
-  std::function<void()> fn{};
+  unique_function<void()> fn{};
 };
 
 struct cancellation_state {
@@ -119,7 +121,7 @@ class cancellation_token {
     }
 
     auto node = std::make_shared<detail::cancellation_callback_node>();
-    node->fn = std::function<void()>(std::forward<F>(f));
+    node->fn = std::forward<F>(f);
 
     {
       std::scoped_lock lk{st_->mtx};
