@@ -164,14 +164,9 @@ struct cancellable_awaiter {
 
   bool await_suspend(std::coroutine_handle<> h) {
     if (tok) {
-      // Register first to avoid TOCTOU gaps.
       reg = tok.register_callback([st = awaiter.st]() { st->cancel.cancel(); });
-
-      if (tok.stop_requested()) {
-        awaiter.st->ec = error::operation_aborted;
-        return false;
-      }
     }
+
     return awaiter.await_suspend(h);
   }
 
