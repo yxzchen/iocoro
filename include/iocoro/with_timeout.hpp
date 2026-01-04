@@ -69,7 +69,8 @@ auto with_timeout(io_executor ex, OpFactory&& op_factory,
 
   auto timer_task = co_spawn(
     co_await this_coro::executor,
-    [timer, timeout_src]() mutable -> awaitable<void> {
+    // Capturing timer by value would cause heap-use-after-free. Not sure why.
+    [&timer, &timeout_src]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
         timeout_src.request_cancel();
