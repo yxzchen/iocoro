@@ -81,7 +81,7 @@ class steady_timer {
 
   time_point expiry() { return expiry_; }
 
-  void set_write_handle(detail::io_context_impl::timer_event_handle h) noexcept {
+  void set_timer_handle(detail::io_context_impl::timer_event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     handle_ = h;
   }
@@ -95,7 +95,7 @@ class steady_timer {
    private:
     void do_start(std::unique_ptr<operation_base> self) override {
       auto handle = timer_->ctx_impl_->schedule_timer(timer_->expiry(), std::move(self));
-      timer_->set_write_handle(handle);
+      timer_->set_timer_handle(handle);
       // Publish the reactor cancellation hook for this wait.
       // This keeps cancellation_token out of reactor operations; the awaiter drives cancellation.
       this->publish_cancel([h = handle]() mutable { h.cancel(); });
