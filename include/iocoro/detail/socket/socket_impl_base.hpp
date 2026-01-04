@@ -162,29 +162,23 @@ class socket_impl_base {
   }
 
   /// Wait until the native fd becomes readable (read readiness).
-  auto wait_read_ready() -> awaitable<std::error_code> {
-    co_return co_await wait_read_ready(cancellation_token{});
-  }
-
   /// Wait until the native fd becomes readable (read readiness), observing a cancellation token.
-  auto wait_read_ready(cancellation_token tok) -> awaitable<std::error_code> {
+  auto wait_read_ready(cancellation_token tok = {}) -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{std::move(tok), this};
+    auto awaiter = operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{this};
+    co_return co_await cancellable(std::move(awaiter), std::move(tok));
   }
 
   /// Wait until the native fd becomes writable (write readiness).
-  auto wait_write_ready() -> awaitable<std::error_code> {
-    co_return co_await wait_write_ready(cancellation_token{});
-  }
-
   /// Wait until the native fd becomes writable (write readiness), observing a cancellation token.
-  auto wait_write_ready(cancellation_token tok) -> awaitable<std::error_code> {
+  auto wait_write_ready(cancellation_token tok = {}) -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{std::move(tok), this};
+    auto awaiter = operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{this};
+    co_return co_await cancellable(std::move(awaiter), std::move(tok));
   }
 
  private:

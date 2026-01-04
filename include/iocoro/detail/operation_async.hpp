@@ -125,11 +125,9 @@ template <typename Operation>
 struct operation_awaiter {
   std::unique_ptr<Operation> op;
   std::shared_ptr<operation_wait_state> st{std::make_shared<operation_wait_state>()};
-  cancellation_token tok{};
-  cancellation_registration reg{};
 
   template <typename... Args>
-  explicit operation_awaiter(cancellation_token tok_, Args&&... args) : tok(std::move(tok_)) {
+  explicit operation_awaiter(Args&&... args) {
     op = std::make_unique<Operation>(st, std::forward<Args>(args)...);
   }
 
@@ -139,21 +137,54 @@ struct operation_awaiter {
     st->h = h;
     st->ex = get_current_executor();
 
-    if (tok) {
-      // Register first to avoid TOCTOU gaps.
-      reg = tok.register_callback([st = st]() { st->cancel.cancel(); });
-
-      if (tok.stop_requested()) {
-        st->ec = error::operation_aborted;
-        return false;
-      }
-    }
-
     op->start(std::move(op));
     return true;
   }
 
   auto await_resume() noexcept -> std::error_code { return st->ec; }
 };
+
+/// Adaptor: add cancellation_token semantics to an awaiter that uses operation_wait_state.
+///
+/// Requirements:
+/// - Awaiter must expose `st` as `std::shared_ptr<operation_wait_state>`.
+/// - Awaiter await_suspend must be safe to call exactly once (as usual for awaiters).
+///
+/// Semantics:
+/// - Registers a token callback for the duration of the suspension.
+/// - Token triggers `st->cancel.cancel()` (pending-cancel + hook publish handles races).
+/// - If tok is already cancelled, completes immediately with operation_aborted (no suspend).
+template <class Awaiter>
+struct cancellable_awaiter {
+  Awaiter awaiter;
+  cancellation_token tok{};
+  cancellation_registration reg{};
+
+  bool await_ready() const noexcept { return awaiter.await_ready(); }
+
+  bool await_suspend(std::coroutine_handle<> h) {
+    if (tok) {
+      // Register first to avoid TOCTOU gaps.
+      reg = tok.register_callback([st = awaiter.st]() { st->cancel.cancel(); });
+
+      if (tok.stop_requested()) {
+        awaiter.st->ec = error::operation_aborted;
+        return false;
+      }
+    }
+    return awaiter.await_suspend(h);
+  }
+
+  decltype(auto) await_resume() {
+    // Ensure the callback is unregistered before returning to caller.
+    reg.reset();
+    return awaiter.await_resume();
+  }
+};
+
+template <class Awaiter>
+auto cancellable(Awaiter awaiter, cancellation_token tok) -> cancellable_awaiter<Awaiter> {
+  return cancellable_awaiter<Awaiter>{std::move(awaiter), std::move(tok), {}};
+}
 
 }  // namespace iocoro::detail
