@@ -69,35 +69,31 @@ TEST(cancellation_token_test, register_after_cancel_invokes_immediately) {
 }
 
 TEST(steady_timer_test, cancellation_token_does_not_hang_under_race) {
-  // This is a stress test for the "cancel between token callback and timer arming" window.
-  // It should never hang and should usually observe operation_aborted.
+  // Stress test for cross-thread cancellation around timer arming.
+  // This should not hang (no lost-cancellation window).
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
-  for (int i = 0; i < 200; ++i) {
-    auto ec = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
+  auto ec = iocoro::sync_wait_for(ctx, 5s, [&]() -> iocoro::awaitable<std::error_code> {
+    for (int i = 0; i < 200; ++i) {
       iocoro::steady_timer t{ex};
       t.expires_after(5s);
 
       iocoro::cancellation_source src{};
       auto tok = src.token();
 
-      std::atomic<bool> go{false};
-      std::thread th([&] {
-        while (!go.load(std::memory_order_acquire)) {
-        }
-        src.request_cancel();
-      });
-
-      go.store(true, std::memory_order_release);
+      std::thread th([&] { src.request_cancel(); });
       auto out = co_await t.async_wait(iocoro::use_awaitable, tok);
-
       th.join();
-      co_return out;
-    }());
 
-    EXPECT_EQ(ec, iocoro::error::operation_aborted);
-  }
+      if (out != iocoro::error::operation_aborted) {
+        co_return out;
+      }
+    }
+    co_return iocoro::make_error_code(iocoro::error::operation_aborted);
+  }());
+
+  EXPECT_EQ(ec, iocoro::error::operation_aborted);
 }
 
 TEST(local_stream_socket_test, read_some_with_cancellation_token_aborts) {

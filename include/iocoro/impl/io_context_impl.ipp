@@ -347,10 +347,20 @@ inline auto io_context_impl::process_posted() -> std::size_t {
 }
 
 inline auto io_context_impl::get_timeout() -> std::optional<std::chrono::milliseconds> {
-  std::scoped_lock lk{timer_mutex_};
+  std::unique_lock lk{timer_mutex_};
 
+  // IMPORTANT:
+  // Cancelled timers must still complete their operations with on_abort(operation_aborted).
+  // We cannot just pop-and-discard them here, otherwise the awaiting coroutine may never resume.
   while (!timers_.empty() && timers_.top()->is_cancelled()) {
+    auto entry = timers_.top();
     timers_.pop();
+    auto op = std::move(entry->op);
+    if (op) {
+      lk.unlock();
+      op->on_abort(error::operation_aborted);
+      lk.lock();
+    }
   }
 
   if (timers_.empty()) {
