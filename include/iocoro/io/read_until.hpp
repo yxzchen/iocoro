@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstring>
 #include <span>
 #include <string_view>
 #include <system_error>
@@ -26,19 +25,12 @@ inline auto find_in_span(std::span<std::byte const> data, std::span<std::byte co
     return npos;
   }
 
-  auto const* data_ptr = reinterpret_cast<char const*>(data.data());
-  auto const* delim_ptr = reinterpret_cast<char const*>(delim.data());
-
-  auto const* found = std::search(
-    data_ptr, data_ptr + data.size(),
-    delim_ptr, delim_ptr + delim.size()
-  );
-
-  if (found == data_ptr + data.size()) {
+  auto it = std::search(data.begin(), data.end(), delim.begin(), delim.end());
+  if (it == data.end()) {
     return npos;
   }
 
-  return static_cast<std::size_t>(found - data_ptr);
+  return static_cast<std::size_t>(std::distance(data.begin(), it));
 }
 }  // namespace detail
 
