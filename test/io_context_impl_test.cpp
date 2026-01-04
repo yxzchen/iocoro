@@ -37,13 +37,13 @@ class test_timer_operation final : public iocoro::detail::operation_base {
 };
 
 // Test basic construction and destruction
-TEST(io_context_impl_basic, construct_and_destruct) {
+TEST(io_context_impl_test, construct_and_destruct) {
   iocoro::detail::io_context_impl impl;
   EXPECT_FALSE(impl.stopped());
 }
 
 // Test post and process_posted
-TEST(io_context_impl_basic, post_and_run_executes_operations) {
+TEST(io_context_impl_test, post_and_run_executes_operations) {
   iocoro::detail::io_context_impl impl;
   std::atomic<int> counter{0};
 
@@ -56,7 +56,7 @@ TEST(io_context_impl_basic, post_and_run_executes_operations) {
 }
 
 // Test run_one - note: process_posted() drains the entire queue
-TEST(io_context_impl_basic, run_one_processes_batch) {
+TEST(io_context_impl_test, run_one_processes_batch) {
   iocoro::detail::io_context_impl impl;
   std::atomic<int> counter{0};
 
@@ -73,7 +73,7 @@ TEST(io_context_impl_basic, run_one_processes_batch) {
 }
 
 // Test stop and restart
-TEST(io_context_impl_basic, stop_and_restart) {
+TEST(io_context_impl_test, stop_and_restart) {
   iocoro::detail::io_context_impl impl;
   std::atomic<int> counter{0};
 
@@ -92,7 +92,7 @@ TEST(io_context_impl_basic, stop_and_restart) {
 }
 
 // Test dispatch
-TEST(io_context_impl_basic, dispatch_executes_inline_on_context_thread) {
+TEST(io_context_impl_test, dispatch_executes_inline_on_context_thread) {
   iocoro::detail::io_context_impl impl;
   std::atomic<int> counter{0};
   std::atomic<bool> executed_inline{false};
@@ -111,7 +111,7 @@ TEST(io_context_impl_basic, dispatch_executes_inline_on_context_thread) {
 }
 
 // Test dispatch posts when called from different thread
-TEST(io_context_impl_basic, dispatch_posts_when_called_from_different_thread) {
+TEST(io_context_impl_test, dispatch_posts_when_called_from_different_thread) {
   iocoro::detail::io_context_impl impl;
   std::atomic<int> counter{0};
   std::atomic<bool> done{false};
@@ -136,7 +136,7 @@ TEST(io_context_impl_basic, dispatch_posts_when_called_from_different_thread) {
 }
 
 // Test work guard keeps context running
-TEST(io_context_impl_basic, work_guard_prevents_empty_run) {
+TEST(io_context_impl_test, work_guard_prevents_empty_run) {
   iocoro::detail::io_context_impl impl;
 
   impl.add_work_guard();
@@ -155,7 +155,7 @@ TEST(io_context_impl_basic, work_guard_prevents_empty_run) {
 }
 
 // Test timer scheduling
-TEST(io_context_impl_timer, schedule_timer_executes_callback) {
+TEST(io_context_impl_test, schedule_timer_executes_callback) {
   iocoro::detail::io_context_impl impl;
   std::atomic<bool> fired{false};
 
@@ -172,7 +172,7 @@ TEST(io_context_impl_timer, schedule_timer_executes_callback) {
 }
 
 // Test timer cancellation
-TEST(io_context_impl_timer, cancel_timer_prevents_execution) {
+TEST(io_context_impl_test, cancel_timer_prevents_execution) {
   iocoro::detail::io_context_impl impl;
   std::atomic<bool> fired{false};
 
@@ -189,7 +189,7 @@ TEST(io_context_impl_timer, cancel_timer_prevents_execution) {
 }
 
 // Test multiple timers fire in order
-TEST(io_context_impl_timer, multiple_timers_fire_in_order) {
+TEST(io_context_impl_test, multiple_timers_fire_in_order) {
   iocoro::detail::io_context_impl impl;
   std::atomic<int> counter{0};
   std::vector<int> order;
@@ -222,7 +222,7 @@ TEST(io_context_impl_timer, multiple_timers_fire_in_order) {
 }
 
 // Test run_for timeout
-TEST(io_context_impl_basic, run_for_respects_timeout) {
+TEST(io_context_impl_test, run_for_respects_timeout) {
   iocoro::detail::io_context_impl impl;
   impl.add_work_guard();
 

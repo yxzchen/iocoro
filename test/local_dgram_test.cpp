@@ -47,7 +47,7 @@ static auto as_writable_bytes(std::string& s) -> std::span<std::byte> {
 }
 
 // Test basic Unix domain datagram send/receive.
-TEST(LocalDgramTest, BasicSendReceive) {
+TEST(local_dgram_test, BasicSendReceive) {
   iocoro::io_context ctx;
 
   auto receiver_path = make_temp_unix_path();
@@ -125,7 +125,7 @@ TEST(LocalDgramTest, BasicSendReceive) {
 }
 
 // Test connected Unix domain datagram socket.
-TEST(LocalDgramTest, ConnectedSocket) {
+TEST(local_dgram_test, ConnectedSocket) {
   iocoro::io_context ctx;
 
   auto receiver_path = make_temp_unix_path();
@@ -198,7 +198,7 @@ TEST(LocalDgramTest, ConnectedSocket) {
 }
 
 // Test message boundary preservation.
-TEST(LocalDgramTest, MessageBoundary) {
+TEST(local_dgram_test, MessageBoundary) {
   iocoro::io_context ctx;
 
   auto receiver_path = make_temp_unix_path();
@@ -272,7 +272,7 @@ TEST(LocalDgramTest, MessageBoundary) {
 }
 
 // Test that socket must be bound before receiving.
-TEST(LocalDgramTest, NotBoundError) {
+TEST(local_dgram_test, NotBoundError) {
   iocoro::io_context ctx;
 
   auto result = iocoro::sync_wait_for(ctx, 5s, [&]() -> iocoro::awaitable<std::string> {

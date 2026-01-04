@@ -2,6 +2,7 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/local/endpoint.hpp>
 #include <iocoro/local/stream.hpp>
@@ -125,7 +126,7 @@ static auto connect_to(iocoro::local::endpoint const& ep) -> unique_fd {
   return unique_fd{fd};
 }
 
-TEST(local_stream_acceptor_test, construction_and_executor) {
+TEST(local_stream_test, construction_and_executor) {
   iocoro::io_context ctx;
 
   iocoro::local::stream::acceptor a{ctx};
@@ -133,7 +134,7 @@ TEST(local_stream_acceptor_test, construction_and_executor) {
   EXPECT_LT(a.native_handle(), 0);
 }
 
-TEST(local_stream_acceptor_test, async_accept_without_open_returns_not_open) {
+TEST(local_stream_test, async_accept_without_open_returns_not_open) {
   iocoro::io_context ctx;
   iocoro::local::stream::acceptor a{ctx};
 
@@ -142,7 +143,7 @@ TEST(local_stream_acceptor_test, async_accept_without_open_returns_not_open) {
   EXPECT_EQ(r.error(), iocoro::error::not_open);
 }
 
-TEST(local_stream_acceptor_test, open_bind_listen_accept_and_exchange_data) {
+TEST(local_stream_test, open_bind_listen_accept_and_exchange_data) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -226,7 +227,7 @@ TEST(local_stream_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   ASSERT_FALSE(ec) << ec.message();
 }
 
-TEST(local_stream_acceptor_test, cancel_aborts_waiting_accept) {
+TEST(local_stream_test, cancel_aborts_waiting_accept) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -267,7 +268,7 @@ TEST(local_stream_acceptor_test, cancel_aborts_waiting_accept) {
   EXPECT_EQ(got, iocoro::error::operation_aborted);
 }
 
-TEST(local_stream_acceptor_test, close_aborts_waiting_accept) {
+TEST(local_stream_test, close_aborts_waiting_accept) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -308,7 +309,7 @@ TEST(local_stream_acceptor_test, close_aborts_waiting_accept) {
   EXPECT_EQ(got, iocoro::error::operation_aborted);
 }
 
-TEST(local_stream_socket_test, async_connect_and_exchange_data) {
+TEST(local_stream_test, async_connect_and_exchange_data) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -388,6 +389,66 @@ TEST(local_stream_socket_test, async_connect_and_exchange_data) {
   }());
 
   ASSERT_FALSE(ec) << ec.message();
+}
+
+TEST(local_stream_test, read_some_with_cancellation_token_aborts) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  auto path = make_temp_unix_path();
+  unlink_guard g{path};
+
+  auto ep_r = iocoro::local::endpoint::from_path(path);
+  ASSERT_TRUE(ep_r) << ep_r.error().message();
+  auto ep = *ep_r;
+
+  auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
+    iocoro::local::stream::acceptor a{ex};
+    if (auto ec = a.listen(ep, 16)) {
+      co_return ec;
+    }
+
+    iocoro::cancellation_source src{};
+    std::error_code read_ec{};
+
+    auto server_task = iocoro::co_spawn(
+      ex,
+      [&]() -> iocoro::awaitable<void> {
+        auto accepted = co_await a.async_accept();
+        if (!accepted) {
+          read_ec = accepted.error();
+          co_return;
+        }
+
+        auto s = std::move(*accepted);
+        std::array<std::byte, 8> buf{};
+        auto r = co_await s.async_read_some(buf, src.token());
+        if (!r) {
+          read_ec = r.error();
+        } else {
+          read_ec = {};
+        }
+      },
+      iocoro::use_awaitable);
+
+    // Client connects but does not send anything, so server read blocks.
+    iocoro::local::stream::socket c{ex};
+    if (auto ec = co_await c.async_connect(ep)) {
+      co_return ec;
+    }
+
+    (void)co_await iocoro::co_sleep(ex, 10ms);
+    src.request_cancel();
+
+    try {
+      co_await std::move(server_task);
+    } catch (...) {
+    }
+
+    co_return read_ec;
+  }());
+
+  EXPECT_EQ(got, iocoro::error::operation_aborted);
 }
 
 }  // namespace
