@@ -4,8 +4,9 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(Threads)
 
-set(IOCORO_BUILT_WITH_URING @IOCORO_BUILT_WITH_URING@)
-if(IOCORO_BUILT_WITH_URING AND NOT TARGET liburing::liburing)
+include("${CMAKE_CURRENT_LIST_DIR}/iocoroTargets.cmake")
+
+if(NOT TARGET liburing::liburing)
   find_path(_iocoro_liburing_include_dir NAMES liburing.h)
   find_library(_iocoro_liburing_library NAMES uring)
 
@@ -15,16 +16,15 @@ if(IOCORO_BUILT_WITH_URING AND NOT TARGET liburing::liburing)
       IMPORTED_LOCATION "${_iocoro_liburing_library}"
       INTERFACE_INCLUDE_DIRECTORIES "${_iocoro_liburing_include_dir}"
     )
-  else()
-    message(FATAL_ERROR
-      "iocoro was built with io_uring support, but liburing was not found. "
-      "Install liburing (headers + library) or rebuild iocoro with -DIOCORO_ENABLE_URING=OFF."
-    )
   endif()
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/iocoroTargets.cmake")
+if(TARGET liburing::liburing)
+  set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_LINK_LIBRARIES liburing::liburing)
+  set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS IOCORO_USE_URING)
+  message(STATUS "iocoro: liburing found - io_uring support enabled")
+else()
+  message(STATUS "iocoro: liburing not found - using epoll")
+endif()
 
 check_required_components(iocoro)
-
-
