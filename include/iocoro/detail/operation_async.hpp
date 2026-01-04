@@ -1,11 +1,15 @@
 #pragma once
 
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/detail/operation_base.hpp>
+#include <iocoro/error.hpp>
 
 #include <atomic>
 #include <coroutine>
 #include <memory>
+#include <mutex>
 #include <system_error>
 
 namespace iocoro::detail {
@@ -16,6 +20,47 @@ struct operation_wait_state {
   std::coroutine_handle<> h{};
   any_executor ex{};
   std::error_code ec{};
+
+  // Cancellation bridge:
+  // - The awaiter may request cancellation via request_cancel().
+  // - The reactor-facing operation publishes a cancel hook via set_cancel().
+  //
+  // This keeps cancellation_token out of reactor operations while still enabling
+  // safe, race-free cancellation even if the cancel hook is published after the
+  // token is cancelled (pending-cancel semantics).
+  std::atomic<bool> cancel_pending{false};
+  std::mutex cancel_mtx{};
+  unique_function<void()> cancel_hook{};
+
+  void set_cancel(unique_function<void()> f) noexcept {
+    unique_function<void()> to_call{};
+    {
+      std::scoped_lock lk{cancel_mtx};
+      cancel_hook = std::move(f);
+      if (cancel_pending.load(std::memory_order_acquire) && cancel_hook) {
+        to_call = std::move(cancel_hook);
+      }
+    }
+    if (to_call) {
+      to_call();
+    }
+  }
+
+  void request_cancel() noexcept {
+    cancel_pending.store(true, std::memory_order_release);
+
+    unique_function<void()> to_call{};
+    {
+      std::scoped_lock lk{cancel_mtx};
+      if (cancel_hook) {
+        to_call = std::move(cancel_hook);
+      }
+    }
+
+    if (to_call) {
+      to_call();
+    }
+  }
 };
 
 /// Base class for async operations that provides common completion logic.
@@ -72,9 +117,11 @@ template <typename Operation>
 struct operation_awaiter {
   std::unique_ptr<Operation> op;
   std::shared_ptr<operation_wait_state> st{std::make_shared<operation_wait_state>()};
+  cancellation_token tok{};
+  cancellation_registration reg{};
 
   template <typename... Args>
-  explicit operation_awaiter(Args&&... args) {
+  explicit operation_awaiter(cancellation_token tok_, Args&&... args) : tok(std::move(tok_)) {
     op = std::make_unique<Operation>(st, std::forward<Args>(args)...);
   }
 
@@ -83,6 +130,16 @@ struct operation_awaiter {
   bool await_suspend(std::coroutine_handle<> h) {
     st->h = h;
     st->ex = get_current_executor();
+
+    if (tok) {
+      // Register first to avoid TOCTOU gaps.
+      reg = tok.register_callback([st = st]() { st->request_cancel(); });
+
+      if (tok.stop_requested()) {
+        st->ec = error::operation_aborted;
+        return false;
+      }
+    }
 
     op->start(std::move(op));
     return true;

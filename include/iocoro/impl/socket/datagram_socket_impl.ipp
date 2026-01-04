@@ -100,9 +100,6 @@ inline auto datagram_socket_impl::async_send_to(
     co_return unexpected(error::not_open);
   }
 
-  auto reg = tok.register_callback([this] { this->cancel_write(); });
-  (void)reg;
-
   std::uint64_t my_epoch = 0;
   bool is_connected = false;
 
@@ -156,7 +153,7 @@ inline auto datagram_socket_impl::async_send_to(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for write readiness.
-      auto ec = co_await base_.wait_write_ready();
+      auto ec = co_await base_.wait_write_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }
@@ -189,9 +186,6 @@ inline auto datagram_socket_impl::async_receive_from(
   if (fd < 0) {
     co_return unexpected(error::not_open);
   }
-
-  auto reg = tok.register_callback([this] { this->cancel_read(); });
-  (void)reg;
 
   // Check that the socket has a local address (required for receiving).
   //
@@ -265,7 +259,7 @@ inline auto datagram_socket_impl::async_receive_from(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for read readiness.
-      auto ec = co_await base_.wait_read_ready();
+      auto ec = co_await base_.wait_read_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }

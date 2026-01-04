@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_async.hpp>
@@ -162,18 +163,28 @@ class socket_impl_base {
 
   /// Wait until the native fd becomes readable (read readiness).
   auto wait_read_ready() -> awaitable<std::error_code> {
+    co_return co_await wait_read_ready(cancellation_token{});
+  }
+
+  /// Wait until the native fd becomes readable (read readiness), observing a cancellation token.
+  auto wait_read_ready(cancellation_token tok) -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{this};
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{std::move(tok), this};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
   auto wait_write_ready() -> awaitable<std::error_code> {
+    co_return co_await wait_write_ready(cancellation_token{});
+  }
+
+  /// Wait until the native fd becomes writable (write readiness), observing a cancellation token.
+  auto wait_write_ready(cancellation_token tok) -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{this};
+    co_return co_await operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{std::move(tok), this};
   }
 
  private:
@@ -203,9 +214,11 @@ class socket_impl_base {
       if constexpr (Kind == fd_wait_kind::read) {
         auto h = socket_->ctx_impl_->register_fd_read(socket_->native_handle(), std::move(self));
         socket_->set_read_handle(h);
+        this->st_->set_cancel([h]() mutable { h.cancel(); });
       } else {
         auto h = socket_->ctx_impl_->register_fd_write(socket_->native_handle(), std::move(self));
         socket_->set_write_handle(h);
+        this->st_->set_cancel([h]() mutable { h.cancel(); });
       }
     }
 

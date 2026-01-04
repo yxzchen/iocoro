@@ -5,12 +5,10 @@
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_async.hpp>
-#include <iocoro/error.hpp>
 #include <iocoro/io_executor.hpp>
 
 #include <chrono>
 #include <cstddef>
-#include <cstdint>
 #include <mutex>
 #include <system_error>
 
@@ -61,14 +59,11 @@ class steady_timer {
   /// - `error::operation_aborted` if the timer was cancelled.
   /// Wait until expiry (or cancellation) as an awaitable, observing a cancellation token.
   auto async_wait(use_awaitable_t, cancellation_token tok = {}) -> awaitable<std::error_code> {
-    co_return co_await detail::operation_awaiter<timer_wait_operation>{this, std::move(tok)};
+    co_return co_await detail::operation_awaiter<timer_wait_operation>{std::move(tok), this};
   }
 
   /// Cancel the pending timer operation.
   void cancel() noexcept {
-    // Increment cancellation sequence to allow pending arming to observe cancellation.
-    cancel_seq_.fetch_add(1, std::memory_order_acq_rel);
-
     detail::io_context_impl::timer_event_handle h{};
     {
       std::scoped_lock lk{mtx_};
@@ -82,10 +77,6 @@ class steady_timer {
 
   time_point expiry() { return expiry_; }
 
-  auto cancel_seq() const noexcept -> std::uint64_t {
-    return cancel_seq_.load(std::memory_order_acquire);
-  }
-
   void set_write_handle(detail::io_context_impl::timer_event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     handle_ = h;
@@ -94,43 +85,24 @@ class steady_timer {
  private:
   class timer_wait_operation final : public detail::async_operation {
    public:
-    timer_wait_operation(std::shared_ptr<detail::operation_wait_state> st,
-                         steady_timer* timer,
-                         cancellation_token tok)
-        : async_operation(std::move(st)), timer_(timer), tok_(std::move(tok)) {
-      // Bind cancellation to the operation lifetime.
-      // This avoids TOCTOU windows between cancellation and timer arming.
-      reg_ = tok_.register_callback([this] { this->timer_->cancel(); });
-      start_seq_ = timer_->cancel_seq();
-    }
+    timer_wait_operation(std::shared_ptr<detail::operation_wait_state> st, steady_timer* timer)
+        : async_operation(std::move(st)), timer_(timer) {}
 
    private:
     void do_start(std::unique_ptr<operation_base> self) override {
-      // If cancellation already requested, abort without arming.
-      if (tok_.stop_requested()) {
-        self->on_abort(error::operation_aborted);
-        return;
-      }
-
       auto handle = timer_->ctx_impl_->schedule_timer(timer_->expiry(), std::move(self));
       timer_->set_write_handle(handle);
-
-      // If cancellation raced with arming, ensure the newly-armed timer is cancelled.
-      if (timer_->cancel_seq() != start_seq_) {
-        timer_->cancel();
-      }
+      // Publish the reactor cancellation hook for this wait.
+      // This keeps cancellation_token out of reactor operations; the awaiter drives cancellation.
+      this->st_->set_cancel([h = handle]() mutable { h.cancel(); });
     }
 
     steady_timer* timer_ = nullptr;
-    cancellation_token tok_{};
-    cancellation_registration reg_{};
-    std::uint64_t start_seq_{0};
   };
 
   detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
   mutable std::mutex mtx_{};
-  std::atomic<std::uint64_t> cancel_seq_{0};
   detail::io_context_impl::timer_event_handle handle_{};
 };
 

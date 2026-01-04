@@ -73,9 +73,6 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 
   auto const fd = base_.native_handle();
 
-  auto reg = tok.register_callback([this] { this->cancel_connect(); });
-  (void)reg;
-
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
@@ -128,7 +125,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   // Wait for writability, then check SO_ERROR.
-  auto wait_ec = co_await base_.wait_write_ready();
+  auto wait_ec = co_await base_.wait_write_ready(tok);
   if (wait_ec) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
@@ -177,9 +174,6 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, can
     co_return unexpected(error::not_open);
   }
 
-  auto reg = tok.register_callback([this] { this->cancel_read(); });
-  (void)reg;
-
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
@@ -221,7 +215,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, can
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_read_ready();
+      auto ec = co_await base_.wait_read_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }
@@ -243,9 +237,6 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
   if (fd < 0) {
     co_return unexpected(error::not_open);
   }
-
-  auto reg = tok.register_callback([this] { this->cancel_write(); });
-  (void)reg;
 
   std::uint64_t my_epoch = 0;
   {
@@ -289,7 +280,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_write_ready();
+      auto ec = co_await base_.wait_write_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }
