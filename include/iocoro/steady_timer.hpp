@@ -1,9 +1,11 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_async.hpp>
+#include <iocoro/error.hpp>
 #include <iocoro/io_executor.hpp>
 
 #include <chrono>
@@ -56,6 +58,23 @@ class steady_timer {
   /// - `std::error_code{}` on successful timer expiry.
   /// - `error::operation_aborted` if the timer was cancelled.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
+    co_return co_await detail::operation_awaiter<timer_wait_operation>{this};
+  }
+
+  /// Wait until expiry (or cancellation) as an awaitable, observing a cancellation token.
+  ///
+  /// Cancellation:
+  /// - If `tok` is already cancelled, completes immediately with `error::operation_aborted`.
+  /// - If `tok` is cancelled while waiting, calls `cancel()` and completes with
+  ///   `error::operation_aborted` (best-effort, consistent with timer cancel semantics).
+  auto async_wait(use_awaitable_t, cancellation_token tok) -> awaitable<std::error_code> {
+    if (tok.stop_requested()) {
+      co_return error::operation_aborted;
+    }
+
+    auto reg = tok.register_callback([this] { this->cancel(); });
+    (void)reg;
+
     co_return co_await detail::operation_awaiter<timer_wait_operation>{this};
   }
 
