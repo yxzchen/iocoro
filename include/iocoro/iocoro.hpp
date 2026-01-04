@@ -39,6 +39,7 @@
 #include <iocoro/socket_option.hpp>
 
 // Async I/O algorithms
+#include <iocoro/io/async_connect.hpp>
 #include <iocoro/io/async_read.hpp>
 #include <iocoro/io/async_read_until.hpp>
 #include <iocoro/io/async_write.hpp>

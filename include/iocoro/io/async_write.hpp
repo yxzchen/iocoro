@@ -46,10 +46,6 @@ auto async_write(Stream& s, std::span<std::byte const> buf, cancellation_token t
 
 /// Composed operation: write exactly `buf.size()` bytes, but fail with `error::timed_out`
 /// if the overall operation does not complete within `timeout`.
-///
-/// Notes:
-/// - Requires `Stream::cancel()` so the pending I/O can be safely aborted on timeout.
-/// - On timeout, this returns `error::timed_out` (not `error::operation_aborted`).
 template <async_write_stream Stream, class Rep, class Period>
 auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
                          std::chrono::duration<Rep, Period> timeout)
@@ -64,11 +60,6 @@ auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
 
 /// Write at most `buf.size()` bytes from `buf`, but fail with `error::timed_out`
 /// if the operation does not complete within `timeout`.
-///
-/// Notes:
-/// - Requires `Stream::cancel()` so the pending I/O can be safely aborted on timeout.
-/// - If the stream is cancelled externally (not by this timeout), `error::operation_aborted`
-///   is propagated as-is.
 template <async_write_stream Stream, class Rep, class Period>
 auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
                               std::chrono::duration<Rep, Period> timeout)

@@ -68,7 +68,7 @@ auto with_timeout(io_executor ex, OpFactory&& op_factory,
   timer->expires_after(timeout);
 
   auto timer_task = co_spawn(
-    ex,
+    co_await this_coro::executor,
     [timer, timeout_src]() mutable -> awaitable<void> {
       auto ec = co_await timer->async_wait(use_awaitable);
       if (!ec) {
