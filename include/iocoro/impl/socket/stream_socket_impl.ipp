@@ -32,6 +32,15 @@ inline void stream_socket_impl::cancel_write() noexcept {
   base_.cancel_write();
 }
 
+inline void stream_socket_impl::cancel_connect() noexcept {
+  {
+    std::scoped_lock lk{mtx_};
+    ++connect_epoch_;
+  }
+  // connect waits for writability.
+  base_.cancel_write();
+}
+
 inline void stream_socket_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
@@ -56,8 +65,8 @@ inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> std
   return {};
 }
 
-inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len)
-  -> awaitable<std::error_code> {
+inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len,
+                                              cancellation_token tok) -> awaitable<std::error_code> {
   if (!is_open()) {
     co_return error::not_open;
   }
@@ -87,6 +96,12 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     connect_in_flight_ = false;
   });
 
+  if (tok.stop_requested()) {
+    std::scoped_lock lk{mtx_};
+    state_ = conn_state::disconnected;
+    co_return error::operation_aborted;
+  }
+
   // We intentionally keep syscall logic outside the mutex.
   auto ec = std::error_code{};
 
@@ -110,7 +125,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   // Wait for writability, then check SO_ERROR.
-  auto wait_ec = co_await base_.wait_write_ready();
+  auto wait_ec = co_await base_.wait_write_ready(tok);
   if (wait_ec) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
@@ -152,7 +167,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   co_return std::error_code{};
 }
 
-inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
+inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, cancellation_token tok)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
@@ -180,6 +195,10 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
     read_in_flight_ = false;
   });
 
+  if (tok.stop_requested()) {
+    co_return unexpected(error::operation_aborted);
+  }
+
   if (buffer.empty()) {
     co_return 0;
   }
@@ -196,7 +215,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_read_ready();
+      auto ec = co_await base_.wait_read_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }
@@ -212,7 +231,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   }
 }
 
-inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer)
+inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer, cancellation_token tok)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
@@ -240,6 +259,10 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
     write_in_flight_ = false;
   });
 
+  if (tok.stop_requested()) {
+    co_return unexpected(error::operation_aborted);
+  }
+
   if (buffer.empty()) {
     co_return 0;
   }
@@ -257,7 +280,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_write_ready();
+      auto ec = co_await base_.wait_write_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
@@ -54,7 +55,7 @@ class basic_stream_socket
   basic_stream_socket(basic_stream_socket&&) = default;
   auto operator=(basic_stream_socket&&) -> basic_stream_socket& = default;
 
-  auto async_connect(endpoint const& ep) -> awaitable<std::error_code> {
+  auto async_connect(endpoint const& ep, cancellation_token tok = {}) -> awaitable<std::error_code> {
     // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
     if (!this->impl_->is_open()) {
       auto ec = this->impl_->open(ep.family(), Protocol::type(), Protocol::protocol());
@@ -62,17 +63,17 @@ class basic_stream_socket
         co_return ec;
       }
     }
-    co_return co_await this->impl_->async_connect(ep.data(), ep.size());
+    co_return co_await this->impl_->async_connect(ep.data(), ep.size(), std::move(tok));
   }
 
-  auto async_read_some(std::span<std::byte> buffer)
+  auto async_read_some(std::span<std::byte> buffer, cancellation_token tok = {})
     -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return co_await this->impl_->async_read_some(buffer);
+    co_return co_await this->impl_->async_read_some(buffer, std::move(tok));
   }
 
-  auto async_write_some(std::span<std::byte const> buffer)
+  auto async_write_some(std::span<std::byte const> buffer, cancellation_token tok = {})
     -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return co_await this->impl_->async_write_some(buffer);
+    co_return co_await this->impl_->async_write_some(buffer, std::move(tok));
   }
 
   auto local_endpoint() const -> expected<endpoint, std::error_code> {

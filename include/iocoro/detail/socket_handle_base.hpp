@@ -45,6 +45,7 @@ class socket_handle_base {
   }
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return impl_->get_io_context_impl(); }
+  auto get_executor() const noexcept -> io_executor { return io_executor{*impl_->get_io_context_impl()}; }
 
   auto is_open() const noexcept -> bool { return impl_->is_open(); }
 

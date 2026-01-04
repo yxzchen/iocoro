@@ -26,7 +26,7 @@ static auto as_writable_bytes(std::string& s) -> std::span<std::byte> {
 }
 
 // Test basic UDP send/receive on loopback.
-TEST(UdpSocketTest, BasicSendReceive) {
+TEST(udp_socket_test, BasicSendReceive) {
   iocoro::io_context ctx;
 
   auto result = iocoro::sync_wait_for(ctx, 5s, [&]() -> iocoro::awaitable<std::string> {
@@ -89,7 +89,7 @@ TEST(UdpSocketTest, BasicSendReceive) {
 }
 
 // Test connected UDP socket.
-TEST(UdpSocketTest, ConnectedSocket) {
+TEST(udp_socket_test, ConnectedSocket) {
   iocoro::io_context ctx;
 
   auto result = iocoro::sync_wait_for(ctx, 5s, [&]() -> iocoro::awaitable<std::string> {
@@ -142,7 +142,7 @@ TEST(UdpSocketTest, ConnectedSocket) {
 }
 
 // Test message boundary preservation.
-TEST(UdpSocketTest, MessageBoundary) {
+TEST(udp_socket_test, MessageBoundary) {
   iocoro::io_context ctx;
 
   auto result = iocoro::sync_wait_for(ctx, 5s, [&]() -> iocoro::awaitable<std::string> {
@@ -203,7 +203,7 @@ TEST(UdpSocketTest, MessageBoundary) {
 }
 
 // Test message truncation detection.
-TEST(UdpSocketTest, MessageTruncation) {
+TEST(udp_socket_test, MessageTruncation) {
   iocoro::io_context ctx;
 
   auto result = iocoro::sync_wait_for(ctx, 5s, [&]() -> iocoro::awaitable<std::string> {

@@ -2,8 +2,8 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
-#include <iocoro/io/async_read_until.hpp>
-#include <iocoro/io/async_write.hpp>
+#include <iocoro/io/read_until.hpp>
+#include <iocoro/io/write.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/ip.hpp>
 #include <iocoro/socket_option.hpp>
@@ -158,11 +158,10 @@ TEST(tcp_socket_test, redis_ping_ipv4_and_endpoints) {
       auto wr = co_await iocoro::io::async_write(s, as_bytes(cmd));
       if (!wr) co_return iocoro::unexpected(wr.error());
 
-      std::string out;
-      out.reserve(64);
-      auto n = co_await iocoro::io::async_read_until(s, out, "\r\n", 4096);
+      std::array<std::byte, 4096> buf{};
+      auto n = co_await iocoro::io::async_read_until(s, std::span{buf}, "\r\n");
       if (!n) co_return iocoro::unexpected(n.error());
-      co_return out.substr(0, *n);
+      co_return std::string{reinterpret_cast<char const*>(buf.data()), *n};
     }());
 
   if (!rr && should_skip_net_error(rr.error())) {

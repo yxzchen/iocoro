@@ -3,8 +3,8 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io/async_read.hpp>
-#include <iocoro/io/async_write.hpp>
+#include <iocoro/io/read.hpp>
+#include <iocoro/io/write.hpp>
 #include <iocoro/io_context.hpp>
 
 #include "test_util.hpp"
@@ -39,7 +39,7 @@ struct slow_cancellable_stream {
   void cancel_read() noexcept { cancelled_read.store(true, std::memory_order_release); }
   void cancel_write() noexcept { cancelled_write.store(true, std::memory_order_release); }
 
-  auto async_read_some(std::span<std::byte> buf)
+  auto async_read_some(std::span<std::byte> buf, iocoro::cancellation_token tok = {})
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
     in_read.store(true, std::memory_order_release);
@@ -47,7 +47,7 @@ struct slow_cancellable_stream {
 
     // Wait until cancelled (yields to io_executor).
     for (int i = 0; i < 200; ++i) {
-      if (cancelled_read.load(std::memory_order_acquire)) {
+      if (tok.stop_requested() || cancelled_read.load(std::memory_order_acquire)) {
         guard();
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }
@@ -58,7 +58,7 @@ struct slow_cancellable_stream {
     co_return iocoro::expected<std::size_t, std::error_code>(0);
   }
 
-  auto async_write_some(std::span<std::byte const> buf)
+  auto async_write_some(std::span<std::byte const> buf, iocoro::cancellation_token tok = {})
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
     in_write.store(true, std::memory_order_release);
@@ -66,7 +66,7 @@ struct slow_cancellable_stream {
 
     // Wait until cancelled (yields to io_executor).
     for (int i = 0; i < 200; ++i) {
-      if (cancelled_write.load(std::memory_order_acquire)) {
+      if (tok.stop_requested() || cancelled_write.load(std::memory_order_acquire)) {
         guard();
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }

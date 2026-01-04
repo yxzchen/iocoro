@@ -7,7 +7,7 @@
 
 namespace {
 
-TEST(io_context_basic_test, post_and_run_executes_all_posted_operations) {
+TEST(io_context_test, post_and_run_executes_all_posted_operations) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> n{0};
@@ -19,7 +19,7 @@ TEST(io_context_basic_test, post_and_run_executes_all_posted_operations) {
   EXPECT_EQ(n.load(std::memory_order_relaxed), 2);
 }
 
-TEST(io_context_basic_test, run_one_does_not_drain_work_posted_during_execution) {
+TEST(io_context_test, run_one_does_not_drain_work_posted_during_execution) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> n{0};
@@ -36,7 +36,7 @@ TEST(io_context_basic_test, run_one_does_not_drain_work_posted_during_execution)
   EXPECT_EQ(n.load(std::memory_order_relaxed), 2);
 }
 
-TEST(io_context_basic_test, stop_prevents_run_and_restart_allows_processing) {
+TEST(io_context_test, stop_prevents_run_and_restart_allows_processing) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> n{0};

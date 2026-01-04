@@ -93,7 +93,8 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
 inline auto datagram_socket_impl::async_send_to(
     std::span<std::byte const> buffer,
     sockaddr const* dest_addr,
-    socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t dest_len,
+    cancellation_token tok) -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -116,6 +117,10 @@ inline auto datagram_socket_impl::async_send_to(
     std::scoped_lock lk{mtx_};
     send_in_flight_ = false;
   });
+
+  if (tok.stop_requested()) {
+    co_return unexpected(error::operation_aborted);
+  }
 
   if (buffer.empty()) {
     co_return 0;
@@ -148,7 +153,7 @@ inline auto datagram_socket_impl::async_send_to(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for write readiness.
-      auto ec = co_await base_.wait_write_ready();
+      auto ec = co_await base_.wait_write_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }
@@ -175,7 +180,8 @@ inline auto datagram_socket_impl::async_send_to(
 inline auto datagram_socket_impl::async_receive_from(
     std::span<std::byte> buffer,
     sockaddr* src_addr,
-    socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t* src_len,
+    cancellation_token tok) -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -213,6 +219,10 @@ inline auto datagram_socket_impl::async_receive_from(
     receive_in_flight_ = false;
   });
 
+  if (tok.stop_requested()) {
+    co_return unexpected(error::operation_aborted);
+  }
+
   if (buffer.empty()) {
     co_return unexpected(error::invalid_argument);
   }
@@ -249,7 +259,7 @@ inline auto datagram_socket_impl::async_receive_from(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for read readiness.
-      auto ec = co_await base_.wait_read_ready();
+      auto ec = co_await base_.wait_read_ready(tok);
       if (ec) {
         co_return unexpected(ec);
       }

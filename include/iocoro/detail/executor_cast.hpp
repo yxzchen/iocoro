@@ -17,8 +17,9 @@ struct any_executor_access {
 /// @throws assertion failure if executor is not of target type or is empty.
 template <executor Target>
 inline auto require_executor(any_executor const& ex) noexcept -> Target {
+  IOCORO_ENSURE(ex, "require_executor: requires a valid executor");
   auto const* p = any_executor_access::target<Target>(ex);
-  IOCORO_ENSURE(p != nullptr, "require_executor: executor is not of required type");
+  IOCORO_ENSURE(p, "require_executor: executor is not of required type");
   return *p;
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_async.hpp>
@@ -8,6 +9,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <mutex>
 #include <system_error>
 
 namespace iocoro {
@@ -55,21 +57,34 @@ class steady_timer {
   /// Returns:
   /// - `std::error_code{}` on successful timer expiry.
   /// - `error::operation_aborted` if the timer was cancelled.
-  auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
-    co_return co_await detail::operation_awaiter<timer_wait_operation>{this};
+  /// Wait until expiry (or cancellation) as an awaitable, observing a cancellation token.
+  auto async_wait(use_awaitable_t, cancellation_token tok = {}) -> awaitable<std::error_code> {
+    auto awaiter = detail::operation_awaiter<timer_wait_operation>{this};
+    if (!tok) {
+      co_return co_await std::move(awaiter);
+    }
+    co_return co_await detail::cancellable(std::move(awaiter), std::move(tok));
   }
 
   /// Cancel the pending timer operation.
   void cancel() noexcept {
-    if (handle_) {
-      handle_.cancel();
-      handle_ = detail::io_context_impl::timer_event_handle::invalid_handle();
+    detail::io_context_impl::timer_event_handle h{};
+    {
+      std::scoped_lock lk{mtx_};
+      h = std::exchange(handle_, detail::io_context_impl::timer_event_handle::invalid_handle());
+    }
+
+    if (h) {
+      h.cancel();
     }
   }
 
   time_point expiry() { return expiry_; }
 
-  void set_write_handle(detail::io_context_impl::timer_event_handle h) noexcept { handle_ = h; }
+  void set_timer_handle(detail::io_context_impl::timer_event_handle h) noexcept {
+    std::scoped_lock lk{mtx_};
+    handle_ = h;
+  }
 
  private:
   class timer_wait_operation final : public detail::async_operation {
@@ -80,7 +95,10 @@ class steady_timer {
    private:
     void do_start(std::unique_ptr<operation_base> self) override {
       auto handle = timer_->ctx_impl_->schedule_timer(timer_->expiry(), std::move(self));
-      timer_->set_write_handle(handle);
+      timer_->set_timer_handle(handle);
+      // Publish the reactor cancellation hook for this wait.
+      // This keeps cancellation_token out of reactor operations; the awaiter drives cancellation.
+      this->publish_cancel([h = handle]() mutable { h.cancel(); });
     }
 
     steady_timer* timer_ = nullptr;
@@ -88,6 +106,7 @@ class steady_timer {
 
   detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
+  mutable std::mutex mtx_{};
   detail::io_context_impl::timer_event_handle handle_{};
 };
 

@@ -13,26 +13,26 @@ namespace {
 using namespace std::chrono_literals;
 
 // Test io_executor creation and bool conversion
-TEST(executor_basic, default_executor_is_empty) {
+TEST(io_executor_test, default_executor_is_empty) {
   iocoro::io_executor ex;
   EXPECT_FALSE(ex);
 }
 
-TEST(executor_basic, context_provides_valid_executor) {
+TEST(io_executor_test, context_provides_valid_executor) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   EXPECT_TRUE(ex);
 }
 
 // Test io_executor equality
-TEST(executor_basic, executors_from_same_context_are_equal) {
+TEST(io_executor_test, executors_from_same_context_are_equal) {
   iocoro::io_context ctx;
   auto ex1 = ctx.get_executor();
   auto ex2 = ctx.get_executor();
   EXPECT_EQ(ex1, ex2);
 }
 
-TEST(executor_basic, executors_from_different_contexts_are_not_equal) {
+TEST(io_executor_test, executors_from_different_contexts_are_not_equal) {
   iocoro::io_context ctx1;
   iocoro::io_context ctx2;
   auto ex1 = ctx1.get_executor();
@@ -41,7 +41,7 @@ TEST(executor_basic, executors_from_different_contexts_are_not_equal) {
 }
 
 // Test post
-TEST(executor_operations, post_queues_work) {
+TEST(io_executor_test, post_queues_work) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<int> counter{0};
@@ -55,7 +55,7 @@ TEST(executor_operations, post_queues_work) {
 }
 
 // Test dispatch
-TEST(executor_operations, dispatch_runs_inline_on_context_thread) {
+TEST(io_executor_test, dispatch_runs_inline_on_context_thread) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> ran_inline{false};
@@ -73,7 +73,7 @@ TEST(executor_operations, dispatch_runs_inline_on_context_thread) {
   EXPECT_TRUE(done.load(std::memory_order_relaxed));
 }
 
-TEST(executor_operations, dispatch_posts_from_different_thread) {
+TEST(io_executor_test, dispatch_posts_from_different_thread) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> done{false};
@@ -93,7 +93,7 @@ TEST(executor_operations, dispatch_posts_from_different_thread) {
 }
 
 // Test stopped
-TEST(executor_operations, stopped_reflects_context_state) {
+TEST(io_executor_test, stopped_reflects_context_state) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -107,7 +107,7 @@ TEST(executor_operations, stopped_reflects_context_state) {
 }
 
 // Test work_guard
-TEST(executor_work_guard, work_guard_keeps_context_alive) {
+TEST(io_executor_test, work_guard_keeps_context_alive) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
   std::atomic<bool> work_done{false};
@@ -130,7 +130,7 @@ TEST(executor_work_guard, work_guard_keeps_context_alive) {
   EXPECT_TRUE(work_done.load(std::memory_order_relaxed));
 }
 
-TEST(executor_work_guard, work_guard_is_movable) {
+TEST(io_executor_test, work_guard_is_movable) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -144,7 +144,7 @@ TEST(executor_work_guard, work_guard_is_movable) {
 }
 
 // Test that io_executor can be copied and both copies refer to the same context
-TEST(executor_basic, executor_is_copyable) {
+TEST(io_executor_test, executor_is_copyable) {
   iocoro::io_context ctx;
   auto ex1 = ctx.get_executor();
   auto ex2 = ex1;

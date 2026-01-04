@@ -11,6 +11,7 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/bind_executor.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/this_coro.hpp>
@@ -38,7 +39,8 @@
 #include <iocoro/socket_option.hpp>
 
 // Async I/O algorithms
-#include <iocoro/io/async_read.hpp>
-#include <iocoro/io/async_read_until.hpp>
-#include <iocoro/io/async_write.hpp>
+#include <iocoro/io/connect.hpp>
+#include <iocoro/io/read.hpp>
+#include <iocoro/io/read_until.hpp>
 #include <iocoro/io/stream_concepts.hpp>
+#include <iocoro/io/write.hpp>

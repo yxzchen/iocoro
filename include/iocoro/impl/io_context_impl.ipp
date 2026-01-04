@@ -349,12 +349,12 @@ inline auto io_context_impl::process_posted() -> std::size_t {
 inline auto io_context_impl::get_timeout() -> std::optional<std::chrono::milliseconds> {
   std::scoped_lock lk{timer_mutex_};
 
-  while (!timers_.empty() && timers_.top()->is_cancelled()) {
-    timers_.pop();
-  }
-
   if (timers_.empty()) {
     return std::nullopt;
+  }
+
+  if (timers_.top()->is_cancelled()) {
+    return std::chrono::milliseconds(0);
   }
 
   auto const now = std::chrono::steady_clock::now();

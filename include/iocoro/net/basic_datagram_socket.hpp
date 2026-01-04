@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/expected.hpp>
@@ -89,9 +90,11 @@ class basic_datagram_socket
   /// Send a datagram to the specified destination.
   ///
   /// The entire buffer is sent as a single datagram (message boundary preserved).
-  auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
+  auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination,
+                     cancellation_token tok = {})
       -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return co_await this->impl_->async_send_to(buffer, destination.data(), destination.size());
+    co_return co_await this->impl_->async_send_to(
+      buffer, destination.data(), destination.size(), std::move(tok));
   }
 
   /// Receive a datagram and retrieve the source endpoint.
@@ -99,20 +102,18 @@ class basic_datagram_socket
   /// Important: The socket must be bound before calling this.
   /// The entire message is received in one operation (message boundary preserved).
   /// If the buffer is too small, an error is returned (message_size).
-  auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source)
+  auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source, cancellation_token tok = {})
       -> awaitable<expected<std::size_t, std::error_code>> {
-    // Allocate storage for the source address.
     sockaddr_storage ss{};
     socklen_t len = sizeof(ss);
 
     auto result = co_await this->impl_->async_receive_from(
-        buffer, reinterpret_cast<sockaddr*>(&ss), &len);
+        buffer, reinterpret_cast<sockaddr*>(&ss), &len, std::move(tok));
 
     if (!result) {
       co_return unexpected(result.error());
     }
 
-    // Convert native sockaddr to typed endpoint.
     auto ep_result = endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
     if (!ep_result) {
       co_return unexpected(ep_result.error());
