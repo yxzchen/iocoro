@@ -168,6 +168,9 @@ class socket_impl_base {
       co_return error::not_open;
     }
     auto awaiter = operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{this};
+    if (!tok) {
+      co_return co_await std::move(awaiter);
+    }
     co_return co_await cancellable(std::move(awaiter), std::move(tok));
   }
 
@@ -178,6 +181,9 @@ class socket_impl_base {
       co_return error::not_open;
     }
     auto awaiter = operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{this};
+    if (!tok) {
+      co_return co_await std::move(awaiter);
+    }
     co_return co_await cancellable(std::move(awaiter), std::move(tok));
   }
 
@@ -208,11 +214,11 @@ class socket_impl_base {
       if constexpr (Kind == fd_wait_kind::read) {
         auto h = socket_->ctx_impl_->register_fd_read(socket_->native_handle(), std::move(self));
         socket_->set_read_handle(h);
-        this->st_->cancel.publish([h]() mutable { h.cancel(); });
+        this->publish_cancel([h]() mutable { h.cancel(); });
       } else {
         auto h = socket_->ctx_impl_->register_fd_write(socket_->native_handle(), std::move(self));
         socket_->set_write_handle(h);
-        this->st_->cancel.publish([h]() mutable { h.cancel(); });
+        this->publish_cancel([h]() mutable { h.cancel(); });
       }
     }
 

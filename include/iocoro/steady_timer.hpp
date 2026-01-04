@@ -60,6 +60,9 @@ class steady_timer {
   /// Wait until expiry (or cancellation) as an awaitable, observing a cancellation token.
   auto async_wait(use_awaitable_t, cancellation_token tok = {}) -> awaitable<std::error_code> {
     auto awaiter = detail::operation_awaiter<timer_wait_operation>{this};
+    if (!tok) {
+      co_return co_await std::move(awaiter);
+    }
     co_return co_await detail::cancellable(std::move(awaiter), std::move(tok));
   }
 
@@ -95,7 +98,7 @@ class steady_timer {
       timer_->set_write_handle(handle);
       // Publish the reactor cancellation hook for this wait.
       // This keeps cancellation_token out of reactor operations; the awaiter drives cancellation.
-      this->st_->cancel.publish([h = handle]() mutable { h.cancel(); });
+      this->publish_cancel([h = handle]() mutable { h.cancel(); });
     }
 
     steady_timer* timer_ = nullptr;

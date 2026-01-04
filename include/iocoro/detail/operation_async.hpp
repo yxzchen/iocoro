@@ -88,6 +88,8 @@ class async_operation : public operation_base {
   async_operation(std::shared_ptr<operation_wait_state> st) noexcept
       : st_(std::move(st)) {}
 
+  void publish_cancel(unique_function<void()> f) noexcept { st_->cancel.publish(std::move(f)); }
+
   void complete(std::error_code ec) noexcept {
     // Guard against double completion (on_ready + on_abort, or repeated signals).
     if (done.exchange(true, std::memory_order_acq_rel)) {
@@ -153,7 +155,9 @@ struct operation_awaiter {
 /// Semantics:
 /// - Registers a token callback for the duration of the suspension.
 /// - Token triggers `st->cancel.cancel()` (pending-cancel + hook publish handles races).
-/// - If tok is already cancelled, completes immediately with operation_aborted (no suspend).
+/// - If tok is already cancelled, this still starts the underlying operation; the already-fired
+///   callback makes cancellation "pending" and it will be applied as soon as the operation
+///   publishes its cancel hook.
 template <class Awaiter>
 struct cancellable_awaiter {
   Awaiter awaiter;
