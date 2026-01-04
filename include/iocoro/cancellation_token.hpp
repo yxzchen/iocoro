@@ -121,24 +121,17 @@ class cancellation_token {
     auto node = std::make_shared<detail::cancellation_callback_node>();
     node->fn = std::function<void()>(std::forward<F>(f));
 
-    std::uint64_t id = 0;
     {
       std::scoped_lock lk{st_->mtx};
-      if (st_->cancelled.load(std::memory_order_acquire)) {
-        // Lost the race: cancellation fired while registering. Invoke immediately.
-        node->active.store(false, std::memory_order_release);
-        // Drop lock before invoking.
-      } else {
-        id = st_->next_id++;
+      if (!st_->cancelled.load(std::memory_order_acquire)) {
+        auto id = st_->next_id++;
         st_->callbacks.emplace(id, node);
         return cancellation_registration{st_, id, std::move(node)};
       }
     }
 
-    // Cancellation fired during registration: call if still active.
-    if (node->active.exchange(false, std::memory_order_acq_rel)) {
-      node->fn();
-    }
+    node->fn();
+
     return cancellation_registration{};
   }
 

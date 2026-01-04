@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
@@ -128,6 +129,14 @@ class stream_socket_impl {
   /// may also abort an in-flight async_connect() if it is currently waiting for writability.
   void cancel_write() noexcept;
 
+  /// Cancel pending connect operations (best-effort).
+  ///
+  /// Notes:
+  /// - connect readiness waits are implemented via writability.
+  /// - This increments connect_epoch_ so the connect coroutine can reliably detect cancellation
+  ///   even if the reactor handle was not yet published at the time of cancellation.
+  void cancel_connect() noexcept;
+
   /// Close the stream socket (best-effort, idempotent).
   ///
   /// Semantics:
@@ -149,14 +158,15 @@ class stream_socket_impl {
   auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
 
   /// Connect to a native endpoint.
-  auto async_connect(sockaddr const* addr, socklen_t len) -> awaitable<std::error_code>;
+  auto async_connect(sockaddr const* addr, socklen_t len, cancellation_token tok = {})
+    -> awaitable<std::error_code>;
 
   /// Read at most `size` bytes into `data`.
-  auto async_read_some(std::span<std::byte> buffer)
+  auto async_read_some(std::span<std::byte> buffer, cancellation_token tok = {})
     -> awaitable<expected<std::size_t, std::error_code>>;
 
   /// Write at most `size` bytes from `data`.
-  auto async_write_some(std::span<std::byte const> buffer)
+  auto async_write_some(std::span<std::byte const> buffer, cancellation_token tok = {})
     -> awaitable<expected<std::size_t, std::error_code>>;
 
   auto shutdown(shutdown_type what) -> std::error_code;

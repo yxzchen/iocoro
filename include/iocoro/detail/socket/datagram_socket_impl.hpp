@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 
@@ -116,7 +117,8 @@ class datagram_socket_impl {
   auto async_send_to(
       std::span<std::byte const> buffer,
       sockaddr const* dest_addr,
-      socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t dest_len,
+      cancellation_token tok = {}) -> awaitable<expected<std::size_t, std::error_code>>;
 
   /// Receive a datagram and retrieve the source endpoint.
   ///
@@ -128,7 +130,8 @@ class datagram_socket_impl {
   auto async_receive_from(
       std::span<std::byte> buffer,
       sockaddr* src_addr,
-      socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t* src_len,
+      cancellation_token tok = {}) -> awaitable<expected<std::size_t, std::error_code>>;
 
  private:
   enum class dgram_state : std::uint8_t {

@@ -93,11 +93,15 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
 inline auto datagram_socket_impl::async_send_to(
     std::span<std::byte const> buffer,
     sockaddr const* dest_addr,
-    socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t dest_len,
+    cancellation_token tok) -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
   }
+
+  auto reg = tok.register_callback([this] { this->cancel_write(); });
+  (void)reg;
 
   std::uint64_t my_epoch = 0;
   bool is_connected = false;
@@ -116,6 +120,10 @@ inline auto datagram_socket_impl::async_send_to(
     std::scoped_lock lk{mtx_};
     send_in_flight_ = false;
   });
+
+  if (tok.stop_requested()) {
+    co_return unexpected(error::operation_aborted);
+  }
 
   if (buffer.empty()) {
     co_return 0;
@@ -175,11 +183,15 @@ inline auto datagram_socket_impl::async_send_to(
 inline auto datagram_socket_impl::async_receive_from(
     std::span<std::byte> buffer,
     sockaddr* src_addr,
-    socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t* src_len,
+    cancellation_token tok) -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
   }
+
+  auto reg = tok.register_callback([this] { this->cancel_read(); });
+  (void)reg;
 
   // Check that the socket has a local address (required for receiving).
   //
@@ -212,6 +224,10 @@ inline auto datagram_socket_impl::async_receive_from(
     std::scoped_lock lk{mtx_};
     receive_in_flight_ = false;
   });
+
+  if (tok.stop_requested()) {
+    co_return unexpected(error::operation_aborted);
+  }
 
   if (buffer.empty()) {
     co_return unexpected(error::invalid_argument);
