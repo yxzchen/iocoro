@@ -46,11 +46,12 @@ struct cancellable_test_stream {
     cancelled_write.store(true, std::memory_order_release);
   }
 
-  auto async_read_some(std::span<std::byte> buf)
+  auto async_read_some(std::span<std::byte> buf, iocoro::cancellation_token tok = {})
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
     for (int i = 0; i < 200; ++i) {
-      if (cancelled.load(std::memory_order_acquire) ||
+      if (tok.stop_requested() ||
+          cancelled.load(std::memory_order_acquire) ||
           cancelled_read.load(std::memory_order_acquire)) {
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }
@@ -59,11 +60,12 @@ struct cancellable_test_stream {
     co_return iocoro::unexpected(iocoro::error::timed_out);
   }
 
-  auto async_write_some(std::span<std::byte const> buf)
+  auto async_write_some(std::span<std::byte const> buf, iocoro::cancellation_token tok = {})
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
     for (int i = 0; i < 200; ++i) {
-      if (cancelled.load(std::memory_order_acquire) ||
+      if (tok.stop_requested() ||
+          cancelled.load(std::memory_order_acquire) ||
           cancelled_write.load(std::memory_order_acquire)) {
         co_return iocoro::unexpected(iocoro::error::operation_aborted);
       }
@@ -73,141 +75,116 @@ struct cancellable_test_stream {
   }
 };
 
-TEST(with_timeout_test, completes_before_timeout_returns_value_and_does_not_call_on_timeout) {
+TEST(with_timeout_test, completes_before_timeout_returns_value) {
   iocoro::io_context ctx;
 
-  std::atomic<bool> called{false};
   auto r =
     iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::with_timeout(
-        [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+        [&](iocoro::cancellation_token) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           co_await iocoro::co_sleep(5ms);
           co_return 42;
-        }(),
-        200ms, [&]() { called = true; });
+        },
+        200ms);
     }());
 
   ASSERT_TRUE(r) << r.error().message();
   EXPECT_EQ(*r, 42);
-  EXPECT_FALSE(called.load(std::memory_order_relaxed));
 }
 
 TEST(with_timeout_test,
-     error_code_completes_before_timeout_returns_success_and_does_not_call_on_timeout) {
+     error_code_completes_before_timeout_returns_success) {
   iocoro::io_context ctx;
 
-  std::atomic<bool> called{false};
   auto r = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::error_code> {
     co_return co_await iocoro::with_timeout(
-      [&]() -> iocoro::awaitable<std::error_code> {
+      [&](iocoro::cancellation_token) -> iocoro::awaitable<std::error_code> {
         co_await iocoro::co_sleep(5ms);
         co_return std::error_code{};
-      }(),
-      200ms, [&]() { called = true; });
+      },
+      200ms);
   }());
 
   EXPECT_FALSE(static_cast<bool>(r)) << r.message();
-  EXPECT_FALSE(called.load(std::memory_order_relaxed));
 }
 
-TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
+TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out) {
   iocoro::io_context ctx;
-
-  std::atomic<bool> cancelled{false};
-  std::atomic<bool> called{false};
 
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::with_timeout(
-        [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+        [&](iocoro::cancellation_token tok) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           // Wait until cancelled, then surface operation_aborted.
           for (int i = 0; i < 200; ++i) {
-            if (cancelled.load(std::memory_order_acquire)) {
+            if (tok.stop_requested()) {
               co_return iocoro::unexpected(iocoro::error::operation_aborted);
             }
             co_await iocoro::co_sleep(1ms);
           }
           co_return iocoro::unexpected(iocoro::error::timed_out);
-        }(),
-        10ms,
-        [&]() {
-          called.store(true, std::memory_order_release);
-          cancelled.store(true, std::memory_order_release);
-        });
+        },
+        10ms);
     }());
 
   ASSERT_FALSE(r);
-  EXPECT_TRUE(called.load(std::memory_order_acquire));
   EXPECT_EQ(r.error(), iocoro::error::timed_out);
 }
 
 TEST(with_timeout_test,
-     error_code_timeout_maps_operation_aborted_to_timed_out_and_calls_on_timeout) {
+     error_code_timeout_maps_operation_aborted_to_timed_out) {
   iocoro::io_context ctx;
-
-  std::atomic<bool> cancelled{false};
-  std::atomic<bool> called{false};
 
   auto r = iocoro::sync_wait_for(ctx, 500ms, [&]() -> iocoro::awaitable<std::error_code> {
     co_return co_await iocoro::with_timeout(
-      [&]() -> iocoro::awaitable<std::error_code> {
+      [&](iocoro::cancellation_token tok) -> iocoro::awaitable<std::error_code> {
         // Wait until cancelled, then surface operation_aborted.
         for (int i = 0; i < 200; ++i) {
-          if (cancelled.load(std::memory_order_acquire)) {
+          if (tok.stop_requested()) {
             co_return iocoro::error::operation_aborted;
           }
           co_await iocoro::co_sleep(1ms);
         }
         co_return iocoro::error::timed_out;
-      }(),
-      10ms,
-      [&]() {
-        called.store(true, std::memory_order_release);
-        cancelled.store(true, std::memory_order_release);
-      });
+      },
+      10ms);
   }());
 
   EXPECT_TRUE(static_cast<bool>(r)) << r.message();
-  EXPECT_TRUE(called.load(std::memory_order_acquire));
   EXPECT_EQ(r, iocoro::error::timed_out);
 }
 
 TEST(with_timeout_test, external_operation_aborted_is_not_mapped_to_timed_out) {
   iocoro::io_context ctx;
 
-  std::atomic<bool> called{false};
-
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::with_timeout(
-        [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+        [&](iocoro::cancellation_token) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           // External cancellation: complete with operation_aborted before timeout can fire.
           co_return iocoro::unexpected(iocoro::error::operation_aborted);
-        }(),
-        200ms, [&]() { called = true; });
+        },
+        200ms);
     }());
 
   ASSERT_FALSE(r);
   EXPECT_EQ(r.error(), iocoro::error::operation_aborted);
-  EXPECT_FALSE(called.load(std::memory_order_relaxed));
 }
 
 TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
   iocoro::io_context ctx;
 
-  std::atomic<bool> called{false};
   auto r = iocoro::sync_wait_for(
     ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::with_timeout(
-        [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+        [&](iocoro::cancellation_token) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
           co_await iocoro::co_sleep(20ms);  // ensure the timer has time to fire
           co_return iocoro::unexpected(iocoro::error::broken_pipe);
-        }(),
-        5ms, [&]() { called = true; });
+        },
+        5ms);
     }());
 
   ASSERT_FALSE(r);
-  EXPECT_TRUE(called.load(std::memory_order_acquire));
   EXPECT_EQ(r.error(), iocoro::error::broken_pipe);
 }
 
@@ -221,7 +198,6 @@ TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expec
     ctx, 500ms, []() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
       co_return co_await iocoro::with_timeout_detached(
         []() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-          // Short sleep to ensure detached operation completes quickly
           co_await iocoro::co_sleep(10ms);
           co_return 7;
         }(),

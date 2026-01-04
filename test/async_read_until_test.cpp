@@ -4,6 +4,7 @@
 #include <iocoro/expected.hpp>
 #include <iocoro/io/async_read_until.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/io_executor.hpp>
 
 #include "test_util.hpp"
 
@@ -20,9 +21,16 @@ struct mock_read_stream {
   std::string data{};
   std::size_t pos{0};
   std::size_t max_chunk{(std::numeric_limits<std::size_t>::max)()};
+  iocoro::io_executor ex{};
 
-  auto async_read_some(std::span<std::byte> buf)
+  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
+
+  auto async_read_some(std::span<std::byte> buf, iocoro::cancellation_token tok = {})
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    if (tok.stop_requested()) {
+      co_return iocoro::unexpected(iocoro::error::operation_aborted);
+    }
+
     if (pos >= data.size()) {
       co_return iocoro::expected<std::size_t, std::error_code>(0);
     }
@@ -38,7 +46,7 @@ struct mock_read_stream {
 TEST(async_read_until_test, finds_multibyte_delimiter_across_chunks_and_may_overread) {
   iocoro::io_context ctx;
 
-  mock_read_stream s{.data = "abc\r\nrest", .pos = 0, .max_chunk = 2};
+  mock_read_stream s{.data = "abc\r\nrest", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::string out;
 
   auto r = iocoro::sync_wait(
@@ -56,7 +64,8 @@ TEST(async_read_until_test, finds_multibyte_delimiter_across_chunks_and_may_over
 TEST(async_read_until_test, completes_immediately_if_delimiter_already_present) {
   iocoro::io_context ctx;
 
-  mock_read_stream s{.data = "SHOULD_NOT_BE_READ", .pos = 0, .max_chunk = 1};
+  mock_read_stream s{
+    .data = "SHOULD_NOT_BE_READ", .pos = 0, .max_chunk = 1, .ex = ctx.get_executor()};
   std::string out = "hello\n";
 
   auto r = iocoro::sync_wait(
@@ -73,7 +82,7 @@ TEST(async_read_until_test, completes_immediately_if_delimiter_already_present) 
 TEST(async_read_until_test, returns_message_size_if_not_found_within_max_size) {
   iocoro::io_context ctx;
 
-  mock_read_stream s{.data = "abcdef", .pos = 0, .max_chunk = 2};
+  mock_read_stream s{.data = "abcdef", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::string out;
 
   auto r = iocoro::sync_wait(
@@ -89,7 +98,7 @@ TEST(async_read_until_test, returns_message_size_if_not_found_within_max_size) {
 TEST(async_read_until_test, returns_eof_if_stream_ends_before_delimiter) {
   iocoro::io_context ctx;
 
-  mock_read_stream s{.data = "abc", .pos = 0, .max_chunk = 2};
+  mock_read_stream s{.data = "abc", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::string out;
 
   auto r = iocoro::sync_wait(

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/io_executor.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -22,13 +24,13 @@ namespace iocoro::io {
 ///
 /// 1. It provides an asynchronous read primitive:
 ///    ```
-///    async_read_some(std::span<std::byte>)
+///    async_read_some(std::span<std::byte>, cancellation_token)
 ///      -> awaitable<expected<std::size_t, std::error_code>>
 ///    ```
 ///
 /// 2. It provides an asynchronous write primitive:
 ///    ```
-///    async_write_some(std::span<std::byte const>)
+///    async_write_some(std::span<std::byte const>, cancellation_token)
 ///      -> awaitable<expected<std::size_t, std::error_code>>
 ///    ```
 ///
@@ -49,30 +51,28 @@ namespace iocoro::io {
 ///   abstractions (e.g. UDP, datagram sockets, framed protocols),
 ///   where partial reads/writes or zero-length transfers may have
 ///   different meanings.
-template <class Stream>
-concept async_read_stream = requires(Stream& s, std::span<std::byte> rbuf) {
-  requires std::same_as<decltype(s.async_read_some(rbuf)),
-                        awaitable<expected<std::size_t, std::error_code>>>;
-};
-
-template <class Stream>
-concept async_write_stream = requires(Stream& s, std::span<std::byte const> wbuf) {
-  requires std::same_as<decltype(s.async_write_some(wbuf)),
-                        awaitable<expected<std::size_t, std::error_code>>>;
-};
-
-template <class Stream>
-concept async_stream = async_read_stream<Stream> && async_write_stream<Stream>;
-
-template <class Stream>
-concept cancel_readable_stream = requires(Stream& s) { s.cancel_read(); };
-
-template <class Stream>
-concept cancel_writable_stream = requires(Stream& s) { s.cancel_write(); };
 
 template <class Stream>
 concept io_executor_stream = requires(Stream& s) {
   { s.get_executor() } -> std::same_as<io_executor>;
 };
+
+template <class Stream>
+concept async_read_stream =
+  io_executor_stream<Stream> && requires(Stream& s, std::span<std::byte> rbuf, cancellation_token tok) {
+    requires std::same_as<decltype(s.async_read_some(rbuf, tok)),
+                          awaitable<expected<std::size_t, std::error_code>>>;
+  };
+
+template <class Stream>
+concept async_write_stream =
+  io_executor_stream<Stream> &&
+  requires(Stream& s, std::span<std::byte const> wbuf, cancellation_token tok) {
+    requires std::same_as<decltype(s.async_write_some(wbuf, tok)),
+                          awaitable<expected<std::size_t, std::error_code>>>;
+  };
+
+template <class Stream>
+concept async_stream = async_read_stream<Stream> && async_write_stream<Stream>;
 
 }  // namespace iocoro::io

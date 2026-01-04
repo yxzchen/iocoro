@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
@@ -29,7 +30,7 @@ namespace iocoro::io {
 /// will contain extra bytes after the returned count.
 template <async_read_stream Stream>
 auto async_read_until(Stream& s, std::string& out, std::string_view delim,
-                      std::size_t max_size = 64 * 1024)
+                      std::size_t max_size = 64 * 1024, cancellation_token tok = {})
   -> awaitable<expected<std::size_t, std::error_code>> {
   if (delim.empty()) {
     co_return unexpected(error::invalid_argument);
@@ -53,7 +54,7 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
       break;
     }
 
-    auto r = co_await s.async_read_some(std::span<std::byte>(tmp.data(), to_read));
+    auto r = co_await s.async_read_some(std::span<std::byte>(tmp.data(), to_read), tok);
     if (!r) {
       co_return r;
     }
@@ -81,10 +82,11 @@ auto async_read_until(Stream& s, std::string& out, std::string_view delim,
 
 /// Convenience overload for single-character delimiters.
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, std::string& out, char delim, std::size_t max_size = 64 * 1024)
+auto async_read_until(Stream& s, std::string& out, char delim, std::size_t max_size = 64 * 1024,
+                      cancellation_token tok = {})
   -> awaitable<expected<std::size_t, std::error_code>> {
   char const d[1] = {delim};
-  co_return co_await async_read_until(s, out, std::string_view{d, 1}, max_size);
+  co_return co_await async_read_until(s, out, std::string_view{d, 1}, max_size, std::move(tok));
 }
 
 }  // namespace iocoro::io
