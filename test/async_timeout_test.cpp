@@ -3,8 +3,8 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io/async_read.hpp>
-#include <iocoro/io/async_write.hpp>
+#include <iocoro/io/read.hpp>
+#include <iocoro/io/write.hpp>
 #include <iocoro/io_context.hpp>
 
 #include "test_util.hpp"

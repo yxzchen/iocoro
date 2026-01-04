@@ -2,7 +2,7 @@
 
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io/async_read_until.hpp>
+#include <iocoro/io/read_until.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/io_executor.hpp>
 

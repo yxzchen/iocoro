@@ -2,8 +2,8 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
-#include <iocoro/io/async_read_until.hpp>
-#include <iocoro/io/async_write.hpp>
+#include <iocoro/io/read_until.hpp>
+#include <iocoro/io/write.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/ip.hpp>
 #include <iocoro/socket_option.hpp>

@@ -33,5 +33,3 @@ auto async_connect_timeout(Socket& s, Endpoint const& ep,
 }
 
 }  // namespace iocoro::io
-
-
