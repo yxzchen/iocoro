@@ -14,53 +14,61 @@
 
 namespace iocoro::detail {
 
+/// Cancellation handshake for a single in-flight operation.
+///
+/// Model:
+/// - The awaiter (coroutine layer) calls cancel() when the token is triggered.
+/// - The reactor-facing operation publishes a cancel hook via publish().
+///
+/// Guarantees:
+/// - If cancel() happens before publish(), the hook will be invoked immediately upon publish().
+/// - If publish() happens before cancel(), the hook will be invoked immediately upon cancel().
+///
+/// This keeps cancellation_token out of reactor operations while still enabling race-free,
+/// "pending-cancel" semantics.
+struct operation_cancellation {
+  std::atomic<bool> pending{false};
+  std::mutex mtx{};
+  unique_function<void()> hook{};
+
+  void publish(unique_function<void()> f) noexcept {
+    unique_function<void()> to_call{};
+    {
+      std::scoped_lock lk{mtx};
+      hook = std::move(f);
+      if (pending.load(std::memory_order_acquire) && hook) {
+        to_call = std::move(hook);
+      }
+    }
+    if (to_call) {
+      to_call();
+    }
+  }
+
+  void cancel() noexcept {
+    pending.store(true, std::memory_order_release);
+
+    unique_function<void()> to_call{};
+    {
+      std::scoped_lock lk{mtx};
+      if (hook) {
+        to_call = std::move(hook);
+      }
+    }
+
+    if (to_call) {
+      to_call();
+    }
+  }
+};
+
 /// Shared state for async operation awaiters.
 /// Holds the coroutine handle, executor, and result error code.
 struct operation_wait_state {
   std::coroutine_handle<> h{};
   any_executor ex{};
   std::error_code ec{};
-
-  // Cancellation bridge:
-  // - The awaiter may request cancellation via request_cancel().
-  // - The reactor-facing operation publishes a cancel hook via set_cancel().
-  //
-  // This keeps cancellation_token out of reactor operations while still enabling
-  // safe, race-free cancellation even if the cancel hook is published after the
-  // token is cancelled (pending-cancel semantics).
-  std::atomic<bool> cancel_pending{false};
-  std::mutex cancel_mtx{};
-  unique_function<void()> cancel_hook{};
-
-  void set_cancel(unique_function<void()> f) noexcept {
-    unique_function<void()> to_call{};
-    {
-      std::scoped_lock lk{cancel_mtx};
-      cancel_hook = std::move(f);
-      if (cancel_pending.load(std::memory_order_acquire) && cancel_hook) {
-        to_call = std::move(cancel_hook);
-      }
-    }
-    if (to_call) {
-      to_call();
-    }
-  }
-
-  void request_cancel() noexcept {
-    cancel_pending.store(true, std::memory_order_release);
-
-    unique_function<void()> to_call{};
-    {
-      std::scoped_lock lk{cancel_mtx};
-      if (cancel_hook) {
-        to_call = std::move(cancel_hook);
-      }
-    }
-
-    if (to_call) {
-      to_call();
-    }
-  }
+  operation_cancellation cancel{};
 };
 
 /// Base class for async operations that provides common completion logic.
@@ -133,7 +141,7 @@ struct operation_awaiter {
 
     if (tok) {
       // Register first to avoid TOCTOU gaps.
-      reg = tok.register_callback([st = st]() { st->request_cancel(); });
+      reg = tok.register_callback([st = st]() { st->cancel.cancel(); });
 
       if (tok.stop_requested()) {
         st->ec = error::operation_aborted;

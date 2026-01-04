@@ -94,7 +94,7 @@ class steady_timer {
       timer_->set_write_handle(handle);
       // Publish the reactor cancellation hook for this wait.
       // This keeps cancellation_token out of reactor operations; the awaiter drives cancellation.
-      this->st_->set_cancel([h = handle]() mutable { h.cancel(); });
+      this->st_->cancel.publish([h = handle]() mutable { h.cancel(); });
     }
 
     steady_timer* timer_ = nullptr;

@@ -214,11 +214,11 @@ class socket_impl_base {
       if constexpr (Kind == fd_wait_kind::read) {
         auto h = socket_->ctx_impl_->register_fd_read(socket_->native_handle(), std::move(self));
         socket_->set_read_handle(h);
-        this->st_->set_cancel([h]() mutable { h.cancel(); });
+        this->st_->cancel.publish([h]() mutable { h.cancel(); });
       } else {
         auto h = socket_->ctx_impl_->register_fd_write(socket_->native_handle(), std::move(self));
         socket_->set_write_handle(h);
-        this->st_->set_cancel([h]() mutable { h.cancel(); });
+        this->st_->cancel.publish([h]() mutable { h.cancel(); });
       }
     }
 
