@@ -161,7 +161,6 @@ class socket_impl_base {
     write_handle_ = h;
   }
 
-  /// Wait until the native fd becomes readable (read readiness).
   /// Wait until the native fd becomes readable (read readiness), observing a cancellation token.
   auto wait_read_ready(cancellation_token tok = {}) -> awaitable<std::error_code> {
     if (native_handle() < 0) {
@@ -174,7 +173,6 @@ class socket_impl_base {
     co_return co_await cancellable(std::move(awaiter), std::move(tok));
   }
 
-  /// Wait until the native fd becomes writable (write readiness).
   /// Wait until the native fd becomes writable (write readiness), observing a cancellation token.
   auto wait_write_ready(cancellation_token tok = {}) -> awaitable<std::error_code> {
     if (native_handle() < 0) {
