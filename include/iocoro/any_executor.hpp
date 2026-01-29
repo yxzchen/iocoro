@@ -40,6 +40,8 @@ concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
   { std::as_const(ex) == std::as_const(ex) } -> std::convertible_to<bool>;
 };
 
+// TODO: rewrite using vtable. maybe add any_executor_ref?
+
 class any_executor {
  public:
   any_executor() = default;

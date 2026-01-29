@@ -8,6 +8,8 @@
 
 namespace iocoro::detail {
 
+// TODO: rewrite using vtable.
+
 /// Move-only type-erased callable wrapper.
 ///
 /// This avoids storing lambda closure types in coroutine frames, eliminating

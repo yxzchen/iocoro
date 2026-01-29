@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+// TODO: replace with std::stop_*
+
 namespace iocoro {
 
 namespace detail {

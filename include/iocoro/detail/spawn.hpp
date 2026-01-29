@@ -102,7 +102,7 @@ void spawn_detached_impl(any_executor ex, awaitable<T> a) {
 }
 
 template <typename T>
-struct spawn_wait_state {
+struct spawn_result_state {
   any_executor ex{};
   std::mutex m;
   bool done{false};
@@ -135,11 +135,10 @@ struct spawn_wait_state {
     {
       std::scoped_lock lk{m};
       done = true;
-      h = waiter;
-      waiter = {};
+      h = std::exchange(waiter, {});
     }
     if (h) {
-      IOCORO_ENSURE(ex, "spawn_wait_state: empty executor with non empty waiter");
+      IOCORO_ENSURE(ex, "spawn_result_state: empty executor with non empty waiter");
       ex.post([h]() { h.resume(); });
     }
   }
@@ -170,9 +169,9 @@ struct spawn_result_awaiter {
   // - C++17/20 aggregate initialization rules changes
   // - Compiler-specific temporary materialization behavior
   // - Interaction between move semantics and aggregate members
-  explicit spawn_result_awaiter(std::shared_ptr<spawn_wait_state<T>> st_) : st(std::move(st_)) {}
+  explicit spawn_result_awaiter(std::shared_ptr<spawn_result_state<T>> st_) : st(std::move(st_)) {}
 
-  std::shared_ptr<spawn_wait_state<T>> st;
+  std::shared_ptr<spawn_result_state<T>> st;
 
   bool await_ready() const noexcept {
     std::scoped_lock lk{st->m};
@@ -222,7 +221,7 @@ struct spawn_result_awaiter {
 /// Executes a spawned task and stores its result (or exception) in shared state.
 /// Used internally by co_spawn(use_awaitable) to run the task and notify waiters.
 template <typename T>
-auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st,
+auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_result_state<T>> st,
                               awaitable<T> a) -> awaitable<void> {
   auto bound = bind_executor<T>(ex, std::move(a));
   try {
@@ -238,10 +237,10 @@ auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_wait_state<
   st->complete();
 }
 
-/// Returns an awaitable that retrieves the result from a spawn_wait_state.
+/// Returns an awaitable that retrieves the result from a spawn_result_state.
 /// Used internally by co_spawn(use_awaitable) to return an awaitable to the caller.
 template <typename T>
-auto await_result(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
+auto await_result(std::shared_ptr<spawn_result_state<T>> st) -> awaitable<T> {
   co_return co_await spawn_result_awaiter<T>{std::move(st)};
 }
 
