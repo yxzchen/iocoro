@@ -2,8 +2,9 @@
 
 #include <iocoro/assert.hpp>
 
+#include <cstddef>
 #include <functional>
-#include <memory>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -27,7 +28,7 @@ template <typename R, typename... Args>
 class unique_function<R(Args...)> {
  public:
   unique_function() = default;
- ~unique_function() { reset(); }
+  ~unique_function() { reset(); }
 
   template <typename F>
     requires (!std::is_same_v<std::decay_t<F>, unique_function>) &&
@@ -35,9 +36,16 @@ class unique_function<R(Args...)> {
               std::is_invocable_r_v<R, F const&, Args...>)
   unique_function(F&& f) {
     using functor = std::decay_t<F>;
-    auto* p = new functor(std::forward<F>(f));
-    ptr_ = p;
     vtable_ = &vtable_for<functor>;
+    if constexpr (fits_inline<functor>) {
+      ptr_ = &storage_;
+      ::new (ptr_) functor(std::forward<F>(f));
+      is_inline_ = true;
+    } else {
+      auto* p = new functor(std::forward<F>(f));
+      ptr_ = p;
+      is_inline_ = false;
+    }
   }
 
   unique_function(unique_function&& other) noexcept { move_from(other); }
@@ -62,7 +70,9 @@ class unique_function<R(Args...)> {
  private:
   struct vtable {
     auto (*invoke)(void* object, Args... args) -> R;
-    void (*destroy)(void* object) noexcept;
+    void (*destroy_inline)(void* object) noexcept;
+    void (*destroy_heap)(void* object) noexcept;
+    void (*move_inline)(void* src, void* dst) noexcept;
   };
 
   template <typename F>
@@ -77,33 +87,77 @@ class unique_function<R(Args...)> {
   }
 
   template <typename F>
-  static void destroy_impl(void* object) noexcept {
+  static void destroy_inline_impl(void* object) noexcept {
+    std::destroy_at(static_cast<F*>(object));
+  }
+
+  template <typename F>
+  static void destroy_heap_impl(void* object) noexcept {
     delete static_cast<F*>(object);
   }
 
   template <typename F>
+  static void move_inline_impl(void* src, void* dst) noexcept {
+    auto* src_ptr = static_cast<F*>(src);
+    ::new (dst) F(std::move(*src_ptr));
+    std::destroy_at(src_ptr);
+  }
+
+  static constexpr std::size_t inline_size = 3 * sizeof(void*);
+  static constexpr std::size_t inline_align = alignof(std::max_align_t);
+  using inline_storage = std::aligned_storage_t<inline_size, inline_align>;
+
+  template <typename F>
+  static constexpr bool fits_inline =
+      sizeof(F) <= inline_size && alignof(F) <= inline_align &&
+      std::is_nothrow_move_constructible_v<F>;
+
+  template <typename F>
   static inline constexpr vtable vtable_for{
       .invoke = &invoke_impl<F>,
-      .destroy = &destroy_impl<F>,
+      .destroy_inline = &destroy_inline_impl<F>,
+      .destroy_heap = &destroy_heap_impl<F>,
+      .move_inline = &move_inline_impl<F>,
   };
 
   void reset() noexcept {
     if (ptr_ != nullptr) {
-      vtable_->destroy(ptr_);
+      if (is_inline_) {
+        vtable_->destroy_inline(ptr_);
+      } else {
+        vtable_->destroy_heap(ptr_);
+      }
       ptr_ = nullptr;
       vtable_ = nullptr;
+      is_inline_ = false;
     }
   }
 
   void move_from(unique_function& other) noexcept {
-    ptr_ = other.ptr_;
+    if (other.ptr_ == nullptr) {
+      ptr_ = nullptr;
+      vtable_ = nullptr;
+      is_inline_ = false;
+      return;
+    }
     vtable_ = other.vtable_;
+    if (other.is_inline_) {
+      ptr_ = &storage_;
+      vtable_->move_inline(other.ptr_, ptr_);
+      is_inline_ = true;
+    } else {
+      ptr_ = other.ptr_;
+      is_inline_ = false;
+    }
     other.ptr_ = nullptr;
     other.vtable_ = nullptr;
+    other.is_inline_ = false;
   }
 
+  inline_storage storage_{};
   void* ptr_{};
   vtable const* vtable_{};
+  bool is_inline_{false};
 };
 
 #endif
