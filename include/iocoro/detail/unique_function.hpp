@@ -8,8 +8,6 @@
 
 namespace iocoro::detail {
 
-// TODO: rewrite using vtable.
-
 /// Move-only type-erased callable wrapper.
 ///
 /// This avoids storing lambda closure types in coroutine frames, eliminating
@@ -21,42 +19,81 @@ template <typename R, typename... Args>
 class unique_function<R(Args...)> {
  public:
   unique_function() = default;
+ ~unique_function() { reset(); }
 
   template <typename F>
     requires (!std::is_same_v<std::decay_t<F>, unique_function>) &&
              std::is_invocable_r_v<R, F&, Args...>
-  unique_function(F&& f) : ptr_(std::make_unique<model<std::decay_t<F>>>(std::forward<F>(f))) {}
+  unique_function(F&& f) {
+    using functor = std::decay_t<F>;
+    vtable_ = &vtable_for<functor>;
+    ptr_ = new functor(std::forward<F>(f));
+  }
 
-  unique_function(unique_function&&) noexcept = default;
-  auto operator=(unique_function&&) noexcept -> unique_function& = default;
+  unique_function(unique_function&& other) noexcept { move_from(other); }
+  auto operator=(unique_function&& other) noexcept -> unique_function& {
+    if (this != &other) {
+      reset();
+      move_from(other);
+    }
+    return *this;
+  }
 
   unique_function(unique_function const&) = delete;
   auto operator=(unique_function const&) -> unique_function& = delete;
 
-  explicit operator bool() const noexcept { return static_cast<bool>(ptr_); }
+  explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
   auto operator()(Args... args) -> R {
     assert(ptr_);
-    return ptr_->invoke(std::forward<Args>(args)...);
+    return vtable_->invoke(ptr_, std::forward<Args>(args)...);
   }
 
  private:
-  struct callable_base {
-    virtual ~callable_base() = default;
-    virtual auto invoke(Args... args) -> R = 0;
+  struct vtable {
+    auto (*invoke)(void* object, Args... args) -> R;
+    void (*destroy)(void* object) noexcept;
   };
 
   template <typename F>
-  struct model final : callable_base {
-    F f_;
+  static auto invoke_impl(void* object, Args... args) -> R {
+    auto& functor = *static_cast<F*>(object);
+    if constexpr (std::is_void_v<R>) {
+      std::invoke(functor, std::forward<Args>(args)...);
+      return;
+    } else {
+      return std::invoke(functor, std::forward<Args>(args)...);
+    }
+  }
 
-    template <typename U>
-    explicit model(U&& f) : f_(std::forward<U>(f)) {}
+  template <typename F>
+  static void destroy_impl(void* object) noexcept {
+    delete static_cast<F*>(object);
+  }
 
-    auto invoke(Args... args) -> R override { return std::invoke(f_, std::forward<Args>(args)...); }
+  template <typename F>
+  static constexpr vtable vtable_for{
+      .invoke = &invoke_impl<F>,
+      .destroy = &destroy_impl<F>,
   };
 
-  std::unique_ptr<callable_base> ptr_{};
+  void reset() noexcept {
+    if (ptr_ != nullptr) {
+      vtable_->destroy(ptr_);
+      ptr_ = nullptr;
+      vtable_ = nullptr;
+    }
+  }
+
+  void move_from(unique_function& other) noexcept {
+    ptr_ = other.ptr_;
+    vtable_ = other.vtable_;
+    other.ptr_ = nullptr;
+    other.vtable_ = nullptr;
+  }
+
+  void* ptr_{};
+  vtable const* vtable_{};
 };
 
 }  // namespace iocoro::detail
