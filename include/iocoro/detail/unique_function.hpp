@@ -9,6 +9,13 @@
 
 namespace iocoro::detail {
 
+#if defined(__cpp_lib_move_only_function) && __cpp_lib_move_only_function >= 202110L
+
+template <typename Signature>
+using unique_function = std::move_only_function<Signature>;
+
+#else
+
 /// Move-only type-erased callable wrapper.
 ///
 /// This avoids storing lambda closure types in coroutine frames, eliminating
@@ -98,6 +105,8 @@ class unique_function<R(Args...)> {
   void* ptr_{};
   vtable const* vtable_{};
 };
+
+#endif
 
 }  // namespace iocoro::detail
 
