@@ -1,6 +1,7 @@
 #pragma once
 
-#include <cassert>
+#include <iocoro/assert.hpp>
+
 #include <functional>
 #include <memory>
 #include <type_traits>
@@ -23,11 +24,13 @@ class unique_function<R(Args...)> {
 
   template <typename F>
     requires (!std::is_same_v<std::decay_t<F>, unique_function>) &&
-             std::is_invocable_r_v<R, F&, Args...>
+             (std::is_invocable_r_v<R, F&, Args...> ||
+              std::is_invocable_r_v<R, F const&, Args...>)
   unique_function(F&& f) {
     using functor = std::decay_t<F>;
+    auto* p = new functor(std::forward<F>(f));
+    ptr_ = p;
     vtable_ = &vtable_for<functor>;
-    ptr_ = new functor(std::forward<F>(f));
   }
 
   unique_function(unique_function&& other) noexcept { move_from(other); }
@@ -44,8 +47,8 @@ class unique_function<R(Args...)> {
 
   explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
-  auto operator()(Args... args) -> R {
-    assert(ptr_);
+  auto operator()(Args... args) const -> R {
+    IOCORO_ASSERT(ptr_);
     return vtable_->invoke(ptr_, std::forward<Args>(args)...);
   }
 
@@ -72,7 +75,7 @@ class unique_function<R(Args...)> {
   }
 
   template <typename F>
-  static constexpr vtable vtable_for{
+  static inline constexpr vtable vtable_for{
       .invoke = &invoke_impl<F>,
       .destroy = &destroy_impl<F>,
   };
