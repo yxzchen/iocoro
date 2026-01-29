@@ -7,7 +7,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -26,8 +25,7 @@ struct cancellation_state {
   std::atomic<bool> cancelled{false};
 
   mutable std::mutex mtx{};
-  std::uint64_t next_id{1};
-  std::unordered_map<std::uint64_t, std::shared_ptr<cancellation_callback_node>> callbacks{};
+  std::vector<std::shared_ptr<cancellation_callback_node>> callbacks{};
 };
 
 }  // namespace detail
@@ -73,7 +71,10 @@ class cancellation_registration {
 
     if (st && id != 0) {
       std::scoped_lock lk{st->mtx};
-      (void)st->callbacks.erase(id);
+      auto idx = id - 1;
+      if (idx < st->callbacks.size()) {
+        st->callbacks[idx].reset();
+      }
     }
   }
 
@@ -128,8 +129,8 @@ class cancellation_token {
     {
       std::scoped_lock lk{st_->mtx};
       if (!st_->cancelled.load(std::memory_order_acquire)) {
-        auto id = st_->next_id++;
-        st_->callbacks.emplace(id, node);
+        st_->callbacks.push_back(node);
+        auto id = st_->callbacks.size();
         return cancellation_registration{st_, id, std::move(node)};
       }
     }
@@ -163,11 +164,7 @@ class cancellation_source {
     std::vector<std::shared_ptr<detail::cancellation_callback_node>> cbs;
     {
       std::scoped_lock lk{st_->mtx};
-      cbs.reserve(st_->callbacks.size());
-      for (auto& kv : st_->callbacks) {
-        cbs.push_back(std::move(kv.second));
-      }
-      st_->callbacks.clear();
+      cbs.swap(st_->callbacks);
     }
 
     // Invoke outside the lock (callbacks may call back into library code).
