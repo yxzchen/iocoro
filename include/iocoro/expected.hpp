@@ -6,7 +6,25 @@
 #include <utility>
 #include <variant>
 
+#include <version>
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
+#include <expected>
+#endif
+
 namespace iocoro {
+
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
+
+template <class E>
+using unexpected = std::unexpected<E>;
+
+using unexpect_t = std::unexpect_t;
+inline constexpr unexpect_t unexpect = std::unexpect;
+
+template <class T, class E>
+using expected = std::expected<T, E>;
+
+#else
 
 template <class E>
 class unexpected {
@@ -415,5 +433,7 @@ class expected<void, E> {
     throw std::runtime_error("bad expected access");
   }
 };
+
+#endif
 
 }  // namespace iocoro
