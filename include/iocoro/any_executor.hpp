@@ -8,7 +8,6 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
-#include <utility>
 
 // This header provides a minimal and IO-agnostic executor abstraction.
 //
@@ -40,88 +39,102 @@ concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
   { std::as_const(ex) == std::as_const(ex) } -> std::convertible_to<bool>;
 };
 
-// TODO: rewrite using vtable. maybe add any_executor_ref?
-
 class any_executor {
  public:
   any_executor() = default;
 
   template <executor Ex>
-  any_executor(Ex ex) : impl_(std::make_shared<model<Ex>>(std::move(ex))) {}
+  any_executor(Ex ex) {
+    auto storage = std::make_shared<Ex>(std::move(ex));
+    storage_ = storage;
+    ptr_ = storage_.get();
+    vtable_ = &vtable_for<Ex>;
+  }
 
   friend auto operator==(any_executor const& a, any_executor const& b) noexcept -> bool {
-    if (!a.impl_ || !b.impl_) {
+    if (!a.ptr_ && !b.ptr_) {
+      return true;
+    }
+    if (!a.ptr_ || !b.ptr_) {
       return false;
     }
-    return a.impl_->equals(*b.impl_);
+    if (a.vtable_ != b.vtable_) {
+      return false;
+    }
+    return a.vtable_->equals(a.ptr_, b.ptr_);
   }
   friend auto operator!=(any_executor const& a, any_executor const& b) noexcept -> bool {
     return !(a == b);
   }
 
   void post(detail::unique_function<void()> fn) const noexcept {
-    ensure_impl()->post(std::move(fn));
+    ensure_impl();
+    vtable_->post(ptr_, std::move(fn));
   }
 
   void dispatch(detail::unique_function<void()> fn) const noexcept {
-    ensure_impl()->dispatch(std::move(fn));
+    ensure_impl();
+    vtable_->dispatch(ptr_, std::move(fn));
   }
 
-  explicit operator bool() const noexcept { return static_cast<bool>(impl_); }
+  explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
  private:
   friend struct detail::any_executor_access;
 
-  struct concept_base {
-    virtual ~concept_base() = default;
-    virtual void post(detail::unique_function<void()>) noexcept = 0;
-    virtual void dispatch(detail::unique_function<void()>) noexcept = 0;
-    virtual auto equals(concept_base const& other) const noexcept -> bool = 0;
-    virtual auto target(std::type_info const& ti) const noexcept -> void const* = 0;
+  struct vtable {
+    void (*post)(void* object, detail::unique_function<void()> fn) noexcept;
+    void (*dispatch)(void* object, detail::unique_function<void()> fn) noexcept;
+    auto (*equals)(void const* lhs, void const* rhs) noexcept -> bool;
+    auto (*target)(void const* object, std::type_info const& ti) noexcept -> void const*;
   };
 
   template <class Ex>
-  struct model final : concept_base {
-    explicit model(Ex ex) : ex_(std::move(ex)) {}
+  static void post_impl(void* object, detail::unique_function<void()> fn) noexcept {
+    static_cast<Ex*>(object)->post(std::move(fn));
+  }
 
-    void post(detail::unique_function<void()> fn) noexcept override { ex_.post(std::move(fn)); }
+  template <class Ex>
+  static void dispatch_impl(void* object, detail::unique_function<void()> fn) noexcept {
+    static_cast<Ex*>(object)->dispatch(std::move(fn));
+  }
 
-    void dispatch(detail::unique_function<void()> fn) noexcept override {
-      ex_.dispatch(std::move(fn));
+  template <class Ex>
+  static auto equals_impl(void const* lhs, void const* rhs) noexcept -> bool {
+    auto const* left = static_cast<Ex const*>(lhs);
+    auto const* right = static_cast<Ex const*>(rhs);
+    return *left == *right;
+  }
+
+  template <class Ex>
+  static auto target_impl(void const* object, std::type_info const& ti) noexcept -> void const* {
+    if (ti == typeid(Ex)) {
+      return static_cast<Ex const*>(object);
     }
+    return nullptr;
+  }
 
-    auto equals(concept_base const& other) const noexcept -> bool override {
-      auto const* p = dynamic_cast<model const*>(&other);
-      if (p == nullptr) {
-        return false;
-      }
-      return ex_ == p->ex_;
-    }
-
-    auto target(std::type_info const& ti) const noexcept -> void const* override {
-      if (ti == typeid(Ex)) {
-        return std::addressof(ex_);
-      }
-      return nullptr;
-    }
-
-    Ex ex_;
+  template <class Ex>
+  static inline constexpr vtable vtable_for{
+      .post = &post_impl<Ex>,
+      .dispatch = &dispatch_impl<Ex>,
+      .equals = &equals_impl<Ex>,
+      .target = &target_impl<Ex>,
   };
 
-  inline auto ensure_impl() const -> std::shared_ptr<concept_base> {
-    IOCORO_ENSURE(impl_, "any_executor: empty impl_");
-    return impl_;
-  }
+  void ensure_impl() const noexcept { IOCORO_ENSURE(ptr_, "any_executor: empty"); }
 
   template <class T>
   auto target() const noexcept -> T const* {
-    if (!impl_) {
+    if (!ptr_) {
       return nullptr;
     }
-    return static_cast<T const*>(impl_->target(typeid(T)));
+    return static_cast<T const*>(vtable_->target(ptr_, typeid(T)));
   }
 
-  std::shared_ptr<concept_base> impl_{};
+  std::shared_ptr<void> storage_{};
+  void* ptr_{};
+  vtable const* vtable_{};
 };
 
 }  // namespace iocoro
