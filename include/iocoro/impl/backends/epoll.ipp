@@ -183,20 +183,20 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       }
 
       if (read_op) {
-        read_op->on_abort(read_op->state, ec);
+        read_op->vt->on_abort(read_op->block, ec);
         ++count;
       }
       if (write_op) {
-        write_op->on_abort(write_op->state, ec);
+        write_op->vt->on_abort(write_op->block, ec);
         ++count;
       }
     } else {
       if (read_op) {
-        read_op->on_complete(read_op->state);
+        read_op->vt->on_complete(read_op->block);
         ++count;
       }
       if (write_op) {
-        write_op->on_complete(write_op->state);
+        write_op->vt->on_complete(write_op->block);
         ++count;
       }
     }

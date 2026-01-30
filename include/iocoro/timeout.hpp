@@ -174,10 +174,12 @@ inline auto awaitable_promise_base::await_transform(this_coro::scoped_timeout_t<
           std::chrono::duration_cast<std::chrono::steady_clock::duration>(timeout_d);
         auto op =
           make_reactor_op<scoped_timeout_timer_operation>(std::weak_ptr<scoped_timeout_state>{state});
-        auto handle = impl->add_timer(steady_timeout, std::move(op));
+        auto handle = impl->register_event(detail::io_context_impl::event_desc::timer(
+                                             std::chrono::steady_clock::now() + steady_timeout),
+                                           std::move(op));
         {
           std::scoped_lock lk{state->mtx};
-          state->handle = handle;
+          state->handle = handle.as_timer();
         }
 
         // If scope already inactive, cancel immediately.

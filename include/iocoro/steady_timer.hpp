@@ -62,12 +62,11 @@ class steady_timer {
       return detail::async_op{
         std::move(st),
         ctx,
-        [timer](detail::async_op& op, detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-          auto handle = ctx.add_timer(timer->expiry(), std::move(rop));
-          timer->set_timer_handle(handle);
-          // Publish the reactor cancellation hook for this wait.
-          // This keeps stop_token out of reactor operations; the awaiter drives cancellation.
-          op.publish_cancel([impl = &ctx, h = handle]() mutable { impl->cancel_timer(h); });
+        [timer](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
+          auto h = ctx.register_event(detail::io_context_impl::event_desc::timer(timer->expiry()),
+                                      std::move(rop));
+          timer->set_timer_handle(h.as_timer());
+          return h;
         }};
     };
     co_return co_await detail::operation_awaiter{std::move(factory)};

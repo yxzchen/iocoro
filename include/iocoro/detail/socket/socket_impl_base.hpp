@@ -165,10 +165,11 @@ class socket_impl_base {
       return detail::async_op{
         std::move(st),
         ctx,
-        [socket](detail::async_op& op, detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-          auto h = ctx.register_fd_read(socket->native_handle(), std::move(rop));
-          socket->set_read_handle(h);
-          op.publish_cancel([h]() mutable { h.cancel(); });
+        [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
+          auto h = ctx.register_event(
+            detail::io_context_impl::event_desc::fd_read(socket->native_handle()), std::move(rop));
+          socket->set_read_handle(h.as_fd());
+          return h;
         }};
     };
     co_return co_await detail::operation_awaiter{std::move(factory)};
@@ -184,10 +185,11 @@ class socket_impl_base {
       return detail::async_op{
         std::move(st),
         ctx,
-        [socket](detail::async_op& op, detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-          auto h = ctx.register_fd_write(socket->native_handle(), std::move(rop));
-          socket->set_write_handle(h);
-          op.publish_cancel([h]() mutable { h.cancel(); });
+        [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
+          auto h = ctx.register_event(
+            detail::io_context_impl::event_desc::fd_write(socket->native_handle()), std::move(rop));
+          socket->set_write_handle(h.as_fd());
+          return h;
         }};
     };
     co_return co_await detail::operation_awaiter{std::move(factory)};

@@ -151,6 +151,21 @@ inline void io_context_impl::cancel_timer(timer_event_handle h) noexcept {
   h.cancel();
 }
 
+inline auto io_context_impl::register_event(event_desc desc, reactor_op_ptr op) -> event_handle {
+  switch (desc.type) {
+    case event_desc::kind::timer: {
+      return event_handle{add_timer(desc.expiry, std::move(op))};
+    }
+    case event_desc::kind::fd_read: {
+      return event_handle{register_fd_read(desc.fd, std::move(op))};
+    }
+    case event_desc::kind::fd_write: {
+      return event_handle{register_fd_write(desc.fd, std::move(op))};
+    }
+  }
+  return event_handle{};
+}
+
 inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op)
   -> fd_event_handle {
   reactor_op_ptr old;
@@ -179,7 +194,7 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op)
     }
   }
   if (old) {
-    old->on_abort(old->state, error::operation_aborted);
+    old->vt->on_abort(old->block, error::operation_aborted);
   }
 
   dispatch([this, fd] { reconcile_fd_interest(fd); });
@@ -216,7 +231,7 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op)
     }
   }
   if (old) {
-    old->on_abort(old->state, error::operation_aborted);
+    old->vt->on_abort(old->block, error::operation_aborted);
   }
 
   dispatch([this, fd] { reconcile_fd_interest(fd); });
@@ -242,10 +257,10 @@ inline void io_context_impl::deregister_fd(int fd) {
   dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed.read_op) {
-    removed.read_op->on_abort(removed.read_op->state, error::operation_aborted);
+    removed.read_op->vt->on_abort(removed.read_op->block, error::operation_aborted);
   }
   if (removed.write_op) {
-    removed.write_op->on_abort(removed.write_op->state, error::operation_aborted);
+    removed.write_op->vt->on_abort(removed.write_op->block, error::operation_aborted);
   }
 
   wakeup();
@@ -283,7 +298,7 @@ inline auto io_context_impl::process_timers() -> std::size_t {
       auto op = std::move(entry->op);
       lk.unlock();
       if (op) {
-        op->on_abort(op->state, error::operation_aborted);
+        op->vt->on_abort(op->block, error::operation_aborted);
       }
       lk.lock();
       continue;
@@ -306,7 +321,7 @@ inline auto io_context_impl::process_timers() -> std::size_t {
     auto op = std::move(entry->op);
     lk.unlock();
     if (op) {
-      op->on_complete(op->state);
+      op->vt->on_complete(op->block);
     }
 
     ++count;
@@ -457,7 +472,7 @@ inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
   dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed) {
-    removed->on_abort(removed->state, error::operation_aborted);
+    removed->vt->on_abort(removed->block, error::operation_aborted);
   }
   wakeup();
 }
