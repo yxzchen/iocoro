@@ -1,5 +1,5 @@
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_base.hpp>
+#include <iocoro/detail/reactor_op.hpp>
 #include <iocoro/error.hpp>
 
 #include <cerrno>

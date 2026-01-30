@@ -1,6 +1,6 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_base.hpp>
+#include <iocoro/detail/reactor_op.hpp>
 #include <iocoro/error.hpp>
 
 #ifdef IOCORO_USE_URING

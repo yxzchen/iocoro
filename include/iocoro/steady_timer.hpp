@@ -58,18 +58,10 @@ class steady_timer {
   /// - `std::error_code{}` on successful timer expiry.
   /// - `error::operation_aborted` if cancelled via current coroutine cancellation context.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
-    auto factory = [ctx = ctx_impl_, timer = this](std::shared_ptr<detail::operation_wait_state> st) {
-      return detail::async_op{
-        std::move(st),
-        ctx,
-        [timer](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-          auto h = ctx.register_event(detail::io_context_impl::event_desc::timer(timer->expiry()),
-                                      std::move(rop));
-          timer->set_timer_handle(h.as_timer());
-          return h;
-        }};
-    };
-    co_return co_await detail::operation_awaiter{std::move(factory)};
+    co_return co_await detail::operation_awaiter{
+      [this](std::shared_ptr<detail::operation_wait_state> st) {
+        return make_wait_op(std::move(st));
+      }};
   }
 
   /// Cancel the pending timer operation.
@@ -93,6 +85,20 @@ class steady_timer {
   }
 
  private:
+  auto make_wait_op(std::shared_ptr<detail::operation_wait_state> st) -> detail::async_op {
+    auto* ctx = ctx_impl_;
+    auto* timer = this;
+    return detail::async_op{
+      std::move(st),
+      ctx,
+      [timer](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
+        auto h = ctx.register_event(detail::io_context_impl::event_desc::timer(timer->expiry()),
+                                    std::move(rop));
+        timer->set_timer_handle(h.as_timer());
+        return h;
+      }};
+  }
+
   detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
   mutable std::mutex mtx_{};

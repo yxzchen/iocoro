@@ -161,18 +161,8 @@ class socket_impl_base {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    auto factory = [ctx = ctx_impl_, socket = this](std::shared_ptr<operation_wait_state> st) {
-      return detail::async_op{
-        std::move(st),
-        ctx,
-        [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-          auto h = ctx.register_event(
-            detail::io_context_impl::event_desc::fd_read(socket->native_handle()), std::move(rop));
-          socket->set_read_handle(h.as_fd());
-          return h;
-        }};
-    };
-    co_return co_await detail::operation_awaiter{std::move(factory)};
+    co_return co_await detail::operation_awaiter{
+      [this](std::shared_ptr<operation_wait_state> st) { return make_read_wait_op(std::move(st)); }};
   }
 
   /// Wait until the native fd becomes writable (write readiness), observing the current coroutine
@@ -181,18 +171,8 @@ class socket_impl_base {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    auto factory = [ctx = ctx_impl_, socket = this](std::shared_ptr<operation_wait_state> st) {
-      return detail::async_op{
-        std::move(st),
-        ctx,
-        [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-          auto h = ctx.register_event(
-            detail::io_context_impl::event_desc::fd_write(socket->native_handle()), std::move(rop));
-          socket->set_write_handle(h.as_fd());
-          return h;
-        }};
-    };
-    co_return co_await detail::operation_awaiter{std::move(factory)};
+    co_return co_await detail::operation_awaiter{
+      [this](std::shared_ptr<operation_wait_state> st) { return make_write_wait_op(std::move(st)); }};
   }
 
  private:
@@ -206,6 +186,34 @@ class socket_impl_base {
   /// Note: this state is intentionally minimal and protocol-agnostic. Protocol semantics
   /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
   enum class fd_state : std::uint8_t { closed, opening, open };
+
+  auto make_read_wait_op(std::shared_ptr<operation_wait_state> st) -> detail::async_op {
+    auto* ctx = ctx_impl_;
+    auto* socket = this;
+    return detail::async_op{
+      std::move(st),
+      ctx,
+      [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
+        auto h = ctx.register_event(
+          detail::io_context_impl::event_desc::fd_read(socket->native_handle()), std::move(rop));
+        socket->set_read_handle(h.as_fd());
+        return h;
+      }};
+  }
+
+  auto make_write_wait_op(std::shared_ptr<operation_wait_state> st) -> detail::async_op {
+    auto* ctx = ctx_impl_;
+    auto* socket = this;
+    return detail::async_op{
+      std::move(st),
+      ctx,
+      [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
+        auto h = ctx.register_event(
+          detail::io_context_impl::event_desc::fd_write(socket->native_handle()), std::move(rop));
+        socket->set_write_handle(h.as_fd());
+        return h;
+      }};
+  }
 
   io_context_impl* ctx_impl_{};
 

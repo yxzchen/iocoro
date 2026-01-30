@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/detail/operation_base.hpp>
+#include <iocoro/detail/reactor_op.hpp>
 
 #include <atomic>
 #include <chrono>
