@@ -195,10 +195,9 @@ class socket_impl_base {
       std::move(st),
       ctx,
       [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-        auto h = ctx.register_event(
-          detail::io_context_impl::event_desc::fd_read(socket->native_handle()), std::move(rop));
-        socket->set_read_handle(h.as_fd());
-        return h;
+        auto h = ctx.register_fd_read(socket->native_handle(), std::move(rop));
+        socket->set_read_handle(h);
+        return detail::io_context_impl::event_handle::make(std::move(h));
       }};
   }
 
@@ -209,10 +208,9 @@ class socket_impl_base {
       std::move(st),
       ctx,
       [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-        auto h = ctx.register_event(
-          detail::io_context_impl::event_desc::fd_write(socket->native_handle()), std::move(rop));
-        socket->set_write_handle(h.as_fd());
-        return h;
+        auto h = ctx.register_fd_write(socket->native_handle(), std::move(rop));
+        socket->set_write_handle(h);
+        return detail::io_context_impl::event_handle::make(std::move(h));
       }};
   }
 

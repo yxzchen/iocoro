@@ -43,23 +43,6 @@ struct timer_event_handle {
   static auto invalid_handle() { return timer_event_handle{}; }
 };
 
-struct event_desc {
-  enum class kind : std::uint8_t { timer, fd_read, fd_write };
-  kind type{};
-  std::chrono::steady_clock::time_point expiry{};
-  int fd{-1};
-
-  static auto timer(std::chrono::steady_clock::time_point tp) noexcept -> event_desc {
-    return event_desc{kind::timer, tp, -1};
-  }
-  static auto fd_read(int handle) noexcept -> event_desc {
-    return event_desc{kind::fd_read, {}, handle};
-  }
-  static auto fd_write(int handle) noexcept -> event_desc {
-    return event_desc{kind::fd_write, {}, handle};
-  }
-};
-
 struct event_handle {
   enum class kind : std::uint8_t { none, timer, fd };
   kind type = kind::none;

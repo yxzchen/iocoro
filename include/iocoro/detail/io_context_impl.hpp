@@ -27,7 +27,6 @@ class io_context_impl {
  public:
   using fd_event_handle = detail::fd_event_handle;
   using timer_event_handle = detail::timer_event_handle;
-  using event_desc = detail::event_desc;
   using event_handle = detail::event_handle;
 
   io_context_impl();
@@ -62,8 +61,6 @@ class io_context_impl {
   /// Thread-safe: can be called from any thread. Completion/abort callbacks
   /// and operation destruction still occur on the reactor thread.
   void cancel_timer(timer_event_handle h) noexcept;
-
-  auto register_event(event_desc desc, reactor_op_ptr op) -> event_handle;
 
   auto register_fd_read(int fd, reactor_op_ptr op) -> fd_event_handle;
   auto register_fd_write(int fd, reactor_op_ptr op) -> fd_event_handle;

@@ -93,10 +93,9 @@ class steady_timer {
       std::move(st),
       ctx,
       [timer](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-        auto h = ctx.register_event(detail::io_context_impl::event_desc::timer(timer->expiry()),
-                                    std::move(rop));
-        timer->set_timer_handle(h.as_timer());
-        return h;
+        auto h = ctx.add_timer(timer->expiry(), std::move(rop));
+        timer->set_timer_handle(h);
+        return detail::io_context_impl::event_handle::make(std::move(h));
       }};
   }
 
