@@ -17,10 +17,6 @@ namespace detail::socket {
 class socket_impl_base;
 }  // namespace detail::socket
 
-namespace detail {
-struct io_executor_access;
-}  // namespace detail
-
 template <typename Executor>
 class work_guard;
 
@@ -76,7 +72,6 @@ class io_executor {
 
   friend class steady_timer;
   friend class detail::socket::socket_impl_base;
-  friend struct detail::io_executor_access;
   friend struct detail::executor_traits<io_executor>;
 
   void add_work_guard() const noexcept {
