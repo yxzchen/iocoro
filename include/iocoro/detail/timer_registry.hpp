@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iocoro/detail/reactor_types.hpp>
-#include <iocoro/detail/timer_entry.hpp>
 #include <iocoro/error.hpp>
 
 #include <algorithm>
@@ -14,6 +13,12 @@
 #include <vector>
 
 namespace iocoro::detail {
+
+enum class timer_state : std::uint8_t {
+  pending,
+  fired,
+  cancelled,
+};
 
 class timer_registry {
  public:
