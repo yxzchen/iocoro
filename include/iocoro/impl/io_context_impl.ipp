@@ -23,6 +23,11 @@ inline auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
 
 inline io_context_impl::io_context_impl() : backend_(make_backend()) {}
 
+inline io_context_impl::io_context_impl(std::unique_ptr<backend_interface> backend)
+    : backend_(std::move(backend)) {
+  IOCORO_ENSURE(backend_ != nullptr, "io_context_impl: null backend");
+}
+
 inline io_context_impl::~io_context_impl() {
   stop();
   backend_.reset();

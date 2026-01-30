@@ -21,7 +21,7 @@ struct timer_entry_compare {
   }
 };
 
-class timer_manager {
+class timer_registry {
  public:
   auto add_timer(std::chrono::steady_clock::time_point expiry, reactor_op_ptr op)
     -> std::shared_ptr<timer_entry>;
@@ -39,8 +39,8 @@ class timer_manager {
   std::uint64_t next_timer_id_ = 1;
 };
 
-inline auto timer_manager::add_timer(std::chrono::steady_clock::time_point expiry,
-                                     reactor_op_ptr op) -> std::shared_ptr<timer_entry> {
+inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expiry,
+                                      reactor_op_ptr op) -> std::shared_ptr<timer_entry> {
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = expiry;
   entry->op = std::move(op);
@@ -55,14 +55,14 @@ inline auto timer_manager::add_timer(std::chrono::steady_clock::time_point expir
   return entry;
 }
 
-inline auto timer_manager::cancel(timer_event_handle h) noexcept -> bool {
+inline auto timer_registry::cancel(timer_event_handle h) noexcept -> bool {
   if (!h) {
     return false;
   }
   return h.entry->cancel();
 }
 
-inline auto timer_manager::next_timeout() const -> std::optional<std::chrono::milliseconds> {
+inline auto timer_registry::next_timeout() const -> std::optional<std::chrono::milliseconds> {
   std::scoped_lock lk{mtx_};
 
   if (timers_.empty()) {
@@ -81,7 +81,7 @@ inline auto timer_manager::next_timeout() const -> std::optional<std::chrono::mi
   return std::chrono::duration_cast<std::chrono::milliseconds>(expiry - now);
 }
 
-inline auto timer_manager::process_expired(bool stopped) -> std::size_t {
+inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
   std::unique_lock lk{mtx_};
   auto const now = std::chrono::steady_clock::now();
   std::size_t count = 0;
@@ -127,7 +127,7 @@ inline auto timer_manager::process_expired(bool stopped) -> std::size_t {
   return count;
 }
 
-inline auto timer_manager::empty() const -> bool {
+inline auto timer_registry::empty() const -> bool {
   std::scoped_lock lk{mtx_};
   return timers_.empty();
 }

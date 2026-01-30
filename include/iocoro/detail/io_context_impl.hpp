@@ -4,7 +4,7 @@
 #include <iocoro/detail/posted_queue.hpp>
 #include <iocoro/detail/reactor_backend.hpp>
 #include <iocoro/detail/reactor_types.hpp>
-#include <iocoro/detail/timer_manager.hpp>
+#include <iocoro/detail/timer_registry.hpp>
 #include <iocoro/detail/unique_function.hpp>
 
 #include <atomic>
@@ -22,6 +22,7 @@ class io_context_impl {
   using event_handle = detail::event_handle;
 
   io_context_impl();
+  explicit io_context_impl(std::unique_ptr<backend_interface> backend);
   ~io_context_impl();
 
   io_context_impl(io_context_impl const&) = delete;
@@ -89,7 +90,7 @@ class io_context_impl {
   std::atomic<bool> stopped_{false};
 
   fd_registry fd_registry_{};
-  timer_manager timers_{};
+  timer_registry timers_{};
   posted_queue posted_{};
 
   std::atomic<std::uintptr_t> thread_token_{0};
