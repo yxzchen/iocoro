@@ -42,7 +42,8 @@ class socket_impl_base {
 
   socket_impl_base() noexcept = delete;
   explicit socket_impl_base(any_io_executor ex) noexcept
-      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl) {
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()) {
+    IOCORO_ENSURE(ex_, "socket_impl_base: requires IO executor");
     IOCORO_ENSURE(ctx_impl_, "socket_impl_base: requires IO executor");
   }
 
@@ -54,6 +55,7 @@ class socket_impl_base {
   ~socket_impl_base() { close(); }
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return ctx_impl_; }
+  auto get_executor() const noexcept -> any_io_executor { return ex_; }
 
   /// Native handle snapshot. Returns -1 if not open.
   ///
@@ -218,6 +220,7 @@ class socket_impl_base {
       }};
   }
 
+  any_io_executor ex_{};
   io_context_impl* ctx_impl_{};
 
   mutable std::mutex mtx_{};

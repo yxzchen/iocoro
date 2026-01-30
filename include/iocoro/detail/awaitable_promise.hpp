@@ -1,7 +1,9 @@
 #pragma once
 
 #include <iocoro/any_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/executor_cast.hpp>
 #include <stop_token>
 #include <iocoro/this_coro.hpp>
 
@@ -109,6 +111,18 @@ struct awaitable_promise_base {
       any_executor ex;
       bool await_ready() noexcept { return true; }
       any_executor await_resume() noexcept { return ex; }
+      void await_suspend(std::coroutine_handle<>) noexcept {}
+    };
+    return awaiter{ex_};
+  }
+
+  auto await_transform(this_coro::io_executor_t) noexcept {
+    struct awaiter {
+      any_executor ex;
+      bool await_ready() noexcept { return true; }
+      auto await_resume() noexcept -> any_io_executor {
+        return require_io_executor(ex);
+      }
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
     return awaiter{ex_};

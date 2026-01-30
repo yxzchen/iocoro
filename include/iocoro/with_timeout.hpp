@@ -67,8 +67,8 @@ template <class Awaitable>
   requires requires { typename traits::awaitable_result_t<Awaitable>; }
 auto with_timeout_detached(Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<traits::awaitable_result_t<Awaitable>> {
-  auto ex_any = co_await this_coro::executor;
-  co_return co_await with_timeout_detached(any_io_executor{ex_any}, std::move(op), timeout);
+  auto ex = co_await this_coro::io_executor;
+  co_return co_await with_timeout_detached(ex, std::move(op), timeout);
 }
 
 }  // namespace iocoro

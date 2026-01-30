@@ -2,7 +2,6 @@
 
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 
 #include <type_traits>
@@ -24,7 +23,7 @@ class any_io_executor {
   explicit any_io_executor(any_executor ex) noexcept : ex_(std::move(ex)) {
     if (ex_) {
       IOCORO_ENSURE(ex_.supports_io(), "any_io_executor: requires IO-capable executor");
-      impl_ = detail::any_executor_access::io_context(ex_);
+      impl_ = ex_.io_context_ptr();
       IOCORO_ENSURE(impl_ != nullptr, "any_io_executor: missing io_context_impl");
     }
   }
@@ -56,6 +55,8 @@ class any_io_executor {
 
   auto as_any_executor() const noexcept -> any_executor const& { return ex_; }
 
+  auto io_context_ptr() const noexcept -> detail::io_context_impl* { return impl_; }
+
   friend auto operator==(any_io_executor const& a, any_io_executor const& b) noexcept -> bool {
     return a.ex_ == b.ex_;
   }
@@ -67,7 +68,6 @@ class any_io_executor {
  private:
   template <typename>
   friend class work_guard;
-  friend struct detail::executor_traits<any_io_executor>;
   friend class io_context;
 
   void add_work_guard() const noexcept {
@@ -97,7 +97,7 @@ struct executor_traits<any_io_executor> {
   }
 
   static auto io_context(any_io_executor const& ex) noexcept -> io_context_impl* {
-    return ex.impl_;
+    return ex.io_context_ptr();
   }
 };
 

@@ -59,9 +59,7 @@ class datagram_socket_impl {
   auto get_io_context_impl() const noexcept -> io_context_impl* {
     return base_.get_io_context_impl();
   }
-  auto get_executor() const noexcept -> any_io_executor {
-    return any_io_executor{io_context::executor_type{*get_io_context_impl()}};
-  }
+  auto get_executor() const noexcept -> any_io_executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
 
   /// Open a new native socket (best-effort, non-blocking).

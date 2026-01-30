@@ -163,6 +163,13 @@ class any_executor {
     return has_capability(capabilities(), executor_capability::io);
   }
 
+  auto io_context_ptr() const noexcept -> detail::io_context_impl* {
+    if (!ptr_) {
+      return nullptr;
+    }
+    return vtable_->io_context(ptr_);
+  }
+
   explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
  private:
@@ -317,13 +324,6 @@ class any_executor {
       return nullptr;
     }
     return static_cast<T const*>(vtable_->target(ptr_, typeid(T)));
-  }
-
-  auto io_context_ptr() const noexcept -> detail::io_context_impl* {
-    if (!ptr_) {
-      return nullptr;
-    }
-    return vtable_->io_context(ptr_);
   }
 
   inline_storage inline_storage_{};

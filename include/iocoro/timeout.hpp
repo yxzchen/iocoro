@@ -82,12 +82,8 @@ struct scoped_timeout_timer_operation {
 inline auto scoped_timeout_get_timer_impl(awaitable_promise_base& promise,
                                           any_executor timer_ex) noexcept -> io_context_impl* {
   auto timer_any = timer_ex ? timer_ex : promise.get_executor();
-  IOCORO_ENSURE(timer_any,
-               "scoped_timeout: requires a timer executor (pass iocoro::any_io_executor explicitly)");
-  IOCORO_ENSURE(timer_any.supports_io(),
-               "scoped_timeout: timer executor must support IO (pass iocoro::any_io_executor)");
-
-  auto access = detail::get_reactor_access(timer_any);
+  auto io_ex = detail::require_io_executor(timer_any);
+  auto access = detail::get_reactor_access(io_ex.as_any_executor());
   IOCORO_ENSURE(access, "scoped_timeout: empty reactor access");
   return &access.get();
 }

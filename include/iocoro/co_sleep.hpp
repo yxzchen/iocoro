@@ -27,8 +27,8 @@ inline auto co_sleep(any_io_executor ex, std::chrono::steady_clock::duration d) 
 }
 
 inline auto co_sleep(std::chrono::steady_clock::duration d) -> awaitable<void> {
-  auto ex = co_await this_coro::executor;
-  co_await co_sleep(any_io_executor{ex}, d);
+  auto ex = co_await this_coro::io_executor;
+  co_await co_sleep(ex, d);
 }
 
 }  // namespace iocoro

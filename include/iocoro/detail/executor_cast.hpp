@@ -2,6 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/any_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 
 namespace iocoro::detail {
 
@@ -40,6 +41,22 @@ inline auto require_executor(any_executor const& ex) noexcept -> Target {
   auto const* p = any_executor_access::target<Target>(ex);
   IOCORO_ENSURE(p, "require_executor: executor is not of required type");
   return *p;
+}
+
+inline auto to_io_executor(any_executor const& ex) noexcept -> any_io_executor {
+  if (!ex) {
+    return any_io_executor{};
+  }
+  if (!ex.supports_io()) {
+    return any_io_executor{};
+  }
+  return any_io_executor{ex};
+}
+
+inline auto require_io_executor(any_executor const& ex) noexcept -> any_io_executor {
+  IOCORO_ENSURE(ex, "require_io_executor: requires a valid executor");
+  IOCORO_ENSURE(ex.supports_io(), "require_io_executor: executor must support IO");
+  return any_io_executor{ex};
 }
 
 }  // namespace iocoro::detail

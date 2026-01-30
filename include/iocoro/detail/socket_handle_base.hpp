@@ -26,7 +26,8 @@ class socket_handle_base {
   /// Handles must be bound to an IO-capable executor at construction time.
   socket_handle_base() = delete;
 
-  explicit socket_handle_base(any_io_executor ex) : impl_(std::make_shared<Impl>(ex)) {}
+  explicit socket_handle_base(any_io_executor ex)
+      : impl_(std::make_shared<Impl>(ex)), ex_(std::move(ex)) {}
   explicit socket_handle_base(io_context& ctx) : socket_handle_base(ctx.get_executor()) {}
 
   socket_handle_base(socket_handle_base const&) = delete;
@@ -36,18 +37,17 @@ class socket_handle_base {
   /// so the moved-from handle remains usable and retains a valid impl object.
   ///
   /// This keeps the invariant: impl_ is never null for any handle object.
-  socket_handle_base(socket_handle_base&& other) noexcept : impl_(other.impl_) {}
+  socket_handle_base(socket_handle_base&& other) noexcept : impl_(other.impl_), ex_(other.ex_) {}
   socket_handle_base& operator=(socket_handle_base&& other) noexcept {
     if (this != &other) {
       impl_ = other.impl_;
+      ex_ = other.ex_;
     }
     return *this;
   }
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return impl_->get_io_context_impl(); }
-  auto get_executor() const noexcept -> any_io_executor {
-    return any_io_executor{io_context::executor_type{*impl_->get_io_context_impl()}};
-  }
+  auto get_executor() const noexcept -> any_io_executor { return ex_; }
 
   auto is_open() const noexcept -> bool { return impl_->is_open(); }
 
@@ -71,6 +71,7 @@ class socket_handle_base {
 
  protected:
   std::shared_ptr<Impl> impl_;
+  any_io_executor ex_{};
 };
 
 }  // namespace iocoro::detail
