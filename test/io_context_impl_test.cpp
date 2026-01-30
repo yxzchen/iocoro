@@ -157,7 +157,6 @@ TEST(io_context_impl_test, schedule_timer_executes_callback) {
   auto handle = impl.add_timer(10ms, std::move(op));
 
   ASSERT_TRUE(handle.valid());
-  EXPECT_TRUE(handle.entry->is_pending());
 
   auto const n = impl.run_for(200ms);
   EXPECT_GE(n, 1U);
@@ -174,8 +173,7 @@ TEST(io_context_impl_test, cancel_timer_prevents_execution) {
   auto handle = impl.add_timer(100ms, std::move(op));
 
   ASSERT_TRUE(handle.valid());
-  EXPECT_TRUE(handle.entry->cancel());
-  EXPECT_TRUE(handle.entry->is_cancelled());
+  handle.cancel();
 
   (void)impl.run_for(200ms);
   EXPECT_FALSE(fired.load(std::memory_order_relaxed));
@@ -192,18 +190,21 @@ TEST(io_context_impl_test, multiple_timers_fire_in_order) {
     counter++;
   });
   auto e1 = impl.add_timer(30ms, std::move(op1));
+  (void)e1;
 
   auto op2 = iocoro::detail::make_reactor_op<test_timer_operation>([&] {
     order.push_back(2);
     counter++;
   });
   auto e2 = impl.add_timer(10ms, std::move(op2));
+  (void)e2;
 
   auto op3 = iocoro::detail::make_reactor_op<test_timer_operation>([&] {
     order.push_back(3);
     counter++;
   });
   auto e3 = impl.add_timer(20ms, std::move(op3));
+  (void)e3;
 
   impl.run_for(200ms);
 

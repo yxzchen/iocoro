@@ -101,29 +101,61 @@ class backend_uring final : public backend_interface {
     }
     mask |= (POLLERR | POLLHUP | POLLRDHUP);
 
-    std::scoped_lock lk{mtx_};
-    auto& st = polls_[fd];
-    st.desired_mask = mask;
+    std::optional<std::uint64_t> cancel_user_data{};
+    std::optional<std::uint64_t> arm_user_data{};
+    int arm_mask = 0;
+    {
+      std::scoped_lock lk{poll_mtx_};
+      auto& st = polls_[fd];
+      st.desired_mask = mask;
 
-    if (st.armed) {
-      if (st.active_mask == mask) {
-        return;
+      if (st.armed) {
+        if (st.active_mask == mask) {
+          return;
+        }
+        if (!st.cancel_requested) {
+          st.cancel_requested = true;
+          cancel_user_data = st.active_user_data;
+        }
+      } else if (mask != 0) {
+        st.armed = true;
+        st.cancel_requested = false;
+        st.active_mask = mask;
+        st.active_gen = st.next_gen++;
+        st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
+        arm_user_data = st.active_user_data;
+        arm_mask = mask;
       }
-      if (!st.cancel_requested) {
-        st.cancel_requested = true;
-        submit_poll_remove_locked(fd, st.active_user_data);
-      }
+    }
+
+    if (cancel_user_data.has_value()) {
+      submit_poll_remove(fd, *cancel_user_data);
       return;
     }
 
-    if (mask != 0) {
-      arm_poll_locked(fd, st, mask);
+    if (arm_user_data.has_value()) {
+      try {
+        submit_poll_add(fd, arm_mask, *arm_user_data);
+      } catch (...) {
+        std::scoped_lock lk{poll_mtx_};
+        auto it = polls_.find(fd);
+        if (it != polls_.end() && it->second.active_user_data == *arm_user_data) {
+          it->second.armed = false;
+          it->second.cancel_requested = false;
+          it->second.active_user_data = 0;
+          it->second.active_gen = 0;
+          it->second.active_mask = 0;
+        }
+        throw;
+      }
     }
   }
 
   void remove_fd_interest(int fd) noexcept override {
-    std::scoped_lock lk{mtx_};
-    auto it = polls_.find(fd);
+    std::optional<std::uint64_t> cancel_user_data{};
+    {
+      std::scoped_lock lk{poll_mtx_};
+      auto it = polls_.find(fd);
     if (it == polls_.end()) {
       return;
     }
@@ -135,18 +167,26 @@ class backend_uring final : public backend_interface {
       return;
     }
 
-    if (!st.cancel_requested) {
-      st.cancel_requested = true;
-      submit_poll_remove_locked(fd, st.active_user_data);
+      if (!st.cancel_requested) {
+        st.cancel_requested = true;
+        cancel_user_data = st.active_user_data;
+      }
+    }
+
+    if (cancel_user_data.has_value()) {
+      submit_poll_remove(fd, *cancel_user_data);
     }
   }
 
-  auto wait(std::optional<std::chrono::milliseconds> timeout) -> std::vector<backend_event> override {
-    std::scoped_lock lk{mtx_};
-
-    int const submitted = ::io_uring_submit(&ring_);
+  auto wait(std::optional<std::chrono::milliseconds> timeout,
+            std::vector<backend_event>& out) -> void override {
+    out.clear();
+    {
+      std::scoped_lock lk{ring_mtx_};
+      int const submitted = ::io_uring_submit(&ring_);
     if (submitted < 0) {
       throw std::system_error(-submitted, std::generic_category(), "io_uring_submit failed");
+    }
     }
 
     io_uring_cqe* first = nullptr;
@@ -161,12 +201,12 @@ class backend_uring final : public backend_interface {
 
     if (wait_ret < 0) {
       if (wait_ret == -EINTR || wait_ret == -EAGAIN || wait_ret == -ETIME) {
-        return {};
+        return;
       }
       throw std::system_error(-wait_ret, std::generic_category(), "io_uring_wait_cqe failed");
     }
 
-    std::vector<backend_event> out;
+    std::vector<std::pair<int, std::uint64_t>> pending_arms{};
     auto handle_one = [&](io_uring_cqe* cqe) {
       std::uint64_t const data = ::io_uring_cqe_get_data64(cqe);
       std::uint64_t const tag = unpack_tag(data);
@@ -186,21 +226,29 @@ class backend_uring final : public backend_interface {
       std::uint32_t const ev = (res >= 0) ? static_cast<std::uint32_t>(res) : 0U;
       bool const is_cancelled = (res == -ECANCELED);
 
-      auto it = polls_.find(fd);
-      if (it != polls_.end()) {
-        auto& st = it->second;
-        if (st.armed && st.active_gen == gen) {
-          st.armed = false;
-          st.cancel_requested = false;
-          st.active_user_data = 0;
-          st.active_gen = 0;
-          st.active_mask = 0;
-        }
-        if (!st.armed && st.desired_mask != 0) {
-          arm_poll_locked(fd, st, st.desired_mask);
-        }
-        if (!st.armed && st.desired_mask == 0) {
-          polls_.erase(it);
+      {
+        std::scoped_lock lk{poll_mtx_};
+        auto it = polls_.find(fd);
+        if (it != polls_.end()) {
+          auto& st = it->second;
+          if (st.armed && st.active_gen == gen) {
+            st.armed = false;
+            st.cancel_requested = false;
+            st.active_user_data = 0;
+            st.active_gen = 0;
+            st.active_mask = 0;
+          }
+          if (!st.armed && st.desired_mask != 0) {
+            st.armed = true;
+            st.cancel_requested = false;
+            st.active_mask = st.desired_mask;
+            st.active_gen = st.next_gen++;
+            st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
+            pending_arms.emplace_back(fd, st.active_user_data);
+          }
+          if (!st.armed && st.desired_mask == 0) {
+            polls_.erase(it);
+          }
         }
       }
 
@@ -258,7 +306,28 @@ class backend_uring final : public backend_interface {
       }
     }
 
-    return out;
+    if (!pending_arms.empty()) {
+      std::scoped_lock plk{poll_mtx_};
+      for (auto const& arm : pending_arms) {
+        auto it = polls_.find(arm.first);
+        if (it != polls_.end() && it->second.armed) {
+          try {
+            submit_poll_add(arm.first, it->second.active_mask, arm.second);
+          } catch (...) {
+            if (it->second.active_user_data == arm.second) {
+              it->second.armed = false;
+              it->second.cancel_requested = false;
+              it->second.active_user_data = 0;
+              it->second.active_gen = 0;
+              it->second.active_mask = 0;
+            }
+            throw;
+          }
+        }
+      }
+    }
+
+    return;
   }
 
   void wakeup() noexcept override {
@@ -291,6 +360,7 @@ class backend_uring final : public backend_interface {
   };
 
   void arm_wakeup() {
+    std::scoped_lock lk{ring_mtx_};
     auto* sqe = ::io_uring_get_sqe(&ring_);
     if (sqe == nullptr) {
       int const submit = ::io_uring_submit(&ring_);
@@ -311,7 +381,8 @@ class backend_uring final : public backend_interface {
     }
   }
 
-  void submit_poll_remove_locked(int fd, std::uint64_t user_data) {
+  void submit_poll_remove(int fd, std::uint64_t user_data) {
+    std::scoped_lock lk{ring_mtx_};
     auto* sqe = ::io_uring_get_sqe(&ring_);
     if (sqe == nullptr) {
       (void)::io_uring_submit(&ring_);
@@ -325,13 +396,8 @@ class backend_uring final : public backend_interface {
     (void)::io_uring_submit(&ring_);
   }
 
-  void arm_poll_locked(int fd, uring_poll_state& st, int mask) {
-    st.armed = true;
-    st.cancel_requested = false;
-    st.active_mask = mask;
-    st.active_gen = st.next_gen++;
-    st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
-
+  void submit_poll_add(int fd, int mask, std::uint64_t user_data) {
+    std::scoped_lock lk{ring_mtx_};
     auto* sqe = ::io_uring_get_sqe(&ring_);
     if (sqe == nullptr) {
       int const submit = ::io_uring_submit(&ring_);
@@ -340,25 +406,15 @@ class backend_uring final : public backend_interface {
       }
       sqe = ::io_uring_get_sqe(&ring_);
       if (sqe == nullptr) {
-        st.armed = false;
-        st.cancel_requested = false;
-        st.active_user_data = 0;
-        st.active_gen = 0;
-        st.active_mask = 0;
         throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
                                 "io_uring_get_sqe failed");
       }
     }
 
     ::io_uring_prep_poll_add(sqe, fd, mask);
-    ::io_uring_sqe_set_data64(sqe, st.active_user_data);
+    ::io_uring_sqe_set_data64(sqe, user_data);
     int const submit = ::io_uring_submit(&ring_);
     if (submit < 0) {
-      st.armed = false;
-      st.cancel_requested = false;
-      st.active_user_data = 0;
-      st.active_gen = 0;
-      st.active_mask = 0;
       throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
     }
   }
@@ -366,7 +422,8 @@ class backend_uring final : public backend_interface {
   io_uring ring_{};
   int eventfd_ = -1;
   std::unordered_map<int, uring_poll_state> polls_{};
-  std::mutex mtx_{};
+  std::mutex poll_mtx_{};
+  std::mutex ring_mtx_{};
 };
 
 inline auto make_backend() -> std::unique_ptr<backend_interface> {

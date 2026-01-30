@@ -84,6 +84,8 @@ class io_context_impl {
   auto has_work() -> bool;
 
   void apply_fd_interest(int fd, fd_interest interest);
+  void enqueue_fd_interest(int fd, fd_interest interest);
+  void flush_fd_interest();
 
   std::unique_ptr<backend_interface> backend_;
 
@@ -92,6 +94,8 @@ class io_context_impl {
   fd_registry fd_registry_{};
   timer_registry timers_{};
   posted_queue posted_{};
+  std::vector<backend_event> backend_events_{};
+  std::vector<std::pair<int, fd_interest>> pending_interest_{};
 
   std::atomic<std::uintptr_t> thread_token_{0};
 };

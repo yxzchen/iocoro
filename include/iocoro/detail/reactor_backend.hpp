@@ -30,7 +30,8 @@ class backend_interface {
   virtual void update_fd_interest(int fd, bool want_read, bool want_write) = 0;
   virtual void remove_fd_interest(int fd) noexcept = 0;
 
-  virtual auto wait(std::optional<std::chrono::milliseconds> timeout) -> std::vector<backend_event> = 0;
+  virtual auto wait(std::optional<std::chrono::milliseconds> timeout,
+                    std::vector<backend_event>& out) -> void = 0;
   virtual void wakeup() noexcept = 0;
 };
 

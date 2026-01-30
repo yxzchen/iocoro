@@ -4,8 +4,8 @@
 
 #include <cstdint>
 #include <mutex>
-#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace iocoro::detail {
 
@@ -67,7 +67,7 @@ class fd_registry {
   }
 
   mutable std::mutex mtx_{};
-  std::unordered_map<int, fd_ops> operations_{};
+  std::vector<fd_ops> operations_{};
   std::uint64_t next_token_ = 1;
 };
 
@@ -78,24 +78,22 @@ inline auto fd_registry::register_read(int fd, reactor_op_ptr op) -> register_re
 
   {
     std::scoped_lock lk{mtx_};
-    auto it = operations_.find(fd);
-    if (it == operations_.end() && !op) {
+    if (fd < 0) {
       return register_result{};
     }
-    if (it == operations_.end()) {
-      it = operations_.emplace(fd, fd_ops{}).first;
+    if (static_cast<std::size_t>(fd) >= operations_.size() && !op) {
+      return register_result{};
+    }
+    if (static_cast<std::size_t>(fd) >= operations_.size()) {
+      operations_.resize(static_cast<std::size_t>(fd) + 1);
     }
 
-    auto& ops = it->second;
+    auto& ops = operations_[static_cast<std::size_t>(fd)];
     if (op) {
       token = ops.read_token = next_token_++;
     }
     old = std::exchange(ops.read_op, std::move(op));
     interest = interest_for(ops);
-
-    if (!interest.want_read && !interest.want_write) {
-      operations_.erase(it);
-    }
   }
 
   return register_result{token, std::move(old), interest};
@@ -108,24 +106,22 @@ inline auto fd_registry::register_write(int fd, reactor_op_ptr op) -> register_r
 
   {
     std::scoped_lock lk{mtx_};
-    auto it = operations_.find(fd);
-    if (it == operations_.end() && !op) {
+    if (fd < 0) {
       return register_result{};
     }
-    if (it == operations_.end()) {
-      it = operations_.emplace(fd, fd_ops{}).first;
+    if (static_cast<std::size_t>(fd) >= operations_.size() && !op) {
+      return register_result{};
+    }
+    if (static_cast<std::size_t>(fd) >= operations_.size()) {
+      operations_.resize(static_cast<std::size_t>(fd) + 1);
     }
 
-    auto& ops = it->second;
+    auto& ops = operations_[static_cast<std::size_t>(fd)];
     if (op) {
       token = ops.write_token = next_token_++;
     }
     old = std::exchange(ops.write_op, std::move(op));
     interest = interest_for(ops);
-
-    if (!interest.want_read && !interest.want_write) {
-      operations_.erase(it);
-    }
   }
 
   return register_result{token, std::move(old), interest};
@@ -139,12 +135,11 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
 
   {
     std::scoped_lock lk{mtx_};
-    auto it = operations_.find(fd);
-    if (it == operations_.end()) {
+    if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
       return cancel_result{};
     }
 
-    auto& ops = it->second;
+    auto& ops = operations_[static_cast<std::size_t>(fd)];
     if (kind == fd_event_kind::read) {
       if (ops.read_op && ops.read_token == token) {
         removed = std::move(ops.read_op);
@@ -164,9 +159,6 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
     }
 
     interest = interest_for(ops);
-    if (!interest.want_read && !interest.want_write) {
-      operations_.erase(it);
-    }
   }
 
   return cancel_result{std::move(removed), interest, matched};
@@ -179,12 +171,13 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
 
   {
     std::scoped_lock lk{mtx_};
-    auto it = operations_.find(fd);
-    if (it != operations_.end()) {
-      read = std::move(it->second.read_op);
-      write = std::move(it->second.write_op);
-      had_any = true;
-      operations_.erase(it);
+    if (fd >= 0 && static_cast<std::size_t>(fd) < operations_.size()) {
+      auto& ops = operations_[static_cast<std::size_t>(fd)];
+      read = std::move(ops.read_op);
+      write = std::move(ops.write_op);
+      had_any = static_cast<bool>(read) || static_cast<bool>(write);
+      ops.read_token = 0;
+      ops.write_token = 0;
     }
   }
 
@@ -198,24 +191,21 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
 
   {
     std::scoped_lock lk{mtx_};
-    auto it = operations_.find(fd);
-    if (it == operations_.end()) {
+    if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
       return ready_result{};
     }
 
+    auto& ops = operations_[static_cast<std::size_t>(fd)];
     if (can_read) {
-      read = std::move(it->second.read_op);
-      it->second.read_token = 0;
+      read = std::move(ops.read_op);
+      ops.read_token = 0;
     }
     if (can_write) {
-      write = std::move(it->second.write_op);
-      it->second.write_token = 0;
+      write = std::move(ops.write_op);
+      ops.write_token = 0;
     }
 
-    interest = interest_for(it->second);
-    if (!interest.want_read && !interest.want_write) {
-      operations_.erase(it);
-    }
+    interest = interest_for(ops);
   }
 
   return ready_result{ready_ops{std::move(read), std::move(write)}, interest};
@@ -223,7 +213,12 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
 
 inline auto fd_registry::empty() const -> bool {
   std::scoped_lock lk{mtx_};
-  return operations_.empty();
+  for (auto const& ops : operations_) {
+    if (ops.read_op || ops.write_op) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace iocoro::detail

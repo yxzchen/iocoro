@@ -98,7 +98,8 @@ class backend_epoll final : public backend_interface {
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   }
 
-  auto wait(std::optional<std::chrono::milliseconds> timeout) -> std::vector<backend_event> override {
+  auto wait(std::optional<std::chrono::milliseconds> timeout,
+            std::vector<backend_event>& out) -> void override {
     int timeout_ms = -1;
     if (timeout.has_value()) {
       timeout_ms = static_cast<int>(timeout->count());
@@ -115,7 +116,7 @@ class backend_epoll final : public backend_interface {
       throw std::system_error(errno, std::generic_category(), "epoll_wait failed");
     }
 
-    std::vector<backend_event> out;
+    out.clear();
     out.reserve(static_cast<std::size_t>(nfds));
 
     for (int i = 0; i < nfds; ++i) {
@@ -150,7 +151,7 @@ class backend_epoll final : public backend_interface {
       out.push_back(e);
     }
 
-    return out;
+    return;
   }
 
   void wakeup() noexcept override {

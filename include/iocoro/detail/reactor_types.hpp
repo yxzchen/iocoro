@@ -9,7 +9,7 @@
 namespace iocoro::detail {
 
 class io_context_impl;
-struct timer_entry;
+class timer_registry;
 
 enum class fd_event_kind : std::uint8_t { read, write };
 
@@ -33,9 +33,10 @@ struct fd_event_handle {
 
 struct timer_event_handle {
   io_context_impl* impl = nullptr;
-  std::shared_ptr<timer_entry> entry;
+  std::uint32_t index = 0;
+  std::uint32_t generation = 0;
 
-  auto valid() const noexcept -> bool { return impl != nullptr && entry != nullptr; }
+  auto valid() const noexcept -> bool { return impl != nullptr && generation != 0; }
   explicit operator bool() const noexcept { return valid(); }
 
   void cancel() const noexcept;
