@@ -1,6 +1,7 @@
 #include <iocoro/detail/reactor_backend.hpp>
 #include <iocoro/error.hpp>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <system_error>
@@ -124,6 +125,7 @@ class backend_epoll final : public backend_interface {
       std::uint32_t const ev = events[i].events;
 
       if (fd == eventfd_) {
+        wakeup_pending_.store(false, std::memory_order_release);
         drain_eventfd(eventfd_);
         continue;
       }
@@ -155,6 +157,9 @@ class backend_epoll final : public backend_interface {
   }
 
   void wakeup() noexcept override {
+    if (wakeup_pending_.exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
     std::uint64_t value = 1;
     for (;;) {
       auto const n = ::write(eventfd_, &value, sizeof(value));
@@ -171,6 +176,7 @@ class backend_epoll final : public backend_interface {
  private:
   int epoll_fd_ = -1;
   int eventfd_ = -1;
+ std::atomic<bool> wakeup_pending_{false};
 };
 
 inline auto make_backend() -> std::unique_ptr<backend_interface> {

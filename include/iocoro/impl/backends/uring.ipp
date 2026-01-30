@@ -1,6 +1,7 @@
 #include <iocoro/detail/reactor_backend.hpp>
 #include <iocoro/error.hpp>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <limits>
@@ -212,6 +213,7 @@ class backend_uring final : public backend_interface {
       std::uint64_t const tag = unpack_tag(data);
 
       if (tag == tag_wakeup) {
+        wakeup_pending_.store(false, std::memory_order_release);
         drain_eventfd(eventfd_);
         arm_wakeup();
         return;
@@ -334,6 +336,9 @@ class backend_uring final : public backend_interface {
     if (eventfd_ < 0) {
       return;
     }
+    if (wakeup_pending_.exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
 
     std::uint64_t value = 1;
     for (;;) {
@@ -424,6 +429,7 @@ class backend_uring final : public backend_interface {
   std::unordered_map<int, uring_poll_state> polls_{};
   std::mutex poll_mtx_{};
   std::mutex ring_mtx_{};
+  std::atomic<bool> wakeup_pending_{false};
 };
 
 inline auto make_backend() -> std::unique_ptr<backend_interface> {
