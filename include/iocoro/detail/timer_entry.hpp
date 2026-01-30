@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/detail/reactor_op.hpp>
+#include <iocoro/detail/reactor_types.hpp>
 
 #include <atomic>
 #include <chrono>

@@ -1,6 +1,6 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/reactor_op.hpp>
+#include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/error.hpp>
 
 #ifdef IOCORO_USE_URING
@@ -154,13 +154,13 @@ inline void io_context_impl::cancel_timer(timer_event_handle h) noexcept {
 inline auto io_context_impl::register_event(event_desc desc, reactor_op_ptr op) -> event_handle {
   switch (desc.type) {
     case event_desc::kind::timer: {
-      return event_handle{add_timer(desc.expiry, std::move(op))};
+      return event_handle::make(add_timer(desc.expiry, std::move(op)));
     }
     case event_desc::kind::fd_read: {
-      return event_handle{register_fd_read(desc.fd, std::move(op))};
+      return event_handle::make(register_fd_read(desc.fd, std::move(op)));
     }
     case event_desc::kind::fd_write: {
-      return event_handle{register_fd_write(desc.fd, std::move(op))};
+      return event_handle::make(register_fd_write(desc.fd, std::move(op)));
     }
   }
   return event_handle{};

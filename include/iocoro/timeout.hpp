@@ -5,7 +5,7 @@
 #include <stop_token>
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/io_executor_access.hpp>
-#include <iocoro/detail/reactor_op.hpp>
+#include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
 

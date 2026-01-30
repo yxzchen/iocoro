@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/reactor_op.hpp>
+#include <iocoro/detail/reactor_types.hpp>
 
 #include <atomic>
 #include <chrono>

@@ -4,7 +4,8 @@
 #include <stop_token>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_async.hpp>
+#include <iocoro/detail/async_op.hpp>
+#include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
 #include <iocoro/io_executor.hpp>

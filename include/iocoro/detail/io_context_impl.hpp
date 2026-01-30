@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/detail/reactor_event.hpp>
+#include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/timer_entry.hpp>
 #include <iocoro/detail/unique_function.hpp>
 
@@ -15,9 +15,6 @@
 #include <vector>
 
 namespace iocoro::detail {
-
-struct reactor_op;
-using reactor_op_ptr = std::unique_ptr<reactor_op, reactor_op_deleter>;
 
 struct timer_entry_compare {
   auto operator()(const std::shared_ptr<timer_entry>& lhs,

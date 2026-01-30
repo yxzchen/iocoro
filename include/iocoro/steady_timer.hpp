@@ -4,7 +4,8 @@
 #include <stop_token>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_async.hpp>
+#include <iocoro/detail/async_op.hpp>
+#include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/io_executor.hpp>
 
 #include <chrono>
