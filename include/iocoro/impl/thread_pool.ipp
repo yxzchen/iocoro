@@ -11,45 +11,105 @@ inline auto thread_pool::size() const noexcept -> std::size_t {
 }
 
 inline void thread_pool::set_exception_handler(exception_handler_t handler) noexcept {
-  std::scoped_lock lock{state_->mutex};
-  state_->on_task_exception = std::move(handler);
+  if (!state_) {
+    return;
+  }
+  if (handler) {
+    state_->on_task_exception.store(
+      std::make_shared<exception_handler_t>(std::move(handler)),
+      std::memory_order_release);
+  } else {
+    state_->on_task_exception.store(nullptr, std::memory_order_release);
+  }
 }
 
-inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
+inline void thread_pool::worker_loop(std::shared_ptr<state> s, std::size_t index) {
+  detail::thread_pool_worker_context ctx{};
+  ctx.current_state = s.get();
+  ctx.worker_index = index;
+  detail::thread_pool_ctx = &ctx;
+
+  auto& local = *s->workers[index];
+
   while (true) {
     detail::unique_function<void()> task;
 
-    {
-      std::unique_lock lock{s->mutex};
+    auto pop_local = [&]() noexcept -> bool {
+      if (!local.has_local.load(std::memory_order_acquire)) {
+        return false;
+      }
+      std::scoped_lock lock{local.mutex};
+      if (local.local.empty()) {
+        local.has_local.store(false, std::memory_order_release);
+        return false;
+      }
+      task = std::move(local.local.front());
+      local.local.pop_front();
+      if (local.local.empty()) {
+        local.has_local.store(false, std::memory_order_release);
+      }
+      return true;
+    };
 
-      // Wait for:
-      // - task available, OR
-      // - stop requested AND no work guards remain (so we can exit)
+    auto pop_global = [&]() noexcept -> bool {
+      if (s->global_pending.load(std::memory_order_acquire) == 0) {
+        return false;
+      }
+      if (!s->global.try_dequeue(task)) {
+        return false;
+      }
+      s->global_pending.fetch_sub(1, std::memory_order_acq_rel);
+      return true;
+    };
+
+    auto steal_from_others = [&]() noexcept -> bool {
+      for (std::size_t i = 0; i < s->workers.size(); ++i) {
+        if (i == index) {
+          continue;
+        }
+        auto& other = *s->workers[i];
+        if (!other.has_local.load(std::memory_order_acquire)) {
+          continue;
+        }
+        std::scoped_lock lock{other.mutex};
+        if (other.local.empty()) {
+          other.has_local.store(false, std::memory_order_release);
+          continue;
+        }
+        task = std::move(other.local.back());
+        other.local.pop_back();
+        if (other.local.empty()) {
+          other.has_local.store(false, std::memory_order_release);
+        }
+        return true;
+      }
+      return false;
+    };
+
+    auto local_empty = [&]() noexcept -> bool {
+      std::scoped_lock lock{local.mutex};
+      return local.local.empty();
+    };
+
+    if (!pop_local() && !pop_global() && !steal_from_others()) {
+      std::unique_lock lock{s->cv_mutex};
       s->cv.wait(lock, [&] {
-        if (!s->tasks.empty()) {
+        if (s->global_pending.load(std::memory_order_acquire) > 0) {
           return true;
         }
-
-        if (s->stopped.load(std::memory_order_acquire)) {
-          return s->work_guard_count.load(std::memory_order_acquire) == 0;
+        if (s->lifecycle.load(std::memory_order_acquire) == pool_state::stopping &&
+            s->work_guard_count.load(std::memory_order_acquire) == 0) {
+          return true;
         }
-
         return false;
       });
 
-      auto const stopped = s->stopped.load(std::memory_order_acquire);
-      auto const has_tasks = !s->tasks.empty();
-      auto const has_guards = s->work_guard_count.load(std::memory_order_acquire) > 0;
-
-      if (stopped && !has_tasks && !has_guards) {
-        return;
+      if (s->lifecycle.load(std::memory_order_acquire) == pool_state::stopping &&
+          s->work_guard_count.load(std::memory_order_acquire) == 0 &&
+          s->global_pending.load(std::memory_order_acquire) == 0 && local_empty()) {
+        break;
       }
-
-      // Get task if available
-      if (has_tasks) {
-        task = std::move(s->tasks.front());
-        s->tasks.pop();
-      }
+      continue;
     }
 
     // Execute task outside the lock
@@ -57,17 +117,10 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
       try {
         t();
       } catch (...) {
-        // Get exception handler under lock
-        exception_handler_t handler;
-        {
-          std::scoped_lock lock{s->mutex};
-          handler = s->on_task_exception;
-        }
-
-        // Call handler if set, otherwise swallow exception
-        if (handler) {
+        auto handler_ptr = s->on_task_exception.load(std::memory_order_acquire);
+        if (handler_ptr) {
           try {
-            handler(std::current_exception());
+            (*handler_ptr)(std::current_exception());
           } catch (...) {
             // Swallow exceptions from handler to prevent thread termination
           }
@@ -76,20 +129,11 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
     };
 
     if (task) {
-      detail::thread_pool_tls.current_state = s.get();
       run_task(task);
-
-      // Drain tasks posted from within this pool thread.
-      // These are deferred so they can't run concurrently with the posting task.
-      while (!detail::thread_pool_tls.deferred.empty()) {
-        auto deferred_task = std::move(detail::thread_pool_tls.deferred.back());
-        detail::thread_pool_tls.deferred.pop_back();
-        run_task(deferred_task);
-      }
-
-      detail::thread_pool_tls.current_state = nullptr;
     }
   }
+
+  detail::thread_pool_ctx = nullptr;
 }
 
 inline thread_pool::thread_pool(std::size_t n_threads) {
@@ -98,13 +142,17 @@ inline thread_pool::thread_pool(std::size_t n_threads) {
   // Create shared state
   state_ = std::make_shared<state>();
   state_->n_threads = n_threads;
+  state_->workers.reserve(n_threads);
+  for (std::size_t i = 0; i < n_threads; ++i) {
+    state_->workers.emplace_back(std::make_unique<state::worker_state>());
+  }
 
   threads_.reserve(n_threads);
 
   // Start worker threads
   for (std::size_t i = 0; i < n_threads; ++i) {
     auto s = state_;
-    threads_.emplace_back([s] { worker_loop(s); });
+    threads_.emplace_back([s, i] { worker_loop(s, i); });
   }
 }
 
@@ -114,19 +162,27 @@ inline thread_pool::~thread_pool() {
 }
 
 inline void thread_pool::stop() noexcept {
-  {
-    std::scoped_lock lock{state_->mutex};
-    state_->stopped.store(true, std::memory_order_release);
+  if (!state_) {
+    return;
   }
-
-  state_->cv.notify_all();
+  auto expected = pool_state::running;
+  if (state_->lifecycle.compare_exchange_strong(
+        expected, pool_state::stopping, std::memory_order_acq_rel)) {
+    state_->cv.notify_all();
+  } else {
+    state_->cv.notify_all();
+  }
 }
 
 inline void thread_pool::join() noexcept {
+  stop();
   for (auto& t : threads_) {
     if (t.joinable()) {
       t.join();
     }
+  }
+  if (state_) {
+    state_->lifecycle.store(pool_state::stopped, std::memory_order_release);
   }
 }
 

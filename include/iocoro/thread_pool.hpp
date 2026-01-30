@@ -4,16 +4,18 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/lockfree_mpmc_queue.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/work_guard.hpp>
 
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
+#include <deque>
 #include <exception>
 #include <functional>
+#include <memory>
 #include <mutex>
-#include <queue>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -22,12 +24,12 @@
 namespace iocoro {
 
 namespace detail {
-struct thread_pool_tls_state {
+struct thread_pool_worker_context {
   void const* current_state{};
-  std::vector<unique_function<void()>> deferred{};
+  std::size_t worker_index{};
 };
 
-inline thread_local thread_pool_tls_state thread_pool_tls{};
+inline thread_local thread_pool_worker_context* thread_pool_ctx = nullptr;
 }  // namespace detail
 
 /// A simple thread pool with a shared task queue.
@@ -75,25 +77,37 @@ class thread_pool {
 
  private:
   // Shared state that outlives the pool object
-  struct state {
-    mutable std::mutex mutex;
-    std::condition_variable cv;
-    std::queue<detail::unique_function<void()>> tasks;
+  enum class pool_state : std::uint8_t { running, stopping, stopped };
 
-    std::atomic<bool> stopped{false};
+  struct state {
+    struct worker_state {
+      std::mutex mutex;
+      std::deque<detail::unique_function<void()>> local;
+      std::atomic<bool> has_local{false};
+    };
+
+    static constexpr std::size_t global_capacity = 1u << 16;
+
+    mutable std::mutex cv_mutex;
+    std::condition_variable cv;
+    detail::lockfree_mpmc_queue<detail::unique_function<void()>, global_capacity> global{};
+    std::atomic<std::size_t> global_pending{0};
+
+    std::vector<std::unique_ptr<worker_state>> workers;
+
+    std::atomic<pool_state> lifecycle{pool_state::running};
     std::atomic<std::size_t> work_guard_count{0};
 
-    std::size_t n_threads;
+    std::size_t n_threads{};
 
-    // Exception handler (protected by mutex since it can be set at runtime)
-    exception_handler_t on_task_exception;
+    std::atomic<std::shared_ptr<exception_handler_t>> on_task_exception{};
   };
 
   std::shared_ptr<state> state_;
   std::vector<std::thread> threads_;
 
   // Helper methods
-  static void worker_loop(std::shared_ptr<state> s);
+  static void worker_loop(std::shared_ptr<state> s, std::size_t index);
 };
 
 /// A lightweight executor that schedules work onto a thread_pool.
@@ -129,18 +143,31 @@ class thread_pool::basic_executor_type {
     // If we're already running on this pool, defer until the current task
     // returns to the worker loop. This prevents destroying coroutine frames
     // while `final_suspend().await_suspend()` is still executing on-stack.
-    if (detail::thread_pool_tls.current_state == state_.get()) {
-      detail::thread_pool_tls.deferred.emplace_back(std::move(make_task));
+    auto* ctx = detail::thread_pool_ctx;
+    if (ctx != nullptr && ctx->current_state == state_.get()) {
+      auto& local = *state_->workers[ctx->worker_index];
+      std::scoped_lock lock{local.mutex};
+      local.local.emplace_back(std::move(make_task));
+      local.has_local.store(true, std::memory_order_release);
       return;
     }
 
-    {
-      std::scoped_lock lock{state_->mutex};
-
-      // Post never runs inline; even during/after stop it queues work so that
-      // reactor/coroutine finalization does not destroy frames on the caller stack.
-      state_->tasks.emplace(std::move(make_task));
+    auto const lifecycle = state_->lifecycle.load(std::memory_order_acquire);
+    if (lifecycle != pool_state::running &&
+        state_->work_guard_count.load(std::memory_order_acquire) == 0) {
+      return;
     }
+
+    auto task = detail::unique_function<void()>{std::move(make_task)};
+    while (!state_->global.try_enqueue(task)) {
+      auto const current = state_->lifecycle.load(std::memory_order_acquire);
+      if (current != pool_state::running &&
+          state_->work_guard_count.load(std::memory_order_acquire) == 0) {
+        return;
+      }
+      std::this_thread::yield();
+    }
+    state_->global_pending.fetch_add(1, std::memory_order_acq_rel);
 
     state_->cv.notify_one();
   }
@@ -165,7 +192,8 @@ class thread_pool::basic_executor_type {
   }
 
   auto stopped() const noexcept -> bool {
-    return !state_ || state_->stopped.load(std::memory_order_acquire);
+    return !state_ ||
+           state_->lifecycle.load(std::memory_order_acquire) != pool_state::running;
   }
 
   explicit operator bool() const noexcept { return state_ != nullptr; }
@@ -210,7 +238,8 @@ template <>
 struct executor_traits<thread_pool::basic_executor_type> {
   static auto capabilities(thread_pool::basic_executor_type const& ex) noexcept
     -> executor_capability {
-    return ex ? executor_capability::none : executor_capability::none;
+    (void)ex;
+    return executor_capability::none;
   }
 
   static auto io_context(thread_pool::basic_executor_type const&) noexcept -> io_context_impl* {
