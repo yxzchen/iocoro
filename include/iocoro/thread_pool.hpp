@@ -21,6 +21,15 @@
 
 namespace iocoro {
 
+namespace detail {
+struct thread_pool_tls_state {
+  void const* current_state{};
+  std::vector<unique_function<void()>> deferred{};
+};
+
+inline thread_local thread_pool_tls_state thread_pool_tls{};
+}  // namespace detail
+
 /// A simple thread pool with a shared task queue.
 ///
 /// Design:
@@ -107,26 +116,29 @@ class thread_pool::basic_executor_type {
       return;
     }
 
-    bool run_inline = false;
+    // If we're already running on this pool, defer until the current task
+    // returns to the worker loop. This prevents destroying coroutine frames
+    // while `final_suspend().await_suspend()` is still executing on-stack.
+    if (detail::thread_pool_tls.current_state == state_.get()) {
+      detail::thread_pool_tls.deferred.emplace_back([ex = *this, fn = std::forward<F>(f)]() mutable {
+        detail::executor_guard g{any_executor{ex}};
+        fn();
+      });
+      return;
+    }
+
     {
       std::scoped_lock lock{state_->mutex};
 
-      if (state_->stopped.load(std::memory_order_acquire)) {
-        run_inline = true;
-      } else {
-        state_->tasks.emplace([ex = *this, fn = std::forward<F>(f)]() mutable {
-          detail::executor_guard g{any_executor{ex}};
-          fn();
-        });
-      }
+      // Post never runs inline; even during/after stop it queues work so that
+      // reactor/coroutine finalization does not destroy frames on the caller stack.
+      state_->tasks.emplace([ex = *this, fn = std::forward<F>(f)]() mutable {
+        detail::executor_guard g{any_executor{ex}};
+        fn();
+      });
     }
 
-    if (run_inline) {
-      detail::executor_guard g{any_executor{*this}};
-      f();
-    } else {
-      state_->cv.notify_one();
-    }
+    state_->cv.notify_one();
   }
 
   template <class F>

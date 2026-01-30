@@ -30,7 +30,7 @@ struct mock_read_stream {
 
   auto async_read_some(std::span<std::byte> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-    auto tok = co_await iocoro::this_coro::cancellation_token;
+    auto tok = co_await iocoro::this_coro::stop_token;
     if (tok.stop_requested()) {
       co_return iocoro::unexpected(iocoro::error::operation_aborted);
     }

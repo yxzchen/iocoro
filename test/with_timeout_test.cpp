@@ -50,7 +50,7 @@ struct cancellable_test_stream {
   auto async_read_some(std::span<std::byte> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
-    auto tok = co_await iocoro::this_coro::cancellation_token;
+    auto tok = co_await iocoro::this_coro::stop_token;
     for (int i = 0; i < 200; ++i) {
       if (tok.stop_requested() ||
           cancelled.load(std::memory_order_acquire) ||
@@ -65,7 +65,7 @@ struct cancellable_test_stream {
   auto async_write_some(std::span<std::byte const> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
-    auto tok = co_await iocoro::this_coro::cancellation_token;
+    auto tok = co_await iocoro::this_coro::stop_token;
     for (int i = 0; i < 200; ++i) {
       if (tok.stop_requested() ||
           cancelled.load(std::memory_order_acquire) ||
@@ -110,7 +110,7 @@ TEST(with_timeout_test, scoped_timeout_fired_becomes_true_on_deadline) {
   auto r = iocoro::sync_wait_for(ctx, 500ms, []() -> iocoro::awaitable<std::error_code> {
     auto scope = co_await iocoro::this_coro::scoped_timeout(10ms);
     for (int i = 0; i < 200; ++i) {
-      auto tok = co_await iocoro::this_coro::cancellation_token;
+      auto tok = co_await iocoro::this_coro::stop_token;
       if (tok.stop_requested()) {
         EXPECT_TRUE(scope.timed_out());
         co_return iocoro::error::operation_aborted;

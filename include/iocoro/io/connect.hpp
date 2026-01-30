@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/with_timeout.hpp>
@@ -20,7 +20,7 @@ namespace iocoro::io {
 /// - On timeout: returns error::timed_out.
 /// - On external cancellation: returns error::operation_aborted.
 ///
-/// Note: This requires the socket's async_connect to observe cancellation_token.
+/// Note: This requires the socket's async_connect to observe stop_token.
 template <class Socket, class Endpoint, class Rep, class Period>
   requires async_connect_socket<Socket, Endpoint>
 auto async_connect_timeout(Socket& s, Endpoint const& ep,

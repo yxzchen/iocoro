@@ -2,7 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
@@ -24,7 +24,7 @@ namespace iocoro::io {
 template <async_read_stream Stream>
 auto async_read(Stream& s, std::span<std::byte> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  auto tok = co_await this_coro::cancellation_token;
+  auto tok = co_await this_coro::stop_token;
   auto const wanted = buf.size();
   std::size_t total = 0;
 

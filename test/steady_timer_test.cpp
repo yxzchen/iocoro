@@ -2,7 +2,7 @@
 
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 #include <iocoro/error.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
@@ -57,7 +57,7 @@ TEST(steady_timer_test, steady_timer_async_wait_resumes_on_cancel) {
   EXPECT_EQ(ec, iocoro::error::operation_aborted);
 }
 
-TEST(steady_timer_test, cancellation_token_does_not_hang_under_race) {
+TEST(steady_timer_test, stop_token_does_not_hang_under_race) {
   using namespace std::chrono_literals;
 
   iocoro::io_context ctx;
@@ -68,11 +68,11 @@ TEST(steady_timer_test, cancellation_token_does_not_hang_under_race) {
       iocoro::steady_timer t{ex};
       t.expires_after(5s);
 
-      iocoro::cancellation_source src{};
-      auto tok = src.token();
+      std::stop_source src{};
+      auto tok = src.get_token();
 
-      std::thread th([&] { src.request_cancel(); });
-      auto scope = co_await iocoro::this_coro::set_cancellation_token(tok);
+      std::thread th([&] { src.request_stop(); });
+      auto scope = co_await iocoro::this_coro::set_stop_token(tok);
       auto out = co_await t.async_wait(iocoro::use_awaitable);
       scope.reset();
       th.join();

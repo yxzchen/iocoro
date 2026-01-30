@@ -2,7 +2,7 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 #include <iocoro/io_context.hpp>
 #include <iocoro/local/endpoint.hpp>
 #include <iocoro/local/stream.hpp>
@@ -392,7 +392,7 @@ TEST(local_stream_test, async_connect_and_exchange_data) {
   ASSERT_FALSE(ec) << ec.message();
 }
 
-TEST(local_stream_test, read_some_with_cancellation_token_aborts) {
+TEST(local_stream_test, read_some_with_stop_token_aborts) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -409,7 +409,7 @@ TEST(local_stream_test, read_some_with_cancellation_token_aborts) {
       co_return ec;
     }
 
-    iocoro::cancellation_source src{};
+    std::stop_source src{};
     std::error_code read_ec{};
 
     auto server_task = iocoro::co_spawn(
@@ -423,7 +423,7 @@ TEST(local_stream_test, read_some_with_cancellation_token_aborts) {
 
         auto s = std::move(*accepted);
         std::array<std::byte, 8> buf{};
-        auto scope = co_await iocoro::this_coro::set_cancellation_token(src.token());
+        auto scope = co_await iocoro::this_coro::set_stop_token(src.get_token());
         auto r = co_await s.async_read_some(buf);
         scope.reset();
         if (!r) {
@@ -441,7 +441,7 @@ TEST(local_stream_test, read_some_with_cancellation_token_aborts) {
     }
 
     (void)co_await iocoro::co_sleep(ex, 10ms);
-    src.request_cancel();
+    src.request_stop();
 
     try {
       co_await std::move(server_task);

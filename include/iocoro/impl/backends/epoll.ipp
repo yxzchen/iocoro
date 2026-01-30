@@ -140,8 +140,8 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       (ev & (static_cast<std::uint32_t>(EPOLLERR) | static_cast<std::uint32_t>(EPOLLHUP) |
              static_cast<std::uint32_t>(EPOLLRDHUP))) != 0;
 
-    std::unique_ptr<operation_base> read_op;
-    std::unique_ptr<operation_base> write_op;
+    reactor_op_ptr read_op;
+    reactor_op_ptr write_op;
     bool still_want_read = false;
     bool still_want_write = false;
 
@@ -183,20 +183,20 @@ auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> ma
       }
 
       if (read_op) {
-        read_op->on_abort(ec);
+        read_op->on_abort(read_op->state, ec);
         ++count;
       }
       if (write_op) {
-        write_op->on_abort(ec);
+        write_op->on_abort(write_op->state, ec);
         ++count;
       }
     } else {
       if (read_op) {
-        read_op->on_ready();
+        read_op->on_complete(read_op->state);
         ++count;
       }
       if (write_op) {
-        write_op->on_ready();
+        write_op->on_complete(write_op->state);
         ++count;
       }
     }

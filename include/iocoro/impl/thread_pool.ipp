@@ -53,9 +53,9 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
     }
 
     // Execute task outside the lock
-    if (task) {
+    auto run_task = [&](detail::unique_function<void()>& t) noexcept {
       try {
-        task();
+        t();
       } catch (...) {
         // Get exception handler under lock
         exception_handler_t handler;
@@ -73,6 +73,21 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
           }
         }
       }
+    };
+
+    if (task) {
+      detail::thread_pool_tls.current_state = s.get();
+      run_task(task);
+
+      // Drain tasks posted from within this pool thread.
+      // These are deferred so they can't run concurrently with the posting task.
+      while (!detail::thread_pool_tls.deferred.empty()) {
+        auto deferred_task = std::move(detail::thread_pool_tls.deferred.back());
+        detail::thread_pool_tls.deferred.pop_back();
+        run_task(deferred_task);
+      }
+
+      detail::thread_pool_tls.current_state = nullptr;
     }
   }
 }

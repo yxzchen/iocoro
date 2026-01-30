@@ -20,7 +20,7 @@
 // What this header is NOT (and must not include):
 // - io_context / reactor / epoll / uring
 // - timers / sockets / fd management
-// - operation_base / coroutine promise details
+// - reactor_op / coroutine promise details
 //
 // Semantics (interface-level, not capability extension):
 // - post(fn): enqueue fn for later execution; never assumes inline execution.

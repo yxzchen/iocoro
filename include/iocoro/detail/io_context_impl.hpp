@@ -15,7 +15,8 @@
 
 namespace iocoro::detail {
 
-struct operation_base;
+struct reactor_op;
+using reactor_op_ptr = std::unique_ptr<reactor_op, reactor_op_deleter>;
 
 struct timer_entry_compare {
   auto operator()(const std::shared_ptr<timer_entry>& lhs,
@@ -87,15 +88,21 @@ class io_context_impl {
   void dispatch(unique_function<void()> f);
 
   template <class Rep, class Period>
-  auto schedule_timer(std::chrono::duration<Rep, Period> d, std::unique_ptr<operation_base> op)
+  auto add_timer(std::chrono::duration<Rep, Period> d, reactor_op_ptr op)
     -> timer_event_handle {
-    return schedule_timer(std::chrono::steady_clock::now() + d, std::move(op));
+    return add_timer(std::chrono::steady_clock::now() + d, std::move(op));
   }
-  auto schedule_timer(std::chrono::steady_clock::time_point expiry,
-                      std::unique_ptr<operation_base> op) -> timer_event_handle;
+  auto add_timer(std::chrono::steady_clock::time_point expiry,
+                 reactor_op_ptr op) -> timer_event_handle;
 
-  auto register_fd_read(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
-  auto register_fd_write(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
+  /// Cancel a timer registration.
+  ///
+  /// Thread-safe: can be called from any thread. Completion/abort callbacks
+  /// and operation destruction still occur on the reactor thread.
+  void cancel_timer(timer_event_handle h) noexcept;
+
+  auto register_fd_read(int fd, reactor_op_ptr op) -> fd_event_handle;
+  auto register_fd_write(int fd, reactor_op_ptr op) -> fd_event_handle;
   void deregister_fd(int fd);
 
   void add_work_guard() noexcept;
@@ -133,8 +140,8 @@ class io_context_impl {
   std::atomic<bool> stopped_{false};
 
   struct fd_ops {
-    std::unique_ptr<operation_base> read_op;
-    std::unique_ptr<operation_base> write_op;
+    reactor_op_ptr read_op;
+    reactor_op_ptr write_op;
     std::uint64_t read_token = 0;
     std::uint64_t write_token = 0;
   };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_async.hpp>
@@ -58,7 +58,19 @@ class steady_timer {
   /// - `std::error_code{}` on successful timer expiry.
   /// - `error::operation_aborted` if cancelled via current coroutine cancellation context.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
-    co_return co_await detail::operation_awaiter<timer_wait_operation>{this};
+    auto factory = [ctx = ctx_impl_, timer = this](std::shared_ptr<detail::operation_wait_state> st) {
+      return detail::async_op{
+        std::move(st),
+        ctx,
+        [timer](detail::async_op& op, detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
+          auto handle = ctx.add_timer(timer->expiry(), std::move(rop));
+          timer->set_timer_handle(handle);
+          // Publish the reactor cancellation hook for this wait.
+          // This keeps stop_token out of reactor operations; the awaiter drives cancellation.
+          op.publish_cancel([impl = &ctx, h = handle]() mutable { impl->cancel_timer(h); });
+        }};
+    };
+    co_return co_await detail::operation_awaiter{std::move(factory)};
   }
 
   /// Cancel the pending timer operation.
@@ -70,7 +82,7 @@ class steady_timer {
     }
 
     if (h) {
-      h.cancel();
+      ctx_impl_->cancel_timer(h);
     }
   }
 
@@ -82,23 +94,6 @@ class steady_timer {
   }
 
  private:
-  class timer_wait_operation final : public detail::async_operation {
-   public:
-    timer_wait_operation(std::shared_ptr<detail::operation_wait_state> st, steady_timer* timer)
-        : async_operation(std::move(st)), timer_(timer) {}
-
-   private:
-    void do_start(std::unique_ptr<operation_base> self) override {
-      auto handle = timer_->ctx_impl_->schedule_timer(timer_->expiry(), std::move(self));
-      timer_->set_timer_handle(handle);
-      // Publish the reactor cancellation hook for this wait.
-      // This keeps cancellation_token out of reactor operations; the awaiter drives cancellation.
-      this->publish_cancel([h = handle]() mutable { h.cancel(); });
-    }
-
-    steady_timer* timer_ = nullptr;
-  };
-
   detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
   mutable std::mutex mtx_{};

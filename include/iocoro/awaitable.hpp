@@ -54,9 +54,9 @@ class awaitable {
     coro_.promise().set_continuation(h);
     if constexpr (requires {
                     h.promise().get_executor();
-                    h.promise().get_cancellation_token();
+                    h.promise().get_stop_token();
                   }) {
-      coro_.promise().inherit_context(h.promise().get_executor(), h.promise().get_cancellation_token());
+      coro_.promise().inherit_context(h.promise().get_executor(), h.promise().get_stop_token());
     }
     return coro_;
   }

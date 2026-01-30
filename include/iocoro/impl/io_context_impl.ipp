@@ -129,8 +129,8 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
   }
 }
 
-inline auto io_context_impl::schedule_timer(std::chrono::steady_clock::time_point expiry,
-                                            std::unique_ptr<operation_base> op)
+inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point expiry,
+                                       reactor_op_ptr op)
   -> timer_event_handle {
   auto entry = std::make_shared<detail::timer_entry>();
   entry->expiry = expiry;
@@ -147,9 +147,13 @@ inline auto io_context_impl::schedule_timer(std::chrono::steady_clock::time_poin
   return timer_event_handle{this, entry};
 }
 
-inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_base> op)
+inline void io_context_impl::cancel_timer(timer_event_handle h) noexcept {
+  h.cancel();
+}
+
+inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op)
   -> fd_event_handle {
-  std::unique_ptr<operation_base> old;
+  reactor_op_ptr old;
   std::uint64_t token = 0;
 
   {
@@ -175,7 +179,7 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
     }
   }
   if (old) {
-    old->on_abort(error::operation_aborted);
+    old->on_abort(old->state, error::operation_aborted);
   }
 
   dispatch([this, fd] { reconcile_fd_interest(fd); });
@@ -184,9 +188,9 @@ inline auto io_context_impl::register_fd_read(int fd, std::unique_ptr<operation_
   return fd_event_handle{this, fd, fd_event_kind::read, token};
 }
 
-inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation_base> op)
+inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op)
   -> fd_event_handle {
-  std::unique_ptr<operation_base> old;
+  reactor_op_ptr old;
   std::uint64_t token = 0;
 
   {
@@ -212,7 +216,7 @@ inline auto io_context_impl::register_fd_write(int fd, std::unique_ptr<operation
     }
   }
   if (old) {
-    old->on_abort(error::operation_aborted);
+    old->on_abort(old->state, error::operation_aborted);
   }
 
   dispatch([this, fd] { reconcile_fd_interest(fd); });
@@ -238,10 +242,10 @@ inline void io_context_impl::deregister_fd(int fd) {
   dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed.read_op) {
-    removed.read_op->on_abort(error::operation_aborted);
+    removed.read_op->on_abort(removed.read_op->state, error::operation_aborted);
   }
   if (removed.write_op) {
-    removed.write_op->on_abort(error::operation_aborted);
+    removed.write_op->on_abort(removed.write_op->state, error::operation_aborted);
   }
 
   wakeup();
@@ -279,7 +283,7 @@ inline auto io_context_impl::process_timers() -> std::size_t {
       auto op = std::move(entry->op);
       lk.unlock();
       if (op) {
-        op->on_abort(error::operation_aborted);
+        op->on_abort(op->state, error::operation_aborted);
       }
       lk.lock();
       continue;
@@ -302,7 +306,7 @@ inline auto io_context_impl::process_timers() -> std::size_t {
     auto op = std::move(entry->op);
     lk.unlock();
     if (op) {
-      op->on_ready();
+      op->on_complete(op->state);
     }
 
     ++count;
@@ -415,7 +419,7 @@ inline void io_context_impl::reconcile_fd_interest(int fd) {
 
 inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
                                              std::uint64_t token) noexcept {
-  std::unique_ptr<operation_base> removed;
+  reactor_op_ptr removed;
   bool matched = false;
 
   {
@@ -453,7 +457,7 @@ inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
   dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   if (removed) {
-    removed->on_abort(error::operation_aborted);
+    removed->on_abort(removed->state, error::operation_aborted);
   }
   wakeup();
 }

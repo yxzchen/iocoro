@@ -1,13 +1,13 @@
 #pragma once
 
+#include <iocoro/detail/operation_base.hpp>
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 
 namespace iocoro::detail {
-
-struct operation_base;
 
 enum class timer_state : std::uint8_t {
   pending,
@@ -18,7 +18,7 @@ enum class timer_state : std::uint8_t {
 struct timer_entry {
   std::uint64_t id{};
   std::chrono::steady_clock::time_point expiry;
-  std::unique_ptr<operation_base> op;
+  reactor_op_ptr op;
 
   std::atomic<timer_state> state{timer_state::pending};
 

@@ -11,7 +11,6 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/bind_executor.hpp>
-#include <iocoro/cancellation_token.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/this_coro.hpp>

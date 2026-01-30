@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>

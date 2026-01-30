@@ -72,7 +72,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   auto const fd = base_.native_handle();
-  auto tok = co_await this_coro::cancellation_token;
+  auto tok = co_await this_coro::stop_token;
 
   std::uint64_t my_epoch = 0;
   {
@@ -170,7 +170,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 
 inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  auto tok = co_await this_coro::cancellation_token;
+  auto tok = co_await this_coro::stop_token;
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -235,7 +235,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
 
 inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  auto tok = co_await this_coro::cancellation_token;
+  auto tok = co_await this_coro::stop_token;
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);

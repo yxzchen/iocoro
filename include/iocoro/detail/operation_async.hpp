@@ -1,6 +1,7 @@
 #pragma once
 
-#include <iocoro/cancellation_token.hpp>
+#include <iocoro/assert.hpp>
+#include <stop_token>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/detail/operation_base.hpp>
@@ -8,11 +9,15 @@
 
 #include <atomic>
 #include <coroutine>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <system_error>
 
 namespace iocoro::detail {
+
+class io_context_impl;
 
 /// Cancellation handshake for a single in-flight operation.
 ///
@@ -24,7 +29,7 @@ namespace iocoro::detail {
 /// - If cancel() happens before publish(), the hook will be invoked immediately upon publish().
 /// - If publish() happens before cancel(), the hook will be invoked immediately upon cancel().
 ///
-/// This keeps cancellation_token out of reactor operations while still enabling race-free,
+/// This keeps stop_token out of reactor operations while still enabling race-free,
 /// "pending-cancel" semantics.
 struct operation_cancellation {
   std::atomic<bool> pending{false};
@@ -71,40 +76,47 @@ struct operation_wait_state {
   operation_cancellation cancel{};
 };
 
-/// Base class for async operations that provides common completion logic.
-///
-/// All async operations follow the same pattern:
-/// 1. on_ready() / on_abort() → complete(ec)
-/// 2. complete() checks atomic done flag, sets ec, posts to executor
-/// 3. do_start() is operation-specific (registration logic)
-///
-/// Derived classes only need to implement do_start() to register with the reactor.
-class async_operation : public operation_base {
+/// Async operation wrapper with self-owned registration.
+class async_op {
  public:
-  void on_ready() noexcept final { complete(std::error_code{}); }
-  void on_abort(std::error_code ec) noexcept final { complete(ec); }
+  using register_fn = unique_function<void(async_op&, io_context_impl&, reactor_op_ptr)>;
 
- protected:
-  async_operation(std::shared_ptr<operation_wait_state> st) noexcept
-      : st_(std::move(st)) {}
+  async_op(std::shared_ptr<operation_wait_state> st,
+           io_context_impl* ctx,
+           register_fn reg) noexcept
+      : st_(std::move(st)), ctx_(ctx), reg_(std::move(reg)) {}
+
+  void start() noexcept {
+    IOCORO_ENSURE(ctx_ != nullptr, "async_op: null io_context_impl");
+    IOCORO_ENSURE(reg_, "async_op: empty registration");
+    auto op = make_reactor_op<state>(st_);
+    reg_(*this, *ctx_, std::move(op));
+  }
 
   void publish_cancel(unique_function<void()> f) noexcept { st_->cancel.publish(std::move(f)); }
 
-  void complete(std::error_code ec) noexcept {
-    // Guard against double completion (on_ready + on_abort, or repeated signals).
-    if (done.exchange(true, std::memory_order_acq_rel)) {
-      return;
-    }
-    st_->ec = ec;
+ private:
+  struct state {
+    std::shared_ptr<operation_wait_state> st;
+    std::atomic<bool> done{false};
 
-    // Resume on the caller's original executor.
-    // This ensures the awaitable coroutine resumes on the same executor
-    // where the user initiated the wait operation.
-    st_->ex.post([st = st_]() mutable { st->h.resume(); });
-  }
+    explicit state(std::shared_ptr<operation_wait_state> s) noexcept : st(std::move(s)) {}
+
+    void on_complete() noexcept { complete(std::error_code{}); }
+    void on_abort(std::error_code ec) noexcept { complete(ec); }
+
+    void complete(std::error_code ec) noexcept {
+      if (done.exchange(true, std::memory_order_acq_rel)) {
+        return;
+      }
+      st->ec = ec;
+      st->ex.post([st = st]() mutable { st->h.resume(); });
+    }
+  };
 
   std::shared_ptr<operation_wait_state> st_;
-  std::atomic<bool> done{false};
+  io_context_impl* ctx_ = nullptr;
+  register_fn reg_{};
 };
 
 /// Generic awaiter for async_operation-derived operations.
@@ -120,19 +132,15 @@ class async_operation : public operation_base {
 /// - Operation: The async_operation-derived class to instantiate
 ///
 /// Usage:
-///   co_await operation_awaiter<timer_wait_operation>{this};
-///   co_await operation_awaiter<fd_wait_operation<Kind>>{this};
-template <typename Operation>
-  requires std::derived_from<Operation, detail::async_operation>
+///   co_await operation_awaiter{make_timer_wait_op(ctx_impl, timer)};
+///   co_await operation_awaiter{make_fd_wait_op(ctx_impl, socket, kind)};
+template <typename Factory>
 struct operation_awaiter {
-  std::unique_ptr<Operation> op;
+  Factory factory;
   std::shared_ptr<operation_wait_state> st{std::make_shared<operation_wait_state>()};
-  cancellation_registration reg{};
+  std::optional<std::stop_callback<std::function<void()>>> reg{};
 
-  template <typename... Args>
-  explicit operation_awaiter(Args&&... args) {
-    op = std::make_unique<Operation>(st, std::forward<Args>(args)...);
-  }
+  explicit operation_awaiter(Factory f) : factory(std::move(f)) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -140,14 +148,15 @@ struct operation_awaiter {
   bool await_suspend(std::coroutine_handle<Promise> h) {
     st->h = h;
     st->ex = get_current_executor();
-    if constexpr (requires { h.promise().get_cancellation_token(); }) {
-      auto tok = h.promise().get_cancellation_token();
-      if (tok) {
-        reg = tok.register_callback([st = st]() { st->cancel.cancel(); });
+    if constexpr (requires { h.promise().get_stop_token(); }) {
+      auto tok = h.promise().get_stop_token();
+      if (tok.stop_possible()) {
+        reg.emplace(std::move(tok), [st = st]() { st->cancel.cancel(); });
       }
     }
 
-    op->start(std::move(op));
+    auto op = factory(st);
+    op.start();
     return true;
   }
 
@@ -156,5 +165,8 @@ struct operation_awaiter {
     return st->ec;
   }
 };
+
+template <typename Factory>
+operation_awaiter(Factory) -> operation_awaiter<Factory>;
 
 }  // namespace iocoro::detail

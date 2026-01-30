@@ -1,34 +1,35 @@
 #include <gtest/gtest.h>
 
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 
 #include <atomic>
 
 namespace {
 
-TEST(cancellation_token_test, registration_reset_prevents_invocation) {
-  iocoro::cancellation_source src{};
-  auto tok = src.token();
+TEST(stop_token_test, callback_destruction_prevents_invocation) {
+  std::stop_source src{};
+  auto tok = src.get_token();
 
   std::atomic<int> called{0};
   {
-    auto reg = tok.register_callback([&called] { called.fetch_add(1, std::memory_order_relaxed); });
-    (void)reg;
+    std::stop_callback cb{tok,
+                          [&called] { called.fetch_add(1, std::memory_order_relaxed); }};
+    (void)cb;
   }
 
-  src.request_cancel();
+  src.request_stop();
   EXPECT_EQ(called.load(std::memory_order_relaxed), 0);
 }
 
-TEST(cancellation_token_test, register_after_cancel_invokes_immediately) {
-  iocoro::cancellation_source src{};
-  auto tok = src.token();
+TEST(stop_token_test, callback_after_stop_invokes_immediately) {
+  std::stop_source src{};
+  auto tok = src.get_token();
 
-  src.request_cancel();
+  src.request_stop();
 
   std::atomic<int> called{0};
-  auto reg = tok.register_callback([&called] { called.fetch_add(1, std::memory_order_relaxed); });
-  (void)reg;
+  std::stop_callback cb{tok, [&called] { called.fetch_add(1, std::memory_order_relaxed); }};
+  (void)cb;
 
   EXPECT_EQ(called.load(std::memory_order_relaxed), 1);
 }

@@ -2,7 +2,7 @@
 
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
-#include <iocoro/cancellation_token.hpp>
+#include <stop_token>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
@@ -22,7 +22,7 @@ namespace iocoro::detail {
 
 struct awaitable_promise_base {
   any_executor ex_{};
-  cancellation_token tok_{};
+  std::stop_token tok_{};
   std::coroutine_handle<> continuation_{};
   std::exception_ptr exception_{};
   bool detached_{false};
@@ -57,14 +57,14 @@ struct awaitable_promise_base {
   auto get_executor() noexcept { return ex_; }
   void set_executor(any_executor ex) noexcept { ex_ = std::move(ex); }
 
-  auto get_cancellation_token() const noexcept -> cancellation_token { return tok_; }
-  void set_cancellation_token(cancellation_token tok) noexcept { tok_ = std::move(tok); }
+  auto get_stop_token() const noexcept -> std::stop_token { return tok_; }
+  void set_stop_token(std::stop_token tok) noexcept { tok_ = std::move(tok); }
 
-  void inherit_context(any_executor parent_ex, cancellation_token parent_tok) noexcept {
+  void inherit_context(any_executor parent_ex, std::stop_token parent_tok) noexcept {
     if (!ex_) {
       ex_ = std::move(parent_ex);
     }
-    if (!tok_) {
+    if (!tok_.stop_possible()) {
       tok_ = std::move(parent_tok);
     }
   }
@@ -117,30 +117,31 @@ struct awaitable_promise_base {
     return awaiter{ex_};
   }
 
-  auto await_transform(this_coro::cancellation_token_t) noexcept {
+  auto await_transform(this_coro::stop_token_t) noexcept {
     struct awaiter {
-      cancellation_token tok;
+      std::stop_token tok;
       bool await_ready() noexcept { return true; }
-      auto await_resume() noexcept -> cancellation_token { return tok; }
+      auto await_resume() noexcept -> std::stop_token { return tok; }
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
     return awaiter{tok_};
   }
 
-  struct cancellation_scope {
+  struct stop_scope {
     awaitable_promise_base* self{};
-    cancellation_token prev{};
+    std::stop_token prev{};
 
-    cancellation_scope() noexcept = default;
-    cancellation_scope(awaitable_promise_base* s, cancellation_token p) noexcept : self(s), prev(std::move(p)) {}
+    stop_scope() noexcept = default;
+    stop_scope(awaitable_promise_base* s, std::stop_token p) noexcept
+        : self(s), prev(std::move(p)) {}
 
-    cancellation_scope(cancellation_scope const&) = delete;
-    auto operator=(cancellation_scope const&) -> cancellation_scope& = delete;
+    stop_scope(stop_scope const&) = delete;
+    auto operator=(stop_scope const&) -> stop_scope& = delete;
 
-    cancellation_scope(cancellation_scope&& other) noexcept
+    stop_scope(stop_scope&& other) noexcept
         : self(std::exchange(other.self, nullptr)), prev(std::move(other.prev)) {}
 
-    auto operator=(cancellation_scope&& other) noexcept -> cancellation_scope& {
+    auto operator=(stop_scope&& other) noexcept -> stop_scope& {
       if (this != &other) {
         reset();
         self = std::exchange(other.self, nullptr);
@@ -149,26 +150,26 @@ struct awaitable_promise_base {
       return *this;
     }
 
-    ~cancellation_scope() { reset(); }
+    ~stop_scope() { reset(); }
 
     void reset() noexcept {
       if (self) {
-        self->set_cancellation_token(std::move(prev));
+        self->set_stop_token(std::move(prev));
         self = nullptr;
       }
     }
   };
 
-  auto await_transform(this_coro::set_cancellation_token_t t) noexcept {
+  auto await_transform(this_coro::set_stop_token_t t) noexcept {
     struct awaiter {
       awaitable_promise_base* self;
-      cancellation_token next;
+      std::stop_token next;
 
       bool await_ready() noexcept { return true; }
-      auto await_resume() noexcept -> cancellation_scope {
-        auto prev = self->get_cancellation_token();
-        self->set_cancellation_token(std::move(next));
-        return cancellation_scope{self, std::move(prev)};
+      auto await_resume() noexcept -> stop_scope {
+        auto prev = self->get_stop_token();
+        self->set_stop_token(std::move(next));
+        return stop_scope{self, std::move(prev)};
       }
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
@@ -235,3 +236,7 @@ struct awaitable_promise<void> final : awaitable_promise_base {
 };
 
 }  // namespace iocoro::detail
+
+// scoped_timeout is implemented via promise::await_transform, but we keep all timeout
+// state private and out of the promise itself.
+#include <iocoro/timeout.hpp>
