@@ -1,27 +1,19 @@
 #pragma once
 
+#include <iocoro/detail/fd_registry.hpp>
+#include <iocoro/detail/posted_queue.hpp>
+#include <iocoro/detail/reactor_backend.hpp>
 #include <iocoro/detail/reactor_types.hpp>
-#include <iocoro/detail/timer_entry.hpp>
+#include <iocoro/detail/timer_manager.hpp>
 #include <iocoro/detail/unique_function.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <queue>
-#include <unordered_map>
-#include <vector>
 
 namespace iocoro::detail {
-
-struct timer_entry_compare {
-  auto operator()(const std::shared_ptr<timer_entry>& lhs,
-                  const std::shared_ptr<timer_entry>& rhs) const noexcept -> bool {
-    return lhs->expiry > rhs->expiry;
-  }
-};
 
 class io_context_impl {
  public:
@@ -66,6 +58,8 @@ class io_context_impl {
   auto register_fd_write(int fd, reactor_op_ptr op) -> fd_event_handle;
   void deregister_fd(int fd);
 
+  void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
+
   void add_work_guard() noexcept;
   void remove_work_guard() noexcept;
 
@@ -73,10 +67,6 @@ class io_context_impl {
   auto running_in_this_thread() const noexcept -> bool;
 
  private:
-  friend struct detail::fd_event_handle;
-  friend struct detail::timer_event_handle;
-
-  struct backend_impl;  // PImpl for the OS backend.
 
   // Opaque per-thread identity token.
   // Only valid for equality comparison within the process lifetime.
@@ -92,37 +82,15 @@ class io_context_impl {
 
   auto has_work() -> bool;
 
-  void reconcile_fd_interest(int fd);
+  void apply_fd_interest(int fd, fd_interest interest);
 
-  void backend_update_fd_interest(int fd, bool want_read, bool want_write);
-  void backend_remove_fd_interest(int fd) noexcept;
-
-  void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
-
-  std::unique_ptr<backend_impl> backend_;
+  std::unique_ptr<backend_interface> backend_;
 
   std::atomic<bool> stopped_{false};
 
-  struct fd_ops {
-    reactor_op_ptr read_op;
-    reactor_op_ptr write_op;
-    std::uint64_t read_token = detail::fd_event_handle::invalid_token;
-    std::uint64_t write_token = detail::fd_event_handle::invalid_token;
-  };
-
-  std::mutex fd_mutex_;
-  std::unordered_map<int, fd_ops> fd_operations_;
-  std::uint64_t next_fd_token_ = 1;
-  mutable std::mutex timer_mutex_;
-  std::priority_queue<std::shared_ptr<timer_entry>, std::vector<std::shared_ptr<timer_entry>>,
-                      timer_entry_compare>
-    timers_;
-  std::uint64_t next_timer_id_ = 1;
-
-  std::mutex posted_mutex_;
-  std::queue<unique_function<void()>> posted_operations_;
-
-  std::atomic<std::size_t> work_guard_counter_{0};
+  fd_registry fd_registry_{};
+  timer_manager timers_{};
+  posted_queue posted_{};
 
   std::atomic<std::uintptr_t> thread_token_{0};
 };

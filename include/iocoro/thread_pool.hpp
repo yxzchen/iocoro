@@ -116,14 +116,21 @@ class thread_pool::basic_executor_type {
       return;
     }
 
+    auto weak = std::weak_ptr<state>{state_};
+    auto make_task = [weak, fn = std::forward<F>(f)]() mutable {
+      auto locked = weak.lock();
+      if (!locked) {
+        return;
+      }
+      detail::executor_guard g{any_executor{basic_executor_type{std::move(locked)}}};
+      fn();
+    };
+
     // If we're already running on this pool, defer until the current task
     // returns to the worker loop. This prevents destroying coroutine frames
     // while `final_suspend().await_suspend()` is still executing on-stack.
     if (detail::thread_pool_tls.current_state == state_.get()) {
-      detail::thread_pool_tls.deferred.emplace_back([ex = *this, fn = std::forward<F>(f)]() mutable {
-        detail::executor_guard g{any_executor{ex}};
-        fn();
-      });
+      detail::thread_pool_tls.deferred.emplace_back(std::move(make_task));
       return;
     }
 
@@ -132,10 +139,7 @@ class thread_pool::basic_executor_type {
 
       // Post never runs inline; even during/after stop it queues work so that
       // reactor/coroutine finalization does not destroy frames on the caller stack.
-      state_->tasks.emplace([ex = *this, fn = std::forward<F>(f)]() mutable {
-        detail::executor_guard g{any_executor{ex}};
-        fn();
-      });
+      state_->tasks.emplace(std::move(make_task));
     }
 
     state_->cv.notify_one();

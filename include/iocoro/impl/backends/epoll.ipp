@@ -1,5 +1,4 @@
-#include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/reactor_types.hpp>
+#include <iocoro/detail/reactor_backend.hpp>
 #include <iocoro/error.hpp>
 
 #include <cerrno>
@@ -11,11 +10,6 @@
 #include <unistd.h>
 
 namespace iocoro::detail {
-
-struct io_context_impl::backend_impl {
-  int epoll_fd = -1;
-  int eventfd = -1;
-};
 
 namespace {
 
@@ -42,182 +36,144 @@ void drain_eventfd(int eventfd) noexcept {
 
 }  // namespace
 
-io_context_impl::io_context_impl() {
-  backend_ = std::make_unique<backend_impl>();
+class backend_epoll final : public backend_interface {
+ public:
+  backend_epoll() {
+    epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
+    if (epoll_fd_ < 0) {
+      throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
+    }
 
-  backend_->epoll_fd = ::epoll_create1(EPOLL_CLOEXEC);
-  if (backend_->epoll_fd < 0) {
-    throw std::system_error(errno, std::generic_category(), "epoll_create1 failed");
+    eventfd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (eventfd_ < 0) {
+      close_if_valid(epoll_fd_);
+      throw std::system_error(errno, std::generic_category(), "eventfd failed");
+    }
+
+    epoll_event ev{};
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data.fd = eventfd_;
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, eventfd_, &ev) < 0) {
+      close_if_valid(eventfd_);
+      close_if_valid(epoll_fd_);
+      throw std::system_error(errno, std::generic_category(), "epoll_ctl(add eventfd) failed");
+    }
   }
 
-  backend_->eventfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  if (backend_->eventfd < 0) {
-    close_if_valid(backend_->epoll_fd);
-    throw std::system_error(errno, std::generic_category(), "eventfd failed");
+  ~backend_epoll() override {
+    close_if_valid(eventfd_);
+    close_if_valid(epoll_fd_);
   }
 
-  epoll_event ev{};
-  ev.events = EPOLLIN | EPOLLET;
-  ev.data.fd = backend_->eventfd;
-  if (::epoll_ctl(backend_->epoll_fd, EPOLL_CTL_ADD, backend_->eventfd, &ev) < 0) {
-    close_if_valid(backend_->eventfd);
-    close_if_valid(backend_->epoll_fd);
-    throw std::system_error(errno, std::generic_category(), "epoll_ctl(add eventfd) failed");
-  }
-}
+  void update_fd_interest(int fd, bool want_read, bool want_write) override {
+    std::uint32_t events = static_cast<std::uint32_t>(EPOLLET);
+    if (want_read) {
+      events |= static_cast<std::uint32_t>(EPOLLIN);
+    }
+    if (want_write) {
+      events |= static_cast<std::uint32_t>(EPOLLOUT);
+    }
 
-io_context_impl::~io_context_impl() {
-  stop();
-  if (backend_) {
-    close_if_valid(backend_->eventfd);
-    close_if_valid(backend_->epoll_fd);
-  }
-}
+    epoll_event ev{};
+    ev.events = events;
+    ev.data.fd = fd;
 
-void io_context_impl::backend_update_fd_interest(int fd, bool want_read, bool want_write) {
-  std::uint32_t events = static_cast<std::uint32_t>(EPOLLET);
-  if (want_read) {
-    events |= static_cast<std::uint32_t>(EPOLLIN);
-  }
-  if (want_write) {
-    events |= static_cast<std::uint32_t>(EPOLLOUT);
-  }
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0) {
+      return;
+    }
 
-  epoll_event ev{};
-  ev.events = events;
-  ev.data.fd = fd;
+    if (errno == ENOENT) {
+      if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) == 0) {
+        return;
+      }
+    }
 
-  if (::epoll_ctl(backend_->epoll_fd, EPOLL_CTL_MOD, fd, &ev) == 0) {
-    return;
+    throw std::system_error(errno, std::generic_category(), "epoll_ctl (add/mod) failed");
   }
 
-  if (errno == ENOENT) {
-    if (::epoll_ctl(backend_->epoll_fd, EPOLL_CTL_ADD, fd, &ev) == 0) {
+  void remove_fd_interest(int fd) noexcept override {
+    if (epoll_fd_ < 0 || fd < 0) {
+      return;
+    }
+    ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
+  }
+
+  auto wait(std::optional<std::chrono::milliseconds> timeout) -> std::vector<backend_event> override {
+    int timeout_ms = -1;
+    if (timeout.has_value()) {
+      timeout_ms = static_cast<int>(timeout->count());
+    }
+
+    constexpr int max_events = 128;
+    epoll_event events[max_events]{};
+
+    int nfds = ::epoll_wait(epoll_fd_, events, max_events, timeout_ms);
+    if (nfds < 0) {
+      if (errno == EINTR) {
+        return {};
+      }
+      throw std::system_error(errno, std::generic_category(), "epoll_wait failed");
+    }
+
+    std::vector<backend_event> out;
+    out.reserve(static_cast<std::size_t>(nfds));
+
+    for (int i = 0; i < nfds; ++i) {
+      int const fd = events[i].data.fd;
+      std::uint32_t const ev = events[i].events;
+
+      if (fd == eventfd_) {
+        drain_eventfd(eventfd_);
+        continue;
+      }
+
+      bool const is_error =
+        (ev & (static_cast<std::uint32_t>(EPOLLERR) | static_cast<std::uint32_t>(EPOLLHUP) |
+               static_cast<std::uint32_t>(EPOLLRDHUP))) != 0;
+
+      backend_event e{};
+      e.fd = fd;
+      e.is_error = is_error;
+      e.can_read = is_error || ((ev & static_cast<std::uint32_t>(EPOLLIN)) != 0);
+      e.can_write = is_error || ((ev & static_cast<std::uint32_t>(EPOLLOUT)) != 0);
+
+      if (is_error) {
+        if (ev & static_cast<std::uint32_t>(EPOLLRDHUP)) {
+          e.ec = error::eof;
+        } else if (ev & static_cast<std::uint32_t>(EPOLLHUP)) {
+          e.ec = error::eof;
+        } else {
+          e.ec = error::connection_reset;
+        }
+      }
+
+      out.push_back(e);
+    }
+
+    return out;
+  }
+
+  void wakeup() noexcept override {
+    std::uint64_t value = 1;
+    for (;;) {
+      auto const n = ::write(eventfd_, &value, sizeof(value));
+      if (n >= 0) {
+        return;
+      }
+      if (errno == EINTR) {
+        continue;
+      }
       return;
     }
   }
 
-  throw std::system_error(errno, std::generic_category(), "epoll_ctl (add/mod) failed");
-}
+ private:
+  int epoll_fd_ = -1;
+  int eventfd_ = -1;
+};
 
-void io_context_impl::backend_remove_fd_interest(int fd) noexcept {
-  if (backend_->epoll_fd < 0 || fd < 0) {
-    return;
-  }
-  ::epoll_ctl(backend_->epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-}
-
-auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
-  -> std::size_t {
-  int timeout_ms = -1;
-  if (max_wait.has_value()) {
-    timeout_ms = static_cast<int>(max_wait->count());
-  }
-
-  constexpr int max_events = 128;
-  epoll_event events[max_events]{};
-
-  int nfds = ::epoll_wait(backend_->epoll_fd, events, max_events, timeout_ms);
-  if (nfds < 0) {
-    if (errno == EINTR) {
-      return 0;
-    }
-    throw std::system_error(errno, std::generic_category(), "epoll_wait failed");
-  }
-
-  std::size_t count = 0;
-
-  for (int i = 0; i < nfds; ++i) {
-    int const fd = events[i].data.fd;
-    std::uint32_t const ev = events[i].events;
-
-    if (fd == backend_->eventfd) {
-      drain_eventfd(backend_->eventfd);
-      continue;
-    }
-
-    bool const is_error =
-      (ev & (static_cast<std::uint32_t>(EPOLLERR) | static_cast<std::uint32_t>(EPOLLHUP) |
-             static_cast<std::uint32_t>(EPOLLRDHUP))) != 0;
-
-    reactor_op_ptr read_op;
-    reactor_op_ptr write_op;
-    bool still_want_read = false;
-    bool still_want_write = false;
-
-    {
-      std::scoped_lock lk{fd_mutex_};
-      auto it = fd_operations_.find(fd);
-      if (it != fd_operations_.end()) {
-        if (is_error || ((ev & static_cast<std::uint32_t>(EPOLLIN)) != 0)) {
-          read_op = std::move(it->second.read_op);
-        }
-        if (is_error || ((ev & static_cast<std::uint32_t>(EPOLLOUT)) != 0)) {
-          write_op = std::move(it->second.write_op);
-        }
-
-        still_want_read = (it->second.read_op != nullptr);
-        still_want_write = (it->second.write_op != nullptr);
-
-        if (!still_want_read && !still_want_write) {
-          fd_operations_.erase(it);
-        }
-      }
-    }
-
-    if (!still_want_read && !still_want_write) {
-      backend_remove_fd_interest(fd);
-    } else {
-      backend_update_fd_interest(fd, still_want_read, still_want_write);
-    }
-
-    if (is_error) {
-      std::error_code ec;
-
-      if (ev & static_cast<std::uint32_t>(EPOLLRDHUP)) {
-        ec = error::eof;
-      } else if (ev & static_cast<std::uint32_t>(EPOLLHUP)) {
-        ec = error::eof;
-      } else {
-        ec = error::connection_reset;
-      }
-
-      if (read_op) {
-        read_op->vt->on_abort(read_op->block, ec);
-        ++count;
-      }
-      if (write_op) {
-        write_op->vt->on_abort(write_op->block, ec);
-        ++count;
-      }
-    } else {
-      if (read_op) {
-        read_op->vt->on_complete(read_op->block);
-        ++count;
-      }
-      if (write_op) {
-        write_op->vt->on_complete(write_op->block);
-        ++count;
-      }
-    }
-  }
-
-  return count;
-}
-
-void io_context_impl::wakeup() {
-  std::uint64_t value = 1;
-  for (;;) {
-    auto const n = ::write(backend_->eventfd, &value, sizeof(value));
-    if (n >= 0) {
-      return;
-    }
-    if (errno == EINTR) {
-      continue;
-    }
-    // Best-effort wakeup: if the counter is "full" (EAGAIN) we can ignore it.
-    return;
-  }
+inline auto make_backend() -> std::unique_ptr<backend_interface> {
+  return std::make_unique<backend_epoll>();
 }
 
 }  // namespace iocoro::detail
