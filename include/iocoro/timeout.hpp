@@ -43,6 +43,21 @@ struct scoped_timeout_state {
     }
   }
 
+  void on_upstream_stop() noexcept {
+    if (active.exchange(false, std::memory_order_acq_rel)) {
+      fired.store(true, std::memory_order_release);
+      cancel_timer();
+    }
+    src.request_stop();
+  }
+
+  void on_timeout() noexcept {
+    if (active.exchange(false, std::memory_order_acq_rel)) {
+      fired.store(true, std::memory_order_release);
+      src.request_stop();
+    }
+  }
+
   void reset() noexcept {
     // 1) detach upstream cancellation
     upstream_reg.reset();
@@ -67,10 +82,7 @@ struct scoped_timeout_timer_operation {
 
   void on_complete() noexcept {
     if (auto locked = st.lock()) {
-      if (locked->active.exchange(false, std::memory_order_acq_rel)) {
-        locked->fired.store(true, std::memory_order_release);
-        locked->src.request_stop();
-      }
+      locked->on_timeout();
     }
   }
 
@@ -152,10 +164,9 @@ inline auto awaitable_promise_base::await_transform(this_coro::scoped_timeout_t<
 
       // upstream cancellation => cancel combined token (and timer)
       if (prev_tok.stop_possible()) {
-        state->upstream_reg.emplace(std::move(prev_tok),
-          [weak = std::weak_ptr<scoped_timeout_state>{state}]() {
+        state->upstream_reg.emplace(prev_tok, [weak = std::weak_ptr<scoped_timeout_state>{state}]() {
             if (auto st = weak.lock()) {
-              st->src.request_stop();
+              st->on_upstream_stop();
             }
           });
       }
@@ -177,13 +188,11 @@ inline auto awaitable_promise_base::await_transform(this_coro::scoped_timeout_t<
           handle.cancel();
         }
       } else {
-        state->fired.store(true, std::memory_order_release);
-        state->active.store(false, std::memory_order_release);
-        state->src.request_stop();
+        state->on_timeout();
       }
 
       self->set_stop_token(state->src.get_token());
-      state->cancel_scope = awaitable_promise_base::stop_scope{self, std::move(prev_tok)};
+      state->cancel_scope = awaitable_promise_base::stop_scope{self, prev_tok};
 
       return timeout_scope{std::move(state)};
     }
