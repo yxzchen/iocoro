@@ -111,7 +111,7 @@ class backend_epoll final : public backend_interface {
     int nfds = ::epoll_wait(epoll_fd_, events, max_events, timeout_ms);
     if (nfds < 0) {
       if (errno == EINTR) {
-        return {};
+        return;
       }
       throw std::system_error(errno, std::generic_category(), "epoll_wait failed");
     }
