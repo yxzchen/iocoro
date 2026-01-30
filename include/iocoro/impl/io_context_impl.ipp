@@ -200,7 +200,7 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op)
   dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   wakeup();
-  return fd_event_handle{this, fd, fd_event_kind::read, token};
+  return fd_event_handle{this, fd, detail::fd_event_kind::read, token};
 }
 
 inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op)
@@ -237,7 +237,7 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op)
   dispatch([this, fd] { reconcile_fd_interest(fd); });
 
   wakeup();
-  return fd_event_handle{this, fd, fd_event_kind::write, token};
+  return fd_event_handle{this, fd, detail::fd_event_kind::write, token};
 }
 
 inline void io_context_impl::deregister_fd(int fd) {
@@ -432,7 +432,7 @@ inline void io_context_impl::reconcile_fd_interest(int fd) {
   }
 }
 
-inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
+inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,
                                              std::uint64_t token) noexcept {
   reactor_op_ptr removed;
   bool matched = false;
@@ -446,7 +446,7 @@ inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
 
     auto& ops = it->second;
 
-    if (kind == fd_event_kind::read) {
+    if (kind == detail::fd_event_kind::read) {
       if (ops.read_op && ops.read_token == token) {
         removed = std::move(ops.read_op);
         ops.read_token = 0;
@@ -477,7 +477,7 @@ inline void io_context_impl::cancel_fd_event(int fd, fd_event_kind kind,
   wakeup();
 }
 
-inline void io_context_impl::fd_event_handle::cancel() const noexcept {
+inline void fd_event_handle::cancel() const noexcept {
   if (!valid()) {
     return;
   }
@@ -485,7 +485,7 @@ inline void io_context_impl::fd_event_handle::cancel() const noexcept {
   impl->cancel_fd_event(fd, kind, token);
 }
 
-inline void io_context_impl::timer_event_handle::cancel() const noexcept {
+inline void timer_event_handle::cancel() const noexcept {
   if (!valid()) {
     return;
   }
