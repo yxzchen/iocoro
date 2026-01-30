@@ -5,6 +5,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <new>
 #include <type_traits>
@@ -32,7 +33,33 @@ namespace iocoro {
 
 namespace detail {
 struct any_executor_access;
+class io_context_impl;
+
+template <class Ex>
+struct executor_traits;
 }  // namespace detail
+
+enum class executor_capability : std::uint8_t {
+  none = 0,
+  io = 1 << 0,
+};
+
+inline constexpr auto operator|(executor_capability lhs, executor_capability rhs) noexcept
+  -> executor_capability {
+  return static_cast<executor_capability>(
+    static_cast<std::uint8_t>(lhs) | static_cast<std::uint8_t>(rhs));
+}
+
+inline constexpr auto operator&(executor_capability lhs, executor_capability rhs) noexcept
+  -> executor_capability {
+  return static_cast<executor_capability>(
+    static_cast<std::uint8_t>(lhs) & static_cast<std::uint8_t>(rhs));
+}
+
+inline constexpr auto has_capability(executor_capability caps, executor_capability flag) noexcept
+  -> bool {
+  return (caps & flag) != executor_capability::none;
+}
 
 template <class Ex>
 concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
@@ -40,6 +67,19 @@ concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
   { ex.dispatch(std::move(fn)) } noexcept;
   { std::as_const(ex) == std::as_const(ex) } -> std::convertible_to<bool>;
 };
+
+namespace detail {
+
+template <class Ex>
+struct executor_traits {
+  static auto capabilities(Ex const&) noexcept -> executor_capability {
+    return executor_capability::none;
+  }
+
+  static auto io_context(Ex const&) noexcept -> io_context_impl* { return nullptr; }
+};
+
+}  // namespace detail
 
 class any_executor {
  public:
@@ -112,6 +152,17 @@ class any_executor {
     vtable_->dispatch(ptr_, std::move(fn));
   }
 
+  auto capabilities() const noexcept -> executor_capability {
+    if (!ptr_) {
+      return executor_capability::none;
+    }
+    return vtable_->capabilities(ptr_);
+  }
+
+  auto supports_io() const noexcept -> bool {
+    return has_capability(capabilities(), executor_capability::io);
+  }
+
   explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
  private:
@@ -122,6 +173,8 @@ class any_executor {
     void (*dispatch)(void* object, detail::unique_function<void()> fn) noexcept;
     auto (*equals)(void const* lhs, void const* rhs) noexcept -> bool;
     auto (*target)(void const* object, std::type_info const& ti) noexcept -> void const*;
+    auto (*capabilities)(void const* object) noexcept -> executor_capability;
+    auto (*io_context)(void const* object) noexcept -> detail::io_context_impl*;
     void (*destroy_inline)(void* object) noexcept;
     void (*copy_inline)(void const* src, void* dst);
     void (*move_inline)(void* src, void* dst) noexcept;
@@ -150,6 +203,16 @@ class any_executor {
       return static_cast<Ex const*>(object);
     }
     return nullptr;
+  }
+
+  template <class Ex>
+  static auto capabilities_impl(void const* object) noexcept -> executor_capability {
+    return detail::executor_traits<Ex>::capabilities(*static_cast<Ex const*>(object));
+  }
+
+  template <class Ex>
+  static auto io_context_impl(void const* object) noexcept -> detail::io_context_impl* {
+    return detail::executor_traits<Ex>::io_context(*static_cast<Ex const*>(object));
   }
 
   template <class Ex>
@@ -186,6 +249,8 @@ class any_executor {
       .dispatch = &dispatch_impl<Ex>,
       .equals = &equals_impl<Ex>,
       .target = &target_impl<Ex>,
+      .capabilities = &capabilities_impl<Ex>,
+      .io_context = &io_context_impl<Ex>,
       .destroy_inline = &destroy_inline_impl<Ex>,
       .copy_inline = &copy_inline_impl<Ex>,
       .move_inline = &move_inline_impl<Ex>,
@@ -252,6 +317,13 @@ class any_executor {
       return nullptr;
     }
     return static_cast<T const*>(vtable_->target(ptr_, typeid(T)));
+  }
+
+  auto io_context_ptr() const noexcept -> detail::io_context_impl* {
+    if (!ptr_) {
+      return nullptr;
+    }
+    return vtable_->io_context(ptr_);
   }
 
   inline_storage inline_storage_{};

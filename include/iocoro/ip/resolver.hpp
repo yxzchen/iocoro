@@ -6,6 +6,7 @@
 
 #include <iocoro/any_executor.hpp>
 #include <iocoro/awaitable.hpp>
+#include <iocoro/assert.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_executor.hpp>
@@ -149,9 +150,12 @@ struct resolver<Protocol>::resolve_awaiter {
 
   bool await_ready() const noexcept { return false; }
 
-  void await_suspend(std::coroutine_handle<> h) {
+  template <class Promise>
+    requires requires(Promise& p) { p.get_executor(); }
+  void await_suspend(std::coroutine_handle<Promise> h) {
     state->continuation = h;
-    state->ex = ::iocoro::detail::get_current_executor();
+    state->ex = h.promise().get_executor();
+    IOCORO_ENSURE(state->ex, "resolver: empty continuation executor");
 
     auto host_copy = host;
     auto service_copy = service;

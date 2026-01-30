@@ -189,26 +189,26 @@ class socket_impl_base {
   enum class fd_state : std::uint8_t { closed, opening, open };
 
   auto make_read_wait_op(std::shared_ptr<operation_wait_state> st) -> detail::async_op {
-    auto* ctx = ctx_impl_;
+    auto access = detail::reactor_access{ctx_impl_};
     auto* socket = this;
     return detail::async_op{
       std::move(st),
-      ctx,
-      [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-        auto h = ctx.register_fd_read(socket->native_handle(), std::move(rop));
+      access,
+      [socket](detail::reactor_access const& access, detail::reactor_op_ptr rop) {
+        auto h = access.get().register_fd_read(socket->native_handle(), std::move(rop));
         socket->set_read_handle(h);
         return detail::io_context_impl::event_handle::make(std::move(h));
       }};
   }
 
   auto make_write_wait_op(std::shared_ptr<operation_wait_state> st) -> detail::async_op {
-    auto* ctx = ctx_impl_;
+    auto access = detail::reactor_access{ctx_impl_};
     auto* socket = this;
     return detail::async_op{
       std::move(st),
-      ctx,
-      [socket](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-        auto h = ctx.register_fd_write(socket->native_handle(), std::move(rop));
+      access,
+      [socket](detail::reactor_access const& access, detail::reactor_op_ptr rop) {
+        auto h = access.get().register_fd_write(socket->native_handle(), std::move(rop));
         socket->set_write_handle(h);
         return detail::io_context_impl::event_handle::make(std::move(h));
       }};

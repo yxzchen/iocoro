@@ -52,11 +52,11 @@ class awaitable {
   template <class Promise>
   auto await_suspend(std::coroutine_handle<Promise> h) noexcept -> std::coroutine_handle<> {
     coro_.promise().set_continuation(h);
-    if constexpr (requires {
-                    h.promise().get_executor();
-                    h.promise().get_stop_token();
-                  }) {
-      coro_.promise().inherit_context(h.promise().get_executor(), h.promise().get_stop_token());
+    if constexpr (requires { h.promise().get_executor(); }) {
+      coro_.promise().inherit_executor(h.promise().get_executor());
+    }
+    if constexpr (requires { h.promise().get_stop_token(); }) {
+      coro_.promise().inherit_stop_token(h.promise().get_stop_token());
     }
     return coro_;
   }

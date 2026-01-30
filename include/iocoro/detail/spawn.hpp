@@ -178,7 +178,9 @@ struct spawn_result_awaiter {
     return st->done;
   }
 
-  bool await_suspend(std::coroutine_handle<> h) {
+  template <class Promise>
+    requires requires(Promise& p) { p.get_executor(); }
+  bool await_suspend(std::coroutine_handle<Promise> h) {
     std::scoped_lock lk{st->m};
     if (st->done) {
       return false;
@@ -187,7 +189,8 @@ struct spawn_result_awaiter {
     IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters not supported");
 
     st->waiter = h;
-    st->ex = get_current_executor();
+    st->ex = h.promise().get_executor();
+    IOCORO_ENSURE(st->ex, "co_spawn(use_awaitable): empty executor");
     return true;
   }
 

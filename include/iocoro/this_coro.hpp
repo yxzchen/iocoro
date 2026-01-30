@@ -2,7 +2,6 @@
 
 #include <iocoro/any_executor.hpp>
 #include <stop_token>
-#include <iocoro/detail/executor_guard.hpp>
 
 #include <chrono>
 #include <utility>
@@ -11,10 +10,6 @@ namespace iocoro::this_coro {
 
 struct executor_t {};
 inline constexpr executor_t executor{};
-
-inline auto get_executor() noexcept -> any_executor {
-  return detail::get_current_executor();
-}
 
 struct switch_to_t {
   any_executor ex;

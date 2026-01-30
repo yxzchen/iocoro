@@ -3,8 +3,6 @@
 #include <stop_token>
 
 #include <iocoro/detail/async_op.hpp>
-#include <iocoro/detail/executor_guard.hpp>
-
 #include <functional>
 #include <optional>
 
@@ -29,9 +27,11 @@ struct operation_awaiter {
   bool await_ready() const noexcept { return false; }
 
   template <class Promise>
+    requires requires(Promise& p) { p.get_executor(); }
   bool await_suspend(std::coroutine_handle<Promise> h) {
     st->h = h;
-    st->ex = get_current_executor();
+    st->ex = h.promise().get_executor();
+    IOCORO_ENSURE(st->ex, "operation_awaiter: empty executor");
     if constexpr (requires { h.promise().get_stop_token(); }) {
       auto tok = h.promise().get_stop_token();
       if (tok.stop_possible()) {

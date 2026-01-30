@@ -83,6 +83,7 @@ class strand_executor {
   }
 
  private:
+  friend struct detail::executor_traits<strand_executor>;
   struct state;
 
   explicit strand_executor(std::shared_ptr<state> st) noexcept : state_(std::move(st)) {}
@@ -137,5 +138,26 @@ inline auto make_strand(Ex ex) -> strand_executor {
 }
 
 }  // namespace iocoro
+
+namespace iocoro::detail {
+
+template <>
+struct executor_traits<strand_executor> {
+  static auto capabilities(strand_executor const& ex) noexcept -> executor_capability {
+    if (!ex.state_) {
+      return executor_capability::none;
+    }
+    return ex.state_->base.capabilities();
+  }
+
+  static auto io_context(strand_executor const& ex) noexcept -> io_context_impl* {
+    if (!ex.state_) {
+      return nullptr;
+    }
+    return any_executor_access::io_context(ex.state_->base);
+  }
+};
+
+}  // namespace iocoro::detail
 
 

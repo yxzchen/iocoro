@@ -200,4 +200,20 @@ class thread_pool::basic_executor_type {
 
 }  // namespace iocoro
 
+namespace iocoro::detail {
+
+template <>
+struct executor_traits<thread_pool::basic_executor_type> {
+  static auto capabilities(thread_pool::basic_executor_type const& ex) noexcept
+    -> executor_capability {
+    return ex ? executor_capability::none : executor_capability::none;
+  }
+
+  static auto io_context(thread_pool::basic_executor_type const&) noexcept -> io_context_impl* {
+    return nullptr;
+  }
+};
+
+}  // namespace iocoro::detail
+
 #include <iocoro/impl/thread_pool.ipp>

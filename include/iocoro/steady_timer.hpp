@@ -87,13 +87,13 @@ class steady_timer {
 
  private:
   auto make_wait_op(std::shared_ptr<detail::operation_wait_state> st) -> detail::async_op {
-    auto* ctx = ctx_impl_;
+    auto access = detail::reactor_access{ctx_impl_};
     auto* timer = this;
     return detail::async_op{
       std::move(st),
-      ctx,
-      [timer](detail::io_context_impl& ctx, detail::reactor_op_ptr rop) {
-        auto h = ctx.add_timer(timer->expiry(), std::move(rop));
+      access,
+      [timer](detail::reactor_access const& access, detail::reactor_op_ptr rop) {
+        auto h = access.get().add_timer(timer->expiry(), std::move(rop));
         timer->set_timer_handle(h);
         return detail::io_context_impl::event_handle::make(std::move(h));
       }};

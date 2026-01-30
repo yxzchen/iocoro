@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/any_executor.hpp>
+#include <iocoro/assert.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -60,7 +61,9 @@ struct when_awaiter {
     return (st->remaining.load(std::memory_order_relaxed) == 0);
   }
 
-  bool await_suspend(std::coroutine_handle<> h) {
+  template <class Promise>
+    requires requires(Promise& p) { p.get_executor(); }
+  bool await_suspend(std::coroutine_handle<Promise> h) {
     std::scoped_lock lk{st->m};
     if (st->remaining.load(std::memory_order_relaxed) == 0) {
       return false;
@@ -68,7 +71,8 @@ struct when_awaiter {
     
     IOCORO_ENSURE(!st->waiter, "when_all/when_any: multiple awaiters are not supported");
     st->waiter = h;
-    st->ex = get_current_executor();
+    st->ex = h.promise().get_executor();
+    IOCORO_ENSURE(st->ex, "when_all/when_any: empty executor");
     return true;
   }
 

@@ -77,6 +77,7 @@ class io_executor {
   friend class steady_timer;
   friend class detail::socket::socket_impl_base;
   friend struct detail::io_executor_access;
+  friend struct detail::executor_traits<io_executor>;
 
   void add_work_guard() const noexcept {
     // Work guards are best-effort; if an io_executor is empty, it simply can't guard anything.
@@ -100,3 +101,16 @@ class io_executor {
 };
 
 }  // namespace iocoro
+
+namespace iocoro::detail {
+
+template <>
+struct executor_traits<io_executor> {
+  static auto capabilities(io_executor const& ex) noexcept -> executor_capability {
+    return ex ? executor_capability::io : executor_capability::none;
+  }
+
+  static auto io_context(io_executor const& ex) noexcept -> io_context_impl* { return ex.impl_; }
+};
+
+}  // namespace iocoro::detail

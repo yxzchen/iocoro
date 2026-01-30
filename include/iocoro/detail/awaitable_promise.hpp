@@ -3,8 +3,6 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <stop_token>
-#include <iocoro/detail/executor_guard.hpp>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
 
 #include <cassert>
@@ -60,10 +58,13 @@ struct awaitable_promise_base {
   auto get_stop_token() const noexcept -> std::stop_token { return tok_; }
   void set_stop_token(std::stop_token tok) noexcept { tok_ = std::move(tok); }
 
-  void inherit_context(any_executor parent_ex, std::stop_token parent_tok) noexcept {
+  void inherit_executor(any_executor parent_ex) noexcept {
     if (!ex_) {
       ex_ = std::move(parent_ex);
     }
+  }
+
+  void inherit_stop_token(std::stop_token parent_tok) noexcept {
     if (!tok_.stop_possible()) {
       tok_ = std::move(parent_tok);
     }
@@ -76,10 +77,6 @@ struct awaitable_promise_base {
 
   void set_continuation(std::coroutine_handle<> h) noexcept {
     continuation_ = h;
-    // Child coroutines inherit the current executor by default.
-    if (!ex_) {
-      ex_ = detail::get_current_executor();
-    }
   }
 
   void resume_continuation() noexcept {

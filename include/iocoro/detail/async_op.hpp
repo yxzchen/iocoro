@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/unique_function.hpp>
@@ -24,7 +25,8 @@ struct operation_wait_state {
 /// Async operation wrapper with self-owned registration.
 class async_op {
  public:
-  using register_fn = unique_function<io_context_impl::event_handle(io_context_impl&, reactor_op_ptr)>;
+  using register_fn =
+    unique_function<io_context_impl::event_handle(reactor_access const&, reactor_op_ptr)>;
 
   struct cancel_state {
     std::mutex mtx{};
@@ -58,15 +60,18 @@ class async_op {
   };
 
   async_op(std::shared_ptr<operation_wait_state> st,
-           io_context_impl* ctx,
+           reactor_access access,
            register_fn reg) noexcept
-      : st_(std::move(st)), ctx_(ctx), reg_(std::move(reg)), cancel_(std::make_shared<cancel_state>()) {}
+      : st_(std::move(st)),
+        access_(std::move(access)),
+        reg_(std::move(reg)),
+        cancel_(std::make_shared<cancel_state>()) {}
 
   void start() noexcept {
-    IOCORO_ENSURE(ctx_ != nullptr, "async_op: null io_context_impl");
+    IOCORO_ENSURE(access_, "async_op: null reactor access");
     IOCORO_ENSURE(reg_, "async_op: empty registration");
     auto op = make_reactor_op<state>(st_);
-    auto handle = reg_(*ctx_, std::move(op));
+    auto handle = reg_(access_, std::move(op));
     cancel_->set_handle(std::move(handle));
   }
 
@@ -92,7 +97,7 @@ class async_op {
   };
 
   std::shared_ptr<operation_wait_state> st_;
-  io_context_impl* ctx_ = nullptr;
+  reactor_access access_{};
   register_fn reg_{};
   std::shared_ptr<cancel_state> cancel_{};
 };
