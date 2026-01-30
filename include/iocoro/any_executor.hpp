@@ -35,13 +35,11 @@ struct any_executor_access;
 }  // namespace detail
 
 template <class Ex>
-concept executor =
-    std::is_copy_constructible_v<Ex> && std::is_nothrow_move_constructible_v<Ex> &&
-    requires(Ex ex, detail::unique_function<void()> fn) {
-      { ex.post(std::move(fn)) } noexcept;
-      { ex.dispatch(std::move(fn)) } noexcept;
-      { std::as_const(ex) == std::as_const(ex) } noexcept -> std::convertible_to<bool>;
-    };
+concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
+  { ex.post(std::move(fn)) } noexcept;
+  { ex.dispatch(std::move(fn)) } noexcept;
+  { std::as_const(ex) == std::as_const(ex) } -> std::convertible_to<bool>;
+};
 
 class any_executor {
  public:
@@ -51,6 +49,8 @@ class any_executor {
   template <executor Ex>
   any_executor(Ex ex) {
     using executor_type = std::decay_t<Ex>;
+    static_assert(std::is_copy_constructible_v<executor_type>);
+    static_assert(std::is_nothrow_move_constructible_v<executor_type>);
     if constexpr (fits_inline<executor_type>) {
       ::new (storage_ptr()) executor_type(std::move(ex));
       ptr_ = storage_ptr();

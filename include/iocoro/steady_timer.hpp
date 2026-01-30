@@ -56,14 +56,9 @@ class steady_timer {
   ///
   /// Returns:
   /// - `std::error_code{}` on successful timer expiry.
-  /// - `error::operation_aborted` if the timer was cancelled.
-  /// Wait until expiry (or cancellation) as an awaitable, observing a cancellation token.
-  auto async_wait(use_awaitable_t, cancellation_token tok = {}) -> awaitable<std::error_code> {
-    auto awaiter = detail::operation_awaiter<timer_wait_operation>{this};
-    if (!tok) {
-      co_return co_await std::move(awaiter);
-    }
-    co_return co_await detail::cancellable(std::move(awaiter), std::move(tok));
+  /// - `error::operation_aborted` if cancelled via current coroutine cancellation context.
+  auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
+    co_return co_await detail::operation_awaiter<timer_wait_operation>{this};
   }
 
   /// Cancel the pending timer operation.

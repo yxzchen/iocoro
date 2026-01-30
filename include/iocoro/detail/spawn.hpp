@@ -139,7 +139,7 @@ struct spawn_result_state {
     }
     if (h) {
       IOCORO_ENSURE(ex, "spawn_result_state: empty executor with non empty waiter");
-      ex.post([h]() { h.resume(); });
+      ex.post([h]() mutable { h.resume(); });
     }
   }
 };

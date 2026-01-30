@@ -4,9 +4,10 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/cancellation_token.hpp>
-#include <iocoro/co_spawn.hpp>
 #include <iocoro/completion_token.hpp>
+#include <iocoro/detail/io_executor_access.hpp>
 #include <iocoro/detail/executor_cast.hpp>
+#include <iocoro/detail/operation_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_executor.hpp>
@@ -19,6 +20,8 @@
 #include <chrono>
 #include <concepts>
 #include <memory>
+#include <atomic>
+#include <mutex>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -27,78 +30,193 @@ namespace iocoro {
 
 namespace detail {
 
-template <class F>
-using cancellable_awaitable_t = std::invoke_result_t<F&, cancellation_token>;
+struct timeout_state {
+  std::atomic<bool> active{true};
+  std::shared_ptr<cancellation_source> src{};
+  std::shared_ptr<std::atomic<bool>> fired{};
 
-template <class F>
-using cancellable_result_t = traits::awaitable_result_t<cancellable_awaitable_t<F>>;
+  std::mutex mtx{};
+  io_context_impl::timer_event_handle handle{};
+};
 
-template <class F>
-concept cancellable_operation_factory =
-  std::invocable<F&, cancellation_token> && requires { typename cancellable_result_t<F>; };
+class timeout_timer_operation final : public operation_base {
+ public:
+  timeout_timer_operation(std::shared_ptr<timeout_state> st, io_context_impl* impl,
+                          std::chrono::steady_clock::duration timeout) noexcept
+      : st_(std::move(st)), impl_(impl), timeout_(timeout) {}
+
+  void on_ready() noexcept override {
+    if (!st_) {
+      return;
+    }
+    if (!st_->active.exchange(false, std::memory_order_acq_rel)) {
+      return;
+    }
+    if (st_->fired) {
+      st_->fired->store(true, std::memory_order_release);
+    }
+    if (st_->src) {
+      st_->src->request_cancel();
+    }
+  }
+
+  void on_abort(std::error_code) noexcept override {
+    // Ignore abort (cancel/shutdown).
+  }
+
+ private:
+  void do_start(std::unique_ptr<operation_base> self) override {
+    IOCORO_ENSURE(impl_, "timeout_timer_operation: empty impl");
+
+    // schedule timer and publish handle for cancellation
+    auto h = impl_->schedule_timer(timeout_, std::move(self));
+    {
+      std::scoped_lock lk{st_->mtx};
+      st_->handle = h;
+    }
+
+    // If scope already inactive, cancel immediately.
+    if (!st_->active.load(std::memory_order_acquire) && h) {
+      h.cancel();
+    }
+  }
+
+  std::shared_ptr<timeout_state> st_;
+  io_context_impl* impl_{};
+  std::chrono::steady_clock::duration timeout_{};
+};
+
+inline void cancel_timeout_timer(timeout_state& st) noexcept {
+  io_context_impl::timer_event_handle h{};
+  {
+    std::scoped_lock lk{st.mtx};
+    h = std::exchange(st.handle, io_context_impl::timer_event_handle::invalid_handle());
+  }
+  if (h) {
+    h.cancel();
+  }
+}
 
 }  // namespace detail
 
-/// Await an operation with a deadline.
-///
-/// Model:
-/// - timeout is a cancellation source: when the deadline fires, we request cancellation.
-/// - the operation is expected to observe cancellation_token (e.g. socket read/write/connect).
-///
-/// Requirements:
-/// - op_factory must accept `cancellation_token` and return `iocoro::awaitable<T>`.
-template <class OpFactory>
-  requires detail::cancellable_operation_factory<std::remove_cvref_t<OpFactory>>
-auto with_timeout(io_executor ex, OpFactory&& op_factory,
-                  std::chrono::steady_clock::duration timeout)
-  -> awaitable<detail::cancellable_result_t<std::remove_cvref_t<OpFactory>>> {
-  using result_t = detail::cancellable_result_t<std::remove_cvref_t<OpFactory>>;
-  using result_traits = traits::timeout_result_traits<result_t>;
+namespace this_coro {
 
-  IOCORO_ENSURE(ex, "with_timeout: requires a non-empty io_executor");
+class timeout_scope {
+ public:
+  timeout_scope() = default;
 
-  if (timeout <= std::chrono::steady_clock::duration::zero()) {
-    co_return result_traits::timed_out();
+  timeout_scope(::iocoro::detail::awaitable_promise_base::cancellation_scope cancel_scope,
+                std::shared_ptr<detail::timeout_state> st, cancellation_registration upstream_reg,
+                std::shared_ptr<std::atomic<bool>> fired) noexcept
+      : cancel_scope_(std::move(cancel_scope)),
+        st_(std::move(st)),
+        upstream_reg_(std::move(upstream_reg)),
+        fired_(std::move(fired)) {}
+
+  timeout_scope(timeout_scope const&) = delete;
+  auto operator=(timeout_scope const&) -> timeout_scope& = delete;
+
+  timeout_scope(timeout_scope&&) noexcept = default;
+  auto operator=(timeout_scope&&) noexcept -> timeout_scope& = default;
+
+  ~timeout_scope() { reset(); }
+
+  auto timed_out() const noexcept -> bool {
+    if (!fired_) {
+      return false;
+    }
+    return fired_->load(std::memory_order_acquire);
   }
 
-  cancellation_source timeout_src{};
-  auto timeout_tok = timeout_src.token();
+  void reset() noexcept {
+    // 1) detach upstream cancellation
+    upstream_reg_.reset();
 
-  auto timer = std::make_shared<steady_timer>(ex);
-  timer->expires_after(timeout);
+    // 2) mark inactive
+    if (st_) {
+      st_->active.store(false, std::memory_order_release);
+    }
 
-  auto timer_task = co_spawn(
-    co_await this_coro::executor,
-    // Capturing by value would cause heap-use-after-free. Not sure why.
-    [&timer, &timeout_src]() mutable -> awaitable<void> {
-      auto ec = co_await timer->async_wait(use_awaitable);
-      if (!ec) {
-        timeout_src.request_cancel();
+    // 3) cancel timer
+    if (st_) {
+      detail::cancel_timeout_timer(*st_);
+      st_.reset();
+    }
+
+    // 4) restore previous cancellation context
+    cancel_scope_.reset();
+
+    // 5) release fired flag
+    fired_.reset();
+  }
+
+ private:
+  ::iocoro::detail::awaitable_promise_base::cancellation_scope cancel_scope_{};
+  std::shared_ptr<detail::timeout_state> st_{};
+  cancellation_registration upstream_reg_{};
+  std::shared_ptr<std::atomic<bool>> fired_{};
+};
+
+}  // namespace this_coro
+
+namespace detail {
+
+template <class Rep, class Period>
+auto awaitable_promise_base::await_transform(this_coro::scoped_timeout_t<Rep, Period> t) noexcept {
+  using duration_t = std::chrono::duration<Rep, Period>;
+
+  struct awaiter {
+    awaitable_promise_base* self;
+    duration_t timeout;
+
+    bool await_ready() noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) noexcept {}
+
+    auto await_resume() noexcept -> this_coro::timeout_scope {
+      auto prev_tok = self->get_cancellation_token();
+
+      auto ex_any = self->get_executor();
+      auto ex = require_executor<io_executor>(ex_any);
+      auto* impl = io_executor_access::impl(ex);
+      IOCORO_ENSURE(impl, "scoped_timeout: empty io_executor impl");
+
+      auto fired = std::make_shared<std::atomic<bool>>(false);
+      auto combined_src = std::make_shared<cancellation_source>();
+
+      cancellation_registration upstream_reg{};
+      if (prev_tok) {
+        upstream_reg =
+          prev_tok.register_callback([combined_src]() { combined_src->request_cancel(); });
       }
-    },
-    use_awaitable);
 
-  auto r = co_await std::invoke(std::forward<OpFactory>(op_factory), timeout_tok);
+      auto st = std::make_shared<timeout_state>();
+      st->src = combined_src;
+      st->fired = fired;
 
-  timer->cancel();
-  co_await std::move(timer_task);
+      if (timeout > duration_t::zero()) {
+        auto op =
+          std::make_unique<timeout_timer_operation>(st, impl, std::chrono::duration_cast<std::chrono::steady_clock::duration>(timeout));
+        op->start(std::move(op));
+      } else {
+        fired->store(true, std::memory_order_release);
+        combined_src->request_cancel();
+      }
 
-  if (timeout_tok.stop_requested() && result_traits::is_operation_aborted(r)) {
-    co_return result_traits::timed_out();
-  }
+      self->set_cancellation_token(combined_src->token());
 
-  co_return r;
+      return this_coro::timeout_scope{
+        cancellation_scope{self, std::move(prev_tok)},
+        std::move(st),
+        std::move(upstream_reg),
+        std::move(fired),
+      };
+    }
+  };
+
+  return awaiter{this, t.timeout};
 }
 
-/// Syntax sugar: IO coroutine usage (requires current coroutine bound to io_executor).
-template <class OpFactory>
-  requires detail::cancellable_operation_factory<std::remove_cvref_t<OpFactory>>
-auto with_timeout(OpFactory&& op_factory, std::chrono::steady_clock::duration timeout)
-  -> awaitable<detail::cancellable_result_t<std::remove_cvref_t<OpFactory>>> {
-  auto ex_any = co_await this_coro::executor;
-  auto ex = detail::require_executor<io_executor>(ex_any);
-  co_return co_await with_timeout(ex, std::forward<OpFactory>(op_factory), timeout);
-}
+}  // namespace detail
 
 /// Detached variant (awaitable input).
 ///

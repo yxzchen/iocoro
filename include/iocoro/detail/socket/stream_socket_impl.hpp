@@ -159,15 +159,14 @@ class stream_socket_impl {
   auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
 
   /// Connect to a native endpoint.
-  auto async_connect(sockaddr const* addr, socklen_t len, cancellation_token tok = {})
-    -> awaitable<std::error_code>;
+  auto async_connect(sockaddr const* addr, socklen_t len) -> awaitable<std::error_code>;
 
   /// Read at most `size` bytes into `data`.
-  auto async_read_some(std::span<std::byte> buffer, cancellation_token tok = {})
+  auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
   /// Write at most `size` bytes from `data`.
-  auto async_write_some(std::span<std::byte const> buffer, cancellation_token tok = {})
+  auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
   auto shutdown(shutdown_type what) -> std::error_code;

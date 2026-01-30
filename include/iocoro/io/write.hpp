@@ -23,12 +23,13 @@ namespace iocoro::io {
 /// - If `async_write_some` yields 0 before the buffer is fully written, this returns
 ///   `error::broken_pipe`.
 template <async_write_stream Stream>
-auto async_write(Stream& s, std::span<std::byte const> buf, cancellation_token tok = {})
+auto async_write(Stream& s, std::span<std::byte const> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
+  auto tok = co_await this_coro::cancellation_token;
   auto const wanted = buf.size();
 
   while (!buf.empty()) {
-    auto r = co_await s.async_write_some(buf, tok);
+    auto r = co_await s.async_write_some(buf);
     if (!r) {
       co_return r;
     }
@@ -50,12 +51,13 @@ template <async_write_stream Stream, class Rep, class Period>
 auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
                          std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout(
-    s.get_executor(),
-    [&](cancellation_token tok) {
-      return async_write(s, buf, std::move(tok));
-    },
-    timeout);
+  co_await this_coro::switch_to(s.get_executor());
+  auto scope = co_await this_coro::scoped_timeout(timeout);
+  auto r = co_await async_write(s, buf);
+  if (!r && r.error() == error::operation_aborted && scope.timed_out()) {
+    co_return unexpected(error::timed_out);
+  }
+  co_return r;
 }
 
 /// Write at most `buf.size()` bytes from `buf`, but fail with `error::timed_out`
@@ -64,12 +66,13 @@ template <async_write_stream Stream, class Rep, class Period>
 auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
                               std::chrono::duration<Rep, Period> timeout)
   -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout(
-    s.get_executor(),
-    [&](cancellation_token tok) {
-      return s.async_write_some(buf, std::move(tok));
-    },
-    timeout);
+  co_await this_coro::switch_to(s.get_executor());
+  auto scope = co_await this_coro::scoped_timeout(timeout);
+  auto r = co_await s.async_write_some(buf);
+  if (!r && r.error() == error::operation_aborted && scope.timed_out()) {
+    co_return unexpected(error::timed_out);
+  }
+  co_return r;
 }
 
 }  // namespace iocoro::io

@@ -7,6 +7,7 @@
 #include <iocoro/io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/steady_timer.hpp>
+#include <iocoro/this_coro.hpp>
 
 #include "test_util.hpp"
 
@@ -71,7 +72,9 @@ TEST(steady_timer_test, cancellation_token_does_not_hang_under_race) {
       auto tok = src.token();
 
       std::thread th([&] { src.request_cancel(); });
-      auto out = co_await t.async_wait(iocoro::use_awaitable, tok);
+      auto scope = co_await iocoro::this_coro::set_cancellation_token(tok);
+      auto out = co_await t.async_wait(iocoro::use_awaitable);
+      scope.reset();
       th.join();
 
       if (out != iocoro::error::operation_aborted) {

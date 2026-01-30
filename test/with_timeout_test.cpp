@@ -5,6 +5,7 @@
 #include <iocoro/expected.hpp>
 #include <iocoro/with_timeout.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/this_coro.hpp>
 
 #include "test_util.hpp"
 
@@ -46,9 +47,10 @@ struct cancellable_test_stream {
     cancelled_write.store(true, std::memory_order_release);
   }
 
-  auto async_read_some(std::span<std::byte> buf, iocoro::cancellation_token tok = {})
+  auto async_read_some(std::span<std::byte> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
+    auto tok = co_await iocoro::this_coro::cancellation_token;
     for (int i = 0; i < 200; ++i) {
       if (tok.stop_requested() ||
           cancelled.load(std::memory_order_acquire) ||
@@ -60,9 +62,10 @@ struct cancellable_test_stream {
     co_return iocoro::unexpected(iocoro::error::timed_out);
   }
 
-  auto async_write_some(std::span<std::byte const> buf, iocoro::cancellation_token tok = {})
+  auto async_write_some(std::span<std::byte const> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
     (void)buf;
+    auto tok = co_await iocoro::this_coro::cancellation_token;
     for (int i = 0; i < 200; ++i) {
       if (tok.stop_requested() ||
           cancelled.load(std::memory_order_acquire) ||
@@ -75,117 +78,50 @@ struct cancellable_test_stream {
   }
 };
 
-TEST(with_timeout_test, completes_before_timeout_returns_value) {
+TEST(with_timeout_test, this_coro_with_timeout_allows_completion_before_deadline) {
   iocoro::io_context ctx;
 
   auto r =
     iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::with_timeout(
-        [&](iocoro::cancellation_token) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-          co_await iocoro::co_sleep(5ms);
-          co_return 42;
-        },
-        200ms);
+      auto scope = co_await iocoro::this_coro::scoped_timeout(200ms);
+      co_await iocoro::co_sleep(5ms);
+      co_return 42;
     }());
 
   ASSERT_TRUE(r) << r.error().message();
   EXPECT_EQ(*r, 42);
 }
 
-TEST(with_timeout_test,
-     error_code_completes_before_timeout_returns_success) {
+TEST(with_timeout_test, this_coro_with_timeout_allows_success_error_code_before_deadline) {
   iocoro::io_context ctx;
 
   auto r = iocoro::sync_wait(ctx, [&]() -> iocoro::awaitable<std::error_code> {
-    co_return co_await iocoro::with_timeout(
-      [&](iocoro::cancellation_token) -> iocoro::awaitable<std::error_code> {
-        co_await iocoro::co_sleep(5ms);
-        co_return std::error_code{};
-      },
-      200ms);
+    auto scope = co_await iocoro::this_coro::scoped_timeout(200ms);
+    co_await iocoro::co_sleep(5ms);
+    co_return std::error_code{};
   }());
 
   EXPECT_FALSE(static_cast<bool>(r)) << r.message();
 }
 
-TEST(with_timeout_test, timeout_maps_operation_aborted_to_timed_out) {
+TEST(with_timeout_test, scoped_timeout_fired_becomes_true_on_deadline) {
   iocoro::io_context ctx;
 
-  auto r = iocoro::sync_wait_for(
-    ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::with_timeout(
-        [&](iocoro::cancellation_token tok) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-          // Wait until cancelled, then surface operation_aborted.
-          for (int i = 0; i < 200; ++i) {
-            if (tok.stop_requested()) {
-              co_return iocoro::unexpected(iocoro::error::operation_aborted);
-            }
-            co_await iocoro::co_sleep(1ms);
-          }
-          co_return iocoro::unexpected(iocoro::error::timed_out);
-        },
-        10ms);
-    }());
-
-  ASSERT_FALSE(r);
-  EXPECT_EQ(r.error(), iocoro::error::timed_out);
-}
-
-TEST(with_timeout_test,
-     error_code_timeout_maps_operation_aborted_to_timed_out) {
-  iocoro::io_context ctx;
-
-  auto r = iocoro::sync_wait_for(ctx, 500ms, [&]() -> iocoro::awaitable<std::error_code> {
-    co_return co_await iocoro::with_timeout(
-      [&](iocoro::cancellation_token tok) -> iocoro::awaitable<std::error_code> {
-        // Wait until cancelled, then surface operation_aborted.
-        for (int i = 0; i < 200; ++i) {
-          if (tok.stop_requested()) {
-            co_return iocoro::error::operation_aborted;
-          }
-          co_await iocoro::co_sleep(1ms);
-        }
-        co_return iocoro::error::timed_out;
-      },
-      10ms);
+  auto r = iocoro::sync_wait_for(ctx, 500ms, []() -> iocoro::awaitable<std::error_code> {
+    auto scope = co_await iocoro::this_coro::scoped_timeout(10ms);
+    for (int i = 0; i < 200; ++i) {
+      auto tok = co_await iocoro::this_coro::cancellation_token;
+      if (tok.stop_requested()) {
+        EXPECT_TRUE(scope.timed_out());
+        co_return iocoro::error::operation_aborted;
+      }
+      co_await iocoro::co_sleep(1ms);
+    }
+    co_return iocoro::error::timed_out;
   }());
 
   EXPECT_TRUE(static_cast<bool>(r)) << r.message();
-  EXPECT_EQ(r, iocoro::error::timed_out);
-}
-
-TEST(with_timeout_test, external_operation_aborted_is_not_mapped_to_timed_out) {
-  iocoro::io_context ctx;
-
-  auto r = iocoro::sync_wait_for(
-    ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::with_timeout(
-        [&](iocoro::cancellation_token) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-          // External cancellation: complete with operation_aborted before timeout can fire.
-          co_return iocoro::unexpected(iocoro::error::operation_aborted);
-        },
-        200ms);
-    }());
-
-  ASSERT_FALSE(r);
-  EXPECT_EQ(r.error(), iocoro::error::operation_aborted);
-}
-
-TEST(with_timeout_test, timeout_does_not_map_non_operation_aborted_error) {
-  iocoro::io_context ctx;
-
-  auto r = iocoro::sync_wait_for(
-    ctx, 500ms, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-      co_return co_await iocoro::with_timeout(
-        [&](iocoro::cancellation_token) -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
-          co_await iocoro::co_sleep(20ms);  // ensure the timer has time to fire
-          co_return iocoro::unexpected(iocoro::error::broken_pipe);
-        },
-        5ms);
-    }());
-
-  ASSERT_FALSE(r);
-  EXPECT_EQ(r.error(), iocoro::error::broken_pipe);
+  EXPECT_EQ(r, iocoro::error::operation_aborted);
 }
 
 TEST(with_timeout_test, detached_timeout_returns_timed_out_without_waiting_expected) {

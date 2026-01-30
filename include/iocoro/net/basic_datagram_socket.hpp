@@ -90,11 +90,9 @@ class basic_datagram_socket
   /// Send a datagram to the specified destination.
   ///
   /// The entire buffer is sent as a single datagram (message boundary preserved).
-  auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination,
-                     cancellation_token tok = {})
+  auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
       -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return co_await this->impl_->async_send_to(
-      buffer, destination.data(), destination.size(), std::move(tok));
+    co_return co_await this->impl_->async_send_to(buffer, destination.data(), destination.size());
   }
 
   /// Receive a datagram and retrieve the source endpoint.
@@ -102,13 +100,13 @@ class basic_datagram_socket
   /// Important: The socket must be bound before calling this.
   /// The entire message is received in one operation (message boundary preserved).
   /// If the buffer is too small, an error is returned (message_size).
-  auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source, cancellation_token tok = {})
+  auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source)
       -> awaitable<expected<std::size_t, std::error_code>> {
     sockaddr_storage ss{};
     socklen_t len = sizeof(ss);
 
-    auto result = co_await this->impl_->async_receive_from(
-        buffer, reinterpret_cast<sockaddr*>(&ss), &len, std::move(tok));
+    auto result =
+      co_await this->impl_->async_receive_from(buffer, reinterpret_cast<sockaddr*>(&ss), &len);
 
     if (!result) {
       co_return unexpected(result.error());

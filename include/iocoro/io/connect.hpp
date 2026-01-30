@@ -26,10 +26,13 @@ template <class Socket, class Endpoint, class Rep, class Period>
 auto async_connect_timeout(Socket& s, Endpoint const& ep,
                            std::chrono::duration<Rep, Period> timeout)
   -> ::iocoro::awaitable<std::error_code> {
-  co_return co_await ::iocoro::with_timeout(
-    s.get_executor(),
-    [&](::iocoro::cancellation_token tok) { return s.async_connect(ep, std::move(tok)); },
-    timeout);
+  co_await ::iocoro::this_coro::switch_to(s.get_executor());
+  auto scope = co_await ::iocoro::this_coro::scoped_timeout(timeout);
+  auto ec = co_await s.async_connect(ep);
+  if (ec == ::iocoro::error::operation_aborted && scope.timed_out()) {
+    co_return ::iocoro::error::timed_out;
+  }
+  co_return ec;
 }
 
 }  // namespace iocoro::io

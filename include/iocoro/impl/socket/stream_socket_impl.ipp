@@ -65,13 +65,14 @@ inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> std
   return {};
 }
 
-inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len,
-                                              cancellation_token tok) -> awaitable<std::error_code> {
+inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len)
+  -> awaitable<std::error_code> {
   if (!is_open()) {
     co_return error::not_open;
   }
 
   auto const fd = base_.native_handle();
+  auto tok = co_await this_coro::cancellation_token;
 
   std::uint64_t my_epoch = 0;
   {
@@ -125,7 +126,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   // Wait for writability, then check SO_ERROR.
-  auto wait_ec = co_await base_.wait_write_ready(tok);
+  auto wait_ec = co_await base_.wait_write_ready();
   if (wait_ec) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
@@ -167,8 +168,9 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   co_return std::error_code{};
 }
 
-inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, cancellation_token tok)
+inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
+  auto tok = co_await this_coro::cancellation_token;
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -215,7 +217,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, can
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_read_ready(tok);
+      auto ec = co_await base_.wait_read_ready();
       if (ec) {
         co_return unexpected(ec);
       }
@@ -231,8 +233,9 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, can
   }
 }
 
-inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer, cancellation_token tok)
+inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
+  auto tok = co_await this_coro::cancellation_token;
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -280,7 +283,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_write_ready(tok);
+      auto ec = co_await base_.wait_write_ready();
       if (ec) {
         co_return unexpected(ec);
       }

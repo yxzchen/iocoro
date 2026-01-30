@@ -6,6 +6,7 @@
 #include <iocoro/io_context.hpp>
 #include <iocoro/local/endpoint.hpp>
 #include <iocoro/local/stream.hpp>
+#include <iocoro/this_coro.hpp>
 
 #include "test_util.hpp"
 
@@ -422,7 +423,9 @@ TEST(local_stream_test, read_some_with_cancellation_token_aborts) {
 
         auto s = std::move(*accepted);
         std::array<std::byte, 8> buf{};
-        auto r = co_await s.async_read_some(buf, src.token());
+        auto scope = co_await iocoro::this_coro::set_cancellation_token(src.token());
+        auto r = co_await s.async_read_some(buf);
+        scope.reset();
         if (!r) {
           read_ec = r.error();
         } else {

@@ -2,6 +2,7 @@
 
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
+#include <iocoro/cancellation_token.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/io_executor.hpp>
 #include <iocoro/this_coro.hpp>
@@ -21,6 +22,7 @@ namespace iocoro::detail {
 
 struct awaitable_promise_base {
   any_executor ex_{};
+  cancellation_token tok_{};
   std::coroutine_handle<> continuation_{};
   std::exception_ptr exception_{};
   bool detached_{false};
@@ -39,7 +41,7 @@ struct awaitable_promise_base {
         // If detached, the coroutine owns its own lifetime.
         if (self->detached_) {
           // Detached coroutines must not have a continuation.
-          self->ex_.post([h, ex = self->ex_]() mutable { h.destroy(); });
+          self->ex_.post([h]() mutable { h.destroy(); });
           return;
         }
 
@@ -54,6 +56,18 @@ struct awaitable_promise_base {
 
   auto get_executor() noexcept { return ex_; }
   void set_executor(any_executor ex) noexcept { ex_ = std::move(ex); }
+
+  auto get_cancellation_token() const noexcept -> cancellation_token { return tok_; }
+  void set_cancellation_token(cancellation_token tok) noexcept { tok_ = std::move(tok); }
+
+  void inherit_context(any_executor parent_ex, cancellation_token parent_tok) noexcept {
+    if (!ex_) {
+      ex_ = std::move(parent_ex);
+    }
+    if (!tok_) {
+      tok_ = std::move(parent_tok);
+    }
+  }
 
   void detach() noexcept {
     IOCORO_ENSURE(ex_, "awaitable_promise: detach() requires executor");
@@ -102,6 +116,67 @@ struct awaitable_promise_base {
     };
     return awaiter{ex_};
   }
+
+  auto await_transform(this_coro::cancellation_token_t) noexcept {
+    struct awaiter {
+      cancellation_token tok;
+      bool await_ready() noexcept { return true; }
+      auto await_resume() noexcept -> cancellation_token { return tok; }
+      void await_suspend(std::coroutine_handle<>) noexcept {}
+    };
+    return awaiter{tok_};
+  }
+
+  struct cancellation_scope {
+    awaitable_promise_base* self{};
+    cancellation_token prev{};
+
+    cancellation_scope() noexcept = default;
+    cancellation_scope(awaitable_promise_base* s, cancellation_token p) noexcept : self(s), prev(std::move(p)) {}
+
+    cancellation_scope(cancellation_scope const&) = delete;
+    auto operator=(cancellation_scope const&) -> cancellation_scope& = delete;
+
+    cancellation_scope(cancellation_scope&& other) noexcept
+        : self(std::exchange(other.self, nullptr)), prev(std::move(other.prev)) {}
+
+    auto operator=(cancellation_scope&& other) noexcept -> cancellation_scope& {
+      if (this != &other) {
+        reset();
+        self = std::exchange(other.self, nullptr);
+        prev = std::move(other.prev);
+      }
+      return *this;
+    }
+
+    ~cancellation_scope() { reset(); }
+
+    void reset() noexcept {
+      if (self) {
+        self->set_cancellation_token(std::move(prev));
+        self = nullptr;
+      }
+    }
+  };
+
+  auto await_transform(this_coro::set_cancellation_token_t t) noexcept {
+    struct awaiter {
+      awaitable_promise_base* self;
+      cancellation_token next;
+
+      bool await_ready() noexcept { return true; }
+      auto await_resume() noexcept -> cancellation_scope {
+        auto prev = self->get_cancellation_token();
+        self->set_cancellation_token(std::move(next));
+        return cancellation_scope{self, std::move(prev)};
+      }
+      void await_suspend(std::coroutine_handle<>) noexcept {}
+    };
+    return awaiter{this, std::move(t.tok)};
+  }
+
+  template <class Rep, class Period>
+  auto await_transform(this_coro::scoped_timeout_t<Rep, Period> t) noexcept;
 
   auto await_transform(this_coro::switch_to_t t) noexcept {
     struct awaiter {

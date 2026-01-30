@@ -49,8 +49,15 @@ class awaitable {
   }
 
   bool await_ready() const noexcept { return false; }
-  auto await_suspend(std::coroutine_handle<> h) noexcept -> std::coroutine_handle<> {
+  template <class Promise>
+  auto await_suspend(std::coroutine_handle<Promise> h) noexcept -> std::coroutine_handle<> {
     coro_.promise().set_continuation(h);
+    if constexpr (requires {
+                    h.promise().get_executor();
+                    h.promise().get_cancellation_token();
+                  }) {
+      coro_.promise().inherit_context(h.promise().get_executor(), h.promise().get_cancellation_token());
+    }
     return coro_;
   }
   auto await_resume() -> T {

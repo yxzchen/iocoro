@@ -5,6 +5,7 @@
 #include <iocoro/io/read_until.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/io_executor.hpp>
+#include <iocoro/this_coro.hpp>
 
 #include "test_util.hpp"
 
@@ -27,8 +28,9 @@ struct mock_read_stream {
 
   auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
 
-  auto async_read_some(std::span<std::byte> buf, iocoro::cancellation_token tok = {})
+  auto async_read_some(std::span<std::byte> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    auto tok = co_await iocoro::this_coro::cancellation_token;
     if (tok.stop_requested()) {
       co_return iocoro::unexpected(iocoro::error::operation_aborted);
     }
