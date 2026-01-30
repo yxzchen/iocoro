@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/work_guard.hpp>
 
@@ -12,9 +12,9 @@ namespace {
 
 using namespace std::chrono_literals;
 
-// Test io_executor creation and bool conversion
+// Test IO executor creation and bool conversion
 TEST(io_executor_test, default_executor_is_empty) {
-  iocoro::io_executor ex;
+  iocoro::any_io_executor ex;
   EXPECT_FALSE(ex);
 }
 
@@ -24,7 +24,7 @@ TEST(io_executor_test, context_provides_valid_executor) {
   EXPECT_TRUE(ex);
 }
 
-// Test io_executor equality
+// Test IO executor equality
 TEST(io_executor_test, executors_from_same_context_are_equal) {
   iocoro::io_context ctx;
   auto ex1 = ctx.get_executor();
@@ -113,7 +113,7 @@ TEST(io_executor_test, work_guard_keeps_context_alive) {
   std::atomic<bool> work_done{false};
   std::atomic<bool> stop_guard{false};
 
-  auto guard_ptr = std::make_shared<iocoro::work_guard<iocoro::io_executor>>(ex);
+  auto guard_ptr = std::make_shared<iocoro::work_guard<iocoro::any_io_executor>>(ex);
 
   std::thread t([&, guard_ptr] {
     std::this_thread::sleep_for(10ms);
@@ -134,16 +134,16 @@ TEST(io_executor_test, work_guard_is_movable) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
-  iocoro::work_guard<iocoro::io_executor> guard1(ex);
-  iocoro::work_guard<iocoro::io_executor> guard2(std::move(guard1));
+  iocoro::work_guard<iocoro::any_io_executor> guard1(ex);
+  iocoro::work_guard<iocoro::any_io_executor> guard2(std::move(guard1));
 
   EXPECT_TRUE(guard2.get_executor());
 
-  iocoro::work_guard<iocoro::io_executor> guard3 = std::move(guard2);
+  iocoro::work_guard<iocoro::any_io_executor> guard3 = std::move(guard2);
   EXPECT_TRUE(guard3.get_executor());
 }
 
-// Test that io_executor can be copied and both copies refer to the same context
+// Test that IO executor can be copied and both copies refer to the same context
 TEST(io_executor_test, executor_is_copyable) {
   iocoro::io_context ctx;
   auto ex1 = ctx.get_executor();

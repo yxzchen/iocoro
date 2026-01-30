@@ -3,6 +3,7 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <stop_token>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/this_coro.hpp>
@@ -82,9 +83,9 @@ inline auto scoped_timeout_get_timer_impl(awaitable_promise_base& promise,
                                           any_executor timer_ex) noexcept -> io_context_impl* {
   auto timer_any = timer_ex ? timer_ex : promise.get_executor();
   IOCORO_ENSURE(timer_any,
-               "scoped_timeout: requires a timer executor (pass iocoro::io_executor explicitly)");
+               "scoped_timeout: requires a timer executor (pass iocoro::any_io_executor explicitly)");
   IOCORO_ENSURE(timer_any.supports_io(),
-               "scoped_timeout: timer executor must support IO (pass iocoro::io_executor)");
+               "scoped_timeout: timer executor must support IO (pass iocoro::any_io_executor)");
 
   auto access = detail::get_reactor_access(timer_any);
   IOCORO_ENSURE(access, "scoped_timeout: empty reactor access");

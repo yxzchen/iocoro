@@ -2,7 +2,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -53,7 +53,7 @@ namespace iocoro::io {
 
 template <class Stream>
 concept io_executor_stream = requires(Stream& s) {
-  { s.get_executor() } -> std::same_as<io_executor>;
+  { s.get_executor() } -> std::same_as<any_io_executor>;
 };
 
 template <class Stream>
@@ -76,7 +76,7 @@ concept async_stream = async_read_stream<Stream> && async_write_stream<Stream>;
 
 template <class Socket, class Endpoint>
 concept async_connect_socket = requires(Socket& s, Endpoint const& ep) {
-  { s.get_executor() } -> std::same_as<::iocoro::io_executor>;
+  { s.get_executor() } -> std::same_as<::iocoro::any_io_executor>;
   { s.async_connect(ep) } -> std::same_as<::iocoro::awaitable<std::error_code>>;
 };
 

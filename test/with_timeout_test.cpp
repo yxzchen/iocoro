@@ -3,6 +3,7 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/with_timeout.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/this_coro.hpp>
@@ -28,11 +29,11 @@ struct cancellable_test_stream {
   std::atomic<bool> cancelled_read{false};
   std::atomic<bool> cancelled_write{false};
 
-  iocoro::io_executor ex{};
+  iocoro::any_io_executor ex{};
 
-  explicit cancellable_test_stream(iocoro::io_executor ex_) : ex(ex_) {}
+  explicit cancellable_test_stream(iocoro::any_io_executor ex_) : ex(ex_) {}
 
-  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
+  auto get_executor() const noexcept -> iocoro::any_io_executor { return ex; }
 
   void cancel() noexcept {
     cancel_calls.fetch_add(1, std::memory_order_relaxed);

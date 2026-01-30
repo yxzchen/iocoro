@@ -308,7 +308,7 @@ TEST(stream_socket_impl_test, concurrent_read_reports_busy) {
         },
         iocoro::use_awaitable);
 
-      // Wait until the first read has started (yielding to the io_executor).
+      // Wait until the first read has started (yielding to the IO executor).
       for (int i = 0; i < 50 && !started_first.load(std::memory_order_acquire); ++i) {
         (void)co_await iocoro::co_sleep(1ms);
       }

@@ -9,6 +9,7 @@
 
 // Coroutine & completion model
 #include <iocoro/any_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/bind_executor.hpp>
 #include <iocoro/co_spawn.hpp>
@@ -17,7 +18,6 @@
 
 // Execution & lifetime
 #include <iocoro/io_context.hpp>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/strand.hpp>
 #include <iocoro/thread_pool.hpp>
 #include <iocoro/work_guard.hpp>

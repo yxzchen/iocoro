@@ -4,7 +4,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/expected.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
@@ -34,7 +34,7 @@ namespace iocoro::detail::socket {
 class acceptor_impl {
  public:
   acceptor_impl() noexcept = delete;
-  explicit acceptor_impl(io_executor ex) noexcept : base_(ex) {}
+  explicit acceptor_impl(any_io_executor ex) noexcept : base_(ex) {}
 
   acceptor_impl(acceptor_impl const&) = delete;
   auto operator=(acceptor_impl const&) -> acceptor_impl& = delete;

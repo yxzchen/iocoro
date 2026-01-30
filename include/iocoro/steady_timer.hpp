@@ -1,12 +1,13 @@
 #pragma once
 
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
-#include <stop_token>
 #include <iocoro/completion_token.hpp>
+#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/async_op.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
-#include <iocoro/io_executor.hpp>
+#include <stop_token>
 
 #include <chrono>
 #include <cstddef>
@@ -27,10 +28,20 @@ class steady_timer {
   using time_point = clock::time_point;
   using duration = clock::duration;
 
-  explicit steady_timer(io_executor ex) noexcept : ctx_impl_(ex.impl_), expiry_(clock::now()) {}
-  steady_timer(io_executor ex, time_point at) noexcept : ctx_impl_(ex.impl_), expiry_(at) {}
-  steady_timer(io_executor ex, duration after) noexcept
-      : ctx_impl_(ex.impl_), expiry_(clock::now() + after) {}
+  explicit steady_timer(any_io_executor ex) noexcept
+      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl),
+        expiry_(clock::now()) {
+    IOCORO_ENSURE(ctx_impl_, "steady_timer: requires IO executor");
+  }
+  steady_timer(any_io_executor ex, time_point at) noexcept
+      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl), expiry_(at) {
+    IOCORO_ENSURE(ctx_impl_, "steady_timer: requires IO executor");
+  }
+  steady_timer(any_io_executor ex, duration after) noexcept
+      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl),
+        expiry_(clock::now() + after) {
+    IOCORO_ENSURE(ctx_impl_, "steady_timer: requires IO executor");
+  }
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;

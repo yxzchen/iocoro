@@ -9,7 +9,6 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/thread_pool.hpp>
 
 #include <atomic>
@@ -197,7 +196,7 @@ struct resolver<Protocol>::resolve_awaiter {
           state->result = unexpected(error::internal_error);
         }
 
-        // Post coroutine resumption back to the captured io_executor.
+        // Post coroutine resumption back to the captured IO executor.
         state->ex.post([state]() { state->continuation.resume(); });
       });
   }

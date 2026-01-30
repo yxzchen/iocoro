@@ -2,7 +2,6 @@
 
 #include <iocoro/awaitable.hpp>
 #include <stop_token>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/io/stream_concepts.hpp>
 #include <iocoro/with_timeout.hpp>
 

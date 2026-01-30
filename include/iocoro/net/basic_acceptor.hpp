@@ -2,7 +2,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/error.hpp>
@@ -46,7 +46,7 @@ class basic_acceptor
 
   basic_acceptor() = delete;
 
-  explicit basic_acceptor(io_executor ex) : base_type(ex) {}
+  explicit basic_acceptor(any_io_executor ex) : base_type(ex) {}
   explicit basic_acceptor(io_context& ctx) : base_type(ctx) {}
 
   basic_acceptor(basic_acceptor const&) = delete;
@@ -110,9 +110,9 @@ class basic_acceptor
     if (!r) {
       co_return unexpected(r.error());
     }
-    // Temporarily construct io_executor from io_context_impl to create socket.
+    // Temporarily construct IO executor from io_context_impl to create socket.
     auto* ctx_impl = this->get_io_context_impl();
-    socket s{io_executor{*ctx_impl}};
+    socket s{any_io_executor{io_context::executor_type{*ctx_impl}}};
     if (auto ec = s.assign(*r)) {
       co_return unexpected(ec);
     }

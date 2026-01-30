@@ -3,6 +3,7 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/io/read.hpp>
 #include <iocoro/io/write.hpp>
 #include <iocoro/io_context.hpp>
@@ -27,11 +28,11 @@ struct slow_cancellable_stream {
   std::atomic<bool> in_read{false};
   std::atomic<bool> in_write{false};
 
-  iocoro::io_executor ex{};
+  iocoro::any_io_executor ex{};
 
-  explicit slow_cancellable_stream(iocoro::io_executor ex_) : ex(ex_) {}
+  explicit slow_cancellable_stream(iocoro::any_io_executor ex_) : ex(ex_) {}
 
-  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
+  auto get_executor() const noexcept -> iocoro::any_io_executor { return ex; }
 
   void cancel() noexcept {
     cancelled_read.store(true, std::memory_order_release);
@@ -47,7 +48,7 @@ struct slow_cancellable_stream {
     in_read.store(true, std::memory_order_release);
     auto guard = [&]() { in_read.store(false, std::memory_order_release); };
 
-    // Wait until cancelled (yields to io_executor).
+    // Wait until cancelled (yields to IO executor).
     for (int i = 0; i < 200; ++i) {
       if (tok.stop_requested() || cancelled_read.load(std::memory_order_acquire)) {
         guard();
@@ -67,7 +68,7 @@ struct slow_cancellable_stream {
     in_write.store(true, std::memory_order_release);
     auto guard = [&]() { in_write.store(false, std::memory_order_release); };
 
-    // Wait until cancelled (yields to io_executor).
+    // Wait until cancelled (yields to IO executor).
     for (int i = 0; i < 200; ++i) {
       if (tok.stop_requested() || cancelled_write.load(std::memory_order_acquire)) {
         guard();

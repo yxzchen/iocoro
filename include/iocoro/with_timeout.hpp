@@ -1,12 +1,11 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
 #include <iocoro/traits/awaitable_result.hpp>
@@ -28,13 +27,13 @@ namespace iocoro {
 /// - `op` may continue running on ex after this returns.
 template <class Awaitable>
   requires requires { typename traits::awaitable_result_t<Awaitable>; }
-auto with_timeout_detached(io_executor ex, Awaitable op,
+auto with_timeout_detached(any_io_executor ex, Awaitable op,
                            std::chrono::steady_clock::duration timeout)
   -> awaitable<traits::awaitable_result_t<Awaitable>> {
   using result_t = traits::awaitable_result_t<Awaitable>;
   using result_traits = traits::timeout_result_traits<result_t>;
 
-  IOCORO_ENSURE(ex, "with_timeout_detached: requires a non-empty io_executor");
+  IOCORO_ENSURE(ex, "with_timeout_detached: requires a non-empty IO executor");
 
   if (timeout <= std::chrono::steady_clock::duration::zero()) {
     co_return result_traits::timed_out();
@@ -69,8 +68,7 @@ template <class Awaitable>
 auto with_timeout_detached(Awaitable op, std::chrono::steady_clock::duration timeout)
   -> awaitable<traits::awaitable_result_t<Awaitable>> {
   auto ex_any = co_await this_coro::executor;
-  auto ex = detail::require_executor<io_executor>(ex_any);
-  co_return co_await with_timeout_detached(ex, std::move(op), timeout);
+  co_return co_await with_timeout_detached(any_io_executor{ex_any}, std::move(op), timeout);
 }
 
 }  // namespace iocoro

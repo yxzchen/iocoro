@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/io_context.hpp>
 
 #include <atomic>

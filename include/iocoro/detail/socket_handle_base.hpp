@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/socket_option.hpp>
 
@@ -12,7 +12,7 @@ namespace iocoro::detail {
 ///
 /// Responsibilities:
 /// - Own and share an implementation object (`Impl`) via `std::shared_ptr`.
-/// - Provide common "handle" operations: io_executor access, open state, cancel/close,
+/// - Provide common "handle" operations: IO executor access, open state, cancel/close,
 ///   socket options, and native_handle.
 ///
 /// Non-responsibilities:
@@ -23,10 +23,10 @@ class socket_handle_base {
  public:
   using impl_type = Impl;
 
-  /// Handles must be bound to an io_executor at construction time.
+  /// Handles must be bound to an IO-capable executor at construction time.
   socket_handle_base() = delete;
 
-  explicit socket_handle_base(io_executor ex) : impl_(std::make_shared<Impl>(ex)) {}
+  explicit socket_handle_base(any_io_executor ex) : impl_(std::make_shared<Impl>(ex)) {}
   explicit socket_handle_base(io_context& ctx) : socket_handle_base(ctx.get_executor()) {}
 
   socket_handle_base(socket_handle_base const&) = delete;
@@ -45,7 +45,9 @@ class socket_handle_base {
   }
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return impl_->get_io_context_impl(); }
-  auto get_executor() const noexcept -> io_executor { return io_executor{*impl_->get_io_context_impl()}; }
+  auto get_executor() const noexcept -> any_io_executor {
+    return any_io_executor{io_context::executor_type{*impl_->get_io_context_impl()}};
+  }
 
   auto is_open() const noexcept -> bool { return impl_->is_open(); }
 

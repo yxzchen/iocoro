@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/assert.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/io_context.hpp>
 
 namespace iocoro {
@@ -65,15 +65,15 @@ class work_guard {
   bool owns_ = false;
 };
 
-/// Helper function to create a work guard for an io_executor
+/// Helper function to create a work guard for an IO executor
 template <typename Executor>
 auto make_work_guard(Executor const& ex) -> work_guard<Executor> {
   return work_guard<Executor>(ex);
 }
 
 /// Helper function to create a work guard for an io_context
-inline auto make_work_guard(io_context& ctx) -> work_guard<io_executor> {
-  return work_guard<io_executor>(ctx.get_executor());
+inline auto make_work_guard(io_context& ctx) -> work_guard<any_io_executor> {
+  return work_guard<any_io_executor>(ctx.get_executor());
 }
 
 }  // namespace iocoro

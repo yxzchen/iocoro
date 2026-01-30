@@ -2,13 +2,14 @@
 
 #include <iocoro/awaitable.hpp>
 #include <stop_token>
+#include <iocoro/any_io_executor.hpp>
+#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/async_op.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/socket_option.hpp>
 
 #include <atomic>
@@ -28,7 +29,7 @@ namespace iocoro::detail::socket {
 ///
 /// Responsibilities:
 /// - Own the native handle (fd) lifecycle (open/close/release).
-/// - Own io_executor binding (used to register reactor ops / post completions).
+/// - Own IO executor binding (used to register reactor ops / post completions).
 /// - Provide thread-safe cancel/close primitives.
 ///
 /// Concurrency contract (minimal; enforced by derived classes):
@@ -40,7 +41,10 @@ class socket_impl_base {
   using fd_event_handle = io_context_impl::fd_event_handle;
 
   socket_impl_base() noexcept = delete;
-  explicit socket_impl_base(io_executor ex) noexcept : ctx_impl_(ex.impl_) {}
+  explicit socket_impl_base(any_io_executor ex) noexcept
+      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl) {
+    IOCORO_ENSURE(ctx_impl_, "socket_impl_base: requires IO executor");
+  }
 
   socket_impl_base(socket_impl_base const&) = delete;
   auto operator=(socket_impl_base const&) -> socket_impl_base& = delete;

@@ -3,7 +3,7 @@
 #include <iocoro/awaitable.hpp>
 #include <stop_token>
 #include <iocoro/detail/socket_handle_base.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/error.hpp>
@@ -32,7 +32,7 @@ namespace iocoro::net {
 /// - Protocol semantics (endpoint conversion, socket type/protocol) are handled here in the facade.
 ///
 /// Construction:
-/// - No default constructor: a socket must be bound to an io_executor (or io_context) up-front.
+/// - No default constructor: a socket must be bound to an IO executor (or io_context) up-front.
 /// - Protocol is fixed by the template parameter.
 ///
 /// Important semantics:
@@ -50,7 +50,7 @@ class basic_datagram_socket
 
   basic_datagram_socket() = delete;
 
-  explicit basic_datagram_socket(io_executor ex) : base_type(ex) {}
+  explicit basic_datagram_socket(any_io_executor ex) : base_type(ex) {}
   explicit basic_datagram_socket(io_context& ctx) : base_type(ctx) {}
 
   basic_datagram_socket(basic_datagram_socket const&) = delete;

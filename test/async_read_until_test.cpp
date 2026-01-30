@@ -4,7 +4,7 @@
 #include <iocoro/expected.hpp>
 #include <iocoro/io/read_until.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/this_coro.hpp>
 
 #include "test_util.hpp"
@@ -24,9 +24,9 @@ struct mock_read_stream {
   std::string data{};
   std::size_t pos{0};
   std::size_t max_chunk{(std::numeric_limits<std::size_t>::max)()};
-  iocoro::io_executor ex{};
+  iocoro::any_io_executor ex{};
 
-  auto get_executor() const noexcept -> iocoro::io_executor { return ex; }
+  auto get_executor() const noexcept -> iocoro::any_io_executor { return ex; }
 
   auto async_read_some(std::span<std::byte> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {

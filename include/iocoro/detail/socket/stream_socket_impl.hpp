@@ -4,6 +4,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
+#include <iocoro/io_context.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
@@ -36,7 +37,7 @@ namespace iocoro::detail::socket {
 class stream_socket_impl {
  public:
   stream_socket_impl() noexcept = delete;
-  explicit stream_socket_impl(io_executor ex) noexcept : base_(ex) {}
+  explicit stream_socket_impl(any_io_executor ex) noexcept : base_(ex) {}
 
   stream_socket_impl(stream_socket_impl const&) = delete;
   auto operator=(stream_socket_impl const&) -> stream_socket_impl& = delete;
@@ -48,7 +49,9 @@ class stream_socket_impl {
   auto get_io_context_impl() const noexcept -> io_context_impl* {
     return base_.get_io_context_impl();
   }
-  auto get_executor() const noexcept -> io_executor { return io_executor{*get_io_context_impl()}; }
+  auto get_executor() const noexcept -> any_io_executor {
+    return any_io_executor{io_context::executor_type{*get_io_context_impl()}};
+  }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
 
   /// Open a new native socket (best-effort, non-blocking).

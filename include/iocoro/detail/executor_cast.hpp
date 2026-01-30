@@ -2,7 +2,6 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/any_executor.hpp>
-#include <iocoro/io_executor.hpp>
 
 namespace iocoro::detail {
 
