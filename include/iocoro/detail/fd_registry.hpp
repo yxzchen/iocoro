@@ -67,40 +67,26 @@ class fd_registry {
     return fd_interest{ops.read_op != nullptr, ops.write_op != nullptr};
   }
 
+  auto register_impl(int fd, reactor_op_ptr op, fd_event_kind kind) -> register_result;
+  void trim_tail(std::size_t fd_index);
+
   mutable std::mutex mtx_{};
   std::vector<fd_ops> operations_{};
   std::uint64_t next_token_ = 1;
+  std::size_t active_count_ = 0;
+  std::size_t max_active_fd_ = 0;
 };
 
 inline auto fd_registry::register_read(int fd, reactor_op_ptr op) -> register_result {
-  reactor_op_ptr old{};
-  fd_interest interest{};
-  std::uint64_t token = 0;
-
-  {
-    std::scoped_lock lk{mtx_};
-    if (fd < 0) {
-      return register_result{};
-    }
-    if (static_cast<std::size_t>(fd) >= operations_.size() && !op) {
-      return register_result{};
-    }
-    if (static_cast<std::size_t>(fd) >= operations_.size()) {
-      operations_.resize(static_cast<std::size_t>(fd) + 1);
-    }
-
-    auto& ops = operations_[static_cast<std::size_t>(fd)];
-    if (op) {
-      token = ops.read_token = next_token_++;
-    }
-    old = std::exchange(ops.read_op, std::move(op));
-    interest = interest_for(ops);
-  }
-
-  return register_result{token, std::move(old), interest};
+  return register_impl(fd, std::move(op), fd_event_kind::read);
 }
 
 inline auto fd_registry::register_write(int fd, reactor_op_ptr op) -> register_result {
+  return register_impl(fd, std::move(op), fd_event_kind::write);
+}
+
+inline auto fd_registry::register_impl(int fd, reactor_op_ptr op, fd_event_kind kind)
+  -> register_result {
   reactor_op_ptr old{};
   fd_interest interest{};
   std::uint64_t token = 0;
@@ -118,10 +104,35 @@ inline auto fd_registry::register_write(int fd, reactor_op_ptr op) -> register_r
     }
 
     auto& ops = operations_[static_cast<std::size_t>(fd)];
-    if (op) {
-      token = ops.write_token = next_token_++;
+    if (kind == fd_event_kind::read) {
+      if (op) {
+        token = ops.read_token = next_token_++;
+      }
+      if (!ops.read_op && op) {
+        ++active_count_;
+        if (static_cast<std::size_t>(fd) > max_active_fd_) {
+          max_active_fd_ = static_cast<std::size_t>(fd);
+        }
+      }
+      if (ops.read_op && !op) {
+        --active_count_;
+      }
+      old = std::exchange(ops.read_op, std::move(op));
+    } else {
+      if (op) {
+        token = ops.write_token = next_token_++;
+      }
+      if (!ops.write_op && op) {
+        ++active_count_;
+        if (static_cast<std::size_t>(fd) > max_active_fd_) {
+          max_active_fd_ = static_cast<std::size_t>(fd);
+        }
+      }
+      if (ops.write_op && !op) {
+        --active_count_;
+      }
+      old = std::exchange(ops.write_op, std::move(op));
     }
-    old = std::exchange(ops.write_op, std::move(op));
     interest = interest_for(ops);
   }
 
@@ -146,12 +157,14 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
         removed = std::move(ops.read_op);
         ops.read_token = 0;
         matched = true;
+        --active_count_;
       }
     } else {
       if (ops.write_op && ops.write_token == token) {
         removed = std::move(ops.write_op);
         ops.write_token = 0;
         matched = true;
+        --active_count_;
       }
     }
 
@@ -160,6 +173,9 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
     }
 
     interest = interest_for(ops);
+    if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+      trim_tail(static_cast<std::size_t>(fd));
+    }
   }
 
   return cancel_result{std::move(removed), interest, matched};
@@ -179,6 +195,15 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
       had_any = static_cast<bool>(read) || static_cast<bool>(write);
       ops.read_token = 0;
       ops.write_token = 0;
+      if (read) {
+        --active_count_;
+      }
+      if (write) {
+        --active_count_;
+      }
+      if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+        trim_tail(static_cast<std::size_t>(fd));
+      }
     }
   }
 
@@ -200,13 +225,22 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
     if (can_read) {
       read = std::move(ops.read_op);
       ops.read_token = 0;
+      if (read) {
+        --active_count_;
+      }
     }
     if (can_write) {
       write = std::move(ops.write_op);
       ops.write_token = 0;
+      if (write) {
+        --active_count_;
+      }
     }
 
     interest = interest_for(ops);
+    if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+      trim_tail(static_cast<std::size_t>(fd));
+    }
   }
 
   return ready_result{ready_ops{std::move(read), std::move(write)}, interest};
@@ -214,12 +248,31 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
 
 inline auto fd_registry::empty() const -> bool {
   std::scoped_lock lk{mtx_};
-  for (auto const& ops : operations_) {
-    if (ops.read_op || ops.write_op) {
-      return false;
-    }
+  return active_count_ == 0;
+}
+
+inline void fd_registry::trim_tail(std::size_t fd_index) {
+  if (operations_.empty()) {
+    max_active_fd_ = 0;
+    return;
   }
-  return true;
+  std::size_t i = fd_index;
+  while (i > 0) {
+    auto const& ops = operations_[i];
+    if (ops.read_op || ops.write_op) {
+      break;
+    }
+    --i;
+  }
+  if (i == 0 && !operations_[0].read_op && !operations_[0].write_op) {
+    operations_.clear();
+    max_active_fd_ = 0;
+    return;
+  }
+  max_active_fd_ = i;
+  if (operations_.size() > max_active_fd_ + 1) {
+    operations_.resize(max_active_fd_ + 1);
+  }
 }
 
 }  // namespace iocoro::detail

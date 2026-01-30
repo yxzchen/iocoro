@@ -118,6 +118,9 @@ inline auto timer_registry::next_timeout() -> std::optional<std::chrono::millise
 
 inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
   std::size_t count = 0;
+  std::vector<std::pair<reactor_op_ptr, bool>> ready{};
+  ready.reserve(8);
+
   for (;;) {
     std::unique_lock lk{mtx_};
     if (stopped || heap_.empty()) {
@@ -133,7 +136,7 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
       recycle_node(idx);
       lk.unlock();
       if (op) {
-        op->vt->on_abort(op->block, error::operation_aborted);
+        ready.emplace_back(std::move(op), false);
       }
       continue;
     }
@@ -154,9 +157,17 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
     recycle_node(idx);
     lk.unlock();
     if (op) {
-      op->vt->on_complete(op->block);
+      ready.emplace_back(std::move(op), true);
     }
-    ++count;
+  }
+
+  for (auto& entry : ready) {
+    if (entry.second) {
+      entry.first->vt->on_complete(entry.first->block);
+      ++count;
+    } else {
+      entry.first->vt->on_abort(entry.first->block, error::operation_aborted);
+    }
   }
 
   return count;

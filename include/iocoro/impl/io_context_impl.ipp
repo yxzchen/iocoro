@@ -254,9 +254,20 @@ inline auto io_context_impl::has_work() -> bool {
 
 inline auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
   -> std::size_t {
-  backend_events_.clear();
   backend_->wait(max_wait, backend_events_);
   std::size_t count = 0;
+
+  auto process_one = [&](reactor_op_ptr& op, bool is_error, std::error_code ec) -> void {
+    if (!op) {
+      return;
+    }
+    if (is_error) {
+      op->vt->on_abort(op->block, ec);
+    } else {
+      op->vt->on_complete(op->block);
+    }
+    ++count;
+  };
 
   for (auto const& ev : backend_events_) {
     if (ev.fd < 0) {
@@ -266,25 +277,8 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
     auto ready = fd_registry_.take_ready(ev.fd, ev.can_read, ev.can_write);
     apply_fd_interest(ev.fd, ready.interest);
 
-    if (ev.is_error) {
-      if (ready.ops.read) {
-        ready.ops.read->vt->on_abort(ready.ops.read->block, ev.ec);
-        ++count;
-      }
-      if (ready.ops.write) {
-        ready.ops.write->vt->on_abort(ready.ops.write->block, ev.ec);
-        ++count;
-      }
-    } else {
-      if (ready.ops.read) {
-        ready.ops.read->vt->on_complete(ready.ops.read->block);
-        ++count;
-      }
-      if (ready.ops.write) {
-        ready.ops.write->vt->on_complete(ready.ops.write->block);
-        ++count;
-      }
-    }
+    process_one(ready.ops.read, ev.is_error, ev.ec);
+    process_one(ready.ops.write, ev.is_error, ev.ec);
   }
   return count;
 }
