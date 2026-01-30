@@ -5,7 +5,6 @@
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/async_op.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <stop_token>
 
@@ -70,50 +69,40 @@ class steady_timer {
   /// - `std::error_code{}` on successful timer expiry.
   /// - `error::operation_aborted` if cancelled via current coroutine cancellation context.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
+    auto* timer = this;
     co_return co_await detail::operation_awaiter{
-      [this](std::shared_ptr<detail::operation_wait_state> st) {
-        return make_wait_op(std::move(st));
+      [timer](detail::reactor_op_ptr rop) {
+        auto h = timer->ctx_impl_->add_timer(timer->expiry(), std::move(rop));
+        timer->set_timer_handle(h);
+        return h;
       }};
   }
 
   /// Cancel the pending timer operation.
   void cancel() noexcept {
-    detail::io_context_impl::timer_event_handle h{};
+    detail::io_context_impl::event_handle h{};
     {
       std::scoped_lock lk{mtx_};
-      h = std::exchange(handle_, detail::io_context_impl::timer_event_handle::invalid_handle());
+      h = std::exchange(handle_, detail::io_context_impl::event_handle::invalid_handle());
     }
 
     if (h) {
-      ctx_impl_->cancel_timer(h);
+      h.cancel();
     }
   }
 
   time_point expiry() { return expiry_; }
 
-  void set_timer_handle(detail::io_context_impl::timer_event_handle h) noexcept {
+  void set_timer_handle(detail::io_context_impl::event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     handle_ = h;
   }
 
  private:
-  auto make_wait_op(std::shared_ptr<detail::operation_wait_state> st) -> detail::async_op {
-    auto access = detail::reactor_access{ctx_impl_};
-    auto* timer = this;
-    return detail::async_op{
-      std::move(st),
-      access,
-      [timer](detail::reactor_access const& access, detail::reactor_op_ptr rop) {
-        auto h = access.get().add_timer(timer->expiry(), std::move(rop));
-        timer->set_timer_handle(h);
-        return detail::io_context_impl::event_handle::make(std::move(h));
-      }};
-  }
-
   detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
   mutable std::mutex mtx_{};
-  detail::io_context_impl::timer_event_handle handle_{};
+  detail::io_context_impl::event_handle handle_{};
 };
 
 }  // namespace iocoro

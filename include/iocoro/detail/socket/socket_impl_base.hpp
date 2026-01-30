@@ -6,7 +6,6 @@
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/async_op.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
@@ -38,7 +37,7 @@ namespace iocoro::detail::socket {
 ///   or return `error::busy` when conflicting ops are in-flight.
 class socket_impl_base {
  public:
-  using fd_event_handle = io_context_impl::fd_event_handle;
+  using event_handle = io_context_impl::event_handle;
 
   socket_impl_base() noexcept = delete;
   explicit socket_impl_base(any_io_executor ex) noexcept
@@ -150,14 +149,14 @@ class socket_impl_base {
   ///
   /// Therefore, higher layers MUST enforce that, per-direction, there is at most one
   /// in-flight waiter that relies on this handle for cancellation.
-  void set_read_handle(fd_event_handle h) noexcept {
+  void set_read_handle(event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     read_handle_ = h;
   }
 
   /// Publish the current cancellation handle for the "write readiness" waiter.
   /// See `set_read_handle()` for the ownership/contract details.
-  void set_write_handle(fd_event_handle h) noexcept {
+  void set_write_handle(event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     write_handle_ = h;
   }
@@ -169,7 +168,11 @@ class socket_impl_base {
       co_return error::not_open;
     }
     co_return co_await detail::operation_awaiter{
-      [this](std::shared_ptr<operation_wait_state> st) { return make_read_wait_op(std::move(st)); }};
+      [this](detail::reactor_op_ptr rop) {
+        auto h = ctx_impl_->register_fd_read(native_handle(), std::move(rop));
+        set_read_handle(h);
+        return h;
+      }};
   }
 
   /// Wait until the native fd becomes writable (write readiness), observing the current coroutine
@@ -179,7 +182,11 @@ class socket_impl_base {
       co_return error::not_open;
     }
     co_return co_await detail::operation_awaiter{
-      [this](std::shared_ptr<operation_wait_state> st) { return make_write_wait_op(std::move(st)); }};
+      [this](detail::reactor_op_ptr rop) {
+        auto h = ctx_impl_->register_fd_write(native_handle(), std::move(rop));
+        set_write_handle(h);
+        return h;
+      }};
   }
 
  private:
@@ -194,32 +201,6 @@ class socket_impl_base {
   /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
   enum class fd_state : std::uint8_t { closed, opening, open };
 
-  auto make_read_wait_op(std::shared_ptr<operation_wait_state> st) -> detail::async_op {
-    auto access = detail::reactor_access{ctx_impl_};
-    auto* socket = this;
-    return detail::async_op{
-      std::move(st),
-      access,
-      [socket](detail::reactor_access const& access, detail::reactor_op_ptr rop) {
-        auto h = access.get().register_fd_read(socket->native_handle(), std::move(rop));
-        socket->set_read_handle(h);
-        return detail::io_context_impl::event_handle::make(std::move(h));
-      }};
-  }
-
-  auto make_write_wait_op(std::shared_ptr<operation_wait_state> st) -> detail::async_op {
-    auto access = detail::reactor_access{ctx_impl_};
-    auto* socket = this;
-    return detail::async_op{
-      std::move(st),
-      access,
-      [socket](detail::reactor_access const& access, detail::reactor_op_ptr rop) {
-        auto h = access.get().register_fd_write(socket->native_handle(), std::move(rop));
-        socket->set_write_handle(h);
-        return detail::io_context_impl::event_handle::make(std::move(h));
-      }};
-  }
-
   any_io_executor ex_{};
   io_context_impl* ctx_impl_{};
 
@@ -229,8 +210,8 @@ class socket_impl_base {
   std::atomic<int> fd_{-1};
   fd_state state_{fd_state::closed};
 
-  fd_event_handle read_handle_{};
-  fd_event_handle write_handle_{};
+  event_handle read_handle_{};
+  event_handle write_handle_{};
 };
 
 }  // namespace iocoro::detail::socket

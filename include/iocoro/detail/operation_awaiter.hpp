@@ -2,27 +2,32 @@
 
 #include <stop_token>
 
-#include <iocoro/detail/async_op.hpp>
+#include <iocoro/assert.hpp>
+#include <iocoro/detail/reactor_types.hpp>
+#include <iocoro/any_executor.hpp>
+#include <coroutine>
+#include <system_error>
 #include <functional>
 #include <optional>
 
 namespace iocoro::detail {
 
+/// Shared state for async operation awaiters.
+/// Holds the coroutine handle, executor, and result error code.
+struct operation_wait_state {
+  std::coroutine_handle<> h{};
+  any_executor ex{};
+  std::error_code ec{};
+};
+
 /// Generic awaiter for async operations.
-///
-/// This awaiter eliminates code duplication across different operation types.
-/// All operations follow the same pattern:
-/// 1. Create shared state
-/// 2. Capture current executor
-/// 3. Create and start the operation
-/// 4. Resume with error_code result
 template <typename Factory>
 struct operation_awaiter {
-  Factory factory;
+  Factory register_op;
   std::shared_ptr<operation_wait_state> st{std::make_shared<operation_wait_state>()};
   std::optional<std::stop_callback<std::function<void()>>> reg{};
 
-  explicit operation_awaiter(Factory f) : factory(std::move(f)) {}
+  explicit operation_awaiter(Factory f) : register_op(std::move(f)) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -32,19 +37,29 @@ struct operation_awaiter {
     st->h = h;
     st->ex = h.promise().get_executor();
     IOCORO_ENSURE(st->ex, "operation_awaiter: empty executor");
+
+    struct op_state {
+      std::shared_ptr<operation_wait_state> st;
+
+      explicit op_state(std::shared_ptr<operation_wait_state> s) noexcept : st(std::move(s)) {}
+
+      void on_complete() noexcept { complete(std::error_code{}); }
+      void on_abort(std::error_code ec) noexcept { complete(ec); }
+
+      void complete(std::error_code ec) noexcept {
+        st->ec = ec;
+        st->ex.post([st = st]() mutable { st->h.resume(); });
+      }
+    };
+
+    auto handle = register_op(make_reactor_op<op_state>(st));
+
     if constexpr (requires { h.promise().get_stop_token(); }) {
       auto tok = h.promise().get_stop_token();
       if (tok.stop_possible()) {
-        auto op = factory(st);
-        auto cancel_state = op.cancel_state_ptr();
-        reg.emplace(std::move(tok), [cancel_state]() { cancel_state->cancel(); });
-        op.start();
-        return true;
+        reg.emplace(std::move(tok), [handle]() { handle.cancel(); });
       }
     }
-
-    auto op = factory(st);
-    op.start();
     return true;
   }
 

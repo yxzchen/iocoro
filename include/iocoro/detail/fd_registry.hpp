@@ -16,6 +16,7 @@ struct fd_interest {
 
 class fd_registry {
  public:
+  static constexpr std::uint64_t invalid_token = 0;
   struct ready_ops {
     reactor_op_ptr read{};
     reactor_op_ptr write{};
@@ -58,8 +59,8 @@ class fd_registry {
   struct fd_ops {
     reactor_op_ptr read_op;
     reactor_op_ptr write_op;
-    std::uint64_t read_token = fd_event_handle::invalid_token;
-    std::uint64_t write_token = fd_event_handle::invalid_token;
+    std::uint64_t read_token = invalid_token;
+    std::uint64_t write_token = invalid_token;
   };
 
   auto interest_for(fd_ops const& ops) const noexcept -> fd_interest {

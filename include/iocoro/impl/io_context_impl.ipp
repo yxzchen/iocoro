@@ -132,49 +132,49 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
 }
 
 inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point expiry,
-                                       reactor_op_ptr op) -> timer_event_handle {
+                                       reactor_op_ptr op) -> event_handle {
   auto token = timers_.add_timer(expiry, std::move(op));
-  auto h = timer_event_handle{this, token.index, token.generation};
+  auto h = event_handle::make_timer(this, token.index, token.generation);
   wakeup();
   return h;
 }
 
-inline void io_context_impl::cancel_timer(timer_event_handle h) noexcept {
-  if (timers_.cancel(h)) {
+inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept {
+  if (timers_.cancel(timer_registry::timer_token{index, generation})) {
     wakeup();
   }
 }
 
-inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> fd_event_handle {
+inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> event_handle {
   auto result = fd_registry_.register_read(fd, std::move(op));
   if (result.replaced) {
     result.replaced->vt->on_abort(result.replaced->block, error::operation_aborted);
   }
-  enqueue_fd_interest(fd, result.interest);
+  apply_fd_interest(fd, result.interest);
   wakeup();
   if (result.token == 0) {
-    return fd_event_handle::invalid_handle();
+    return event_handle::invalid_handle();
   }
-  return fd_event_handle{this, fd, detail::fd_event_kind::read, result.token};
+  return event_handle::make_fd(this, fd, detail::fd_event_kind::read, result.token);
 }
 
-inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> fd_event_handle {
+inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> event_handle {
   auto result = fd_registry_.register_write(fd, std::move(op));
   if (result.replaced) {
     result.replaced->vt->on_abort(result.replaced->block, error::operation_aborted);
   }
-  enqueue_fd_interest(fd, result.interest);
+  apply_fd_interest(fd, result.interest);
   wakeup();
   if (result.token == 0) {
-    return fd_event_handle::invalid_handle();
+    return event_handle::invalid_handle();
   }
-  return fd_event_handle{this, fd, detail::fd_event_kind::write, result.token};
+  return event_handle::make_fd(this, fd, detail::fd_event_kind::write, result.token);
 }
 
 inline void io_context_impl::deregister_fd(int fd) {
   auto removed = fd_registry_.deregister(fd);
   if (removed.had_any) {
-    enqueue_fd_interest(fd, removed.interest);
+    apply_fd_interest(fd, removed.interest);
   }
 
   if (removed.read) {
@@ -193,11 +193,24 @@ inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,
     return;
   }
 
-  enqueue_fd_interest(fd, result.interest);
+  apply_fd_interest(fd, result.interest);
   if (result.removed) {
     result.removed->vt->on_abort(result.removed->block, error::operation_aborted);
   }
   wakeup();
+}
+
+inline void io_context_impl::cancel_event(event_handle h) noexcept {
+  if (!h) {
+    return;
+  }
+  if (h.type == event_handle::kind::fd) {
+    cancel_fd_event(h.fd, h.fd_kind, h.token);
+    return;
+  }
+  if (h.type == event_handle::kind::timer) {
+    cancel_timer(h.timer_index, h.timer_generation);
+  }
 }
 
 inline void io_context_impl::add_work_guard() noexcept {
@@ -241,7 +254,6 @@ inline auto io_context_impl::has_work() -> bool {
 
 inline auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
   -> std::size_t {
-  flush_fd_interest();
   backend_events_.clear();
   backend_->wait(max_wait, backend_events_);
   std::size_t count = 0;
@@ -252,7 +264,7 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
     }
 
     auto ready = fd_registry_.take_ready(ev.fd, ev.can_read, ev.can_write);
-    enqueue_fd_interest(ev.fd, ready.interest);
+    apply_fd_interest(ev.fd, ready.interest);
 
     if (ev.is_error) {
       if (ready.ops.read) {
@@ -274,65 +286,24 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
       }
     }
   }
-
-  flush_fd_interest();
   return count;
 }
 
 inline void io_context_impl::wakeup() { backend_->wakeup(); }
 
-inline void io_context_impl::enqueue_fd_interest(int fd, fd_interest interest) {
-  pending_interest_.emplace_back(fd, interest);
+inline void io_context_impl::apply_fd_interest(int fd, fd_interest interest) {
+  if (interest.want_read || interest.want_write) {
+    backend_->update_fd_interest(fd, interest.want_read, interest.want_write);
+  } else {
+    backend_->remove_fd_interest(fd);
+  }
 }
 
-inline void io_context_impl::flush_fd_interest() {
-  if (pending_interest_.empty()) {
-    return;
-  }
-
-  std::sort(
-    pending_interest_.begin(),
-    pending_interest_.end(),
-    [](auto const& a, auto const& b) { return a.first < b.first; });
-
-  int last_fd = pending_interest_.front().first;
-  fd_interest last_interest = pending_interest_.front().second;
-
-  auto apply_one = [&](int fd, fd_interest interest) {
-    if (interest.want_read || interest.want_write) {
-      backend_->update_fd_interest(fd, interest.want_read, interest.want_write);
-    } else {
-      backend_->remove_fd_interest(fd);
-    }
-  };
-
-  for (std::size_t i = 1; i < pending_interest_.size(); ++i) {
-    auto const& entry = pending_interest_[i];
-    if (entry.first == last_fd) {
-      last_interest = entry.second;
-      continue;
-    }
-    apply_one(last_fd, last_interest);
-    last_fd = entry.first;
-    last_interest = entry.second;
-  }
-  apply_one(last_fd, last_interest);
-
-  pending_interest_.clear();
-}
-
-inline void fd_event_handle::cancel() const noexcept {
+inline void event_handle::cancel() const noexcept {
   if (!valid()) {
     return;
   }
-  impl->cancel_fd_event(fd, kind, token);
-}
-
-inline void timer_event_handle::cancel() const noexcept {
-  if (!valid()) {
-    return;
-  }
-  impl->cancel_timer(*this);
+  impl->cancel_event(*this);
 }
 
 }  // namespace iocoro::detail

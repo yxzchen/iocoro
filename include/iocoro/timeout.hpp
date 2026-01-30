@@ -25,7 +25,7 @@ struct scoped_timeout_state {
   std::atomic<bool> fired{false};
 
   std::mutex mtx{};
-  io_context_impl::timer_event_handle handle{};
+  io_context_impl::event_handle handle{};
 
   // ---- cancellation glue ----
   std::stop_source src{};
@@ -33,10 +33,10 @@ struct scoped_timeout_state {
   awaitable_promise_base::stop_scope cancel_scope{};
 
   void cancel_timer() noexcept {
-    io_context_impl::timer_event_handle h{};
+    io_context_impl::event_handle h{};
     {
       std::scoped_lock lk{mtx};
-      h = std::exchange(handle, io_context_impl::timer_event_handle::invalid_handle());
+      h = std::exchange(handle, io_context_impl::event_handle::invalid_handle());
     }
     if (h) {
       h.cancel();

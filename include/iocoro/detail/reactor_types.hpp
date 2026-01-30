@@ -13,94 +13,57 @@ class timer_registry;
 
 enum class fd_event_kind : std::uint8_t { read, write };
 
-struct fd_event_handle {
+struct event_handle {
+  enum class kind : std::uint8_t { none, timer, fd };
+
   io_context_impl* impl = nullptr;
+  kind type = kind::none;
+
   int fd = -1;
-  fd_event_kind kind = fd_event_kind::read;
+  fd_event_kind fd_kind = fd_event_kind::read;
   std::uint64_t token = 0;
+
+  std::uint32_t timer_index = 0;
+  std::uint32_t timer_generation = 0;
 
   static constexpr std::uint64_t invalid_token = 0;
 
-  auto valid() const noexcept -> bool {
-    return impl != nullptr && fd >= 0 && token != invalid_token;
-  }
-  explicit operator bool() const noexcept { return valid(); }
-
-  void cancel() const noexcept;
-
-  static constexpr auto invalid_handle() { return fd_event_handle{}; }
-};
-
-struct timer_event_handle {
-  io_context_impl* impl = nullptr;
-  std::uint32_t index = 0;
-  std::uint32_t generation = 0;
-
-  auto valid() const noexcept -> bool { return impl != nullptr && generation != 0; }
-  explicit operator bool() const noexcept { return valid(); }
-
-  void cancel() const noexcept;
-
-  static auto invalid_handle() { return timer_event_handle{}; }
-};
-
-struct event_handle {
-  enum class kind : std::uint8_t { none, timer, fd };
-  kind type = kind::none;
-  timer_event_handle timer{};
-  fd_event_handle fd{};
-
-  static auto make(timer_event_handle h) noexcept -> event_handle {
+  static auto make_fd(io_context_impl* impl_, int fd_, fd_event_kind kind_, std::uint64_t token_)
+    noexcept -> event_handle {
     event_handle out;
-    out.type = kind::timer;
-    out.timer = std::move(h);
-    return out;
-  }
-  static auto make(fd_event_handle h) noexcept -> event_handle {
-    event_handle out;
+    out.impl = impl_;
     out.type = kind::fd;
-    out.fd = std::move(h);
+    out.fd = fd_;
+    out.fd_kind = kind_;
+    out.token = token_;
     return out;
   }
 
+  static auto make_timer(io_context_impl* impl_,
+                         std::uint32_t index,
+                         std::uint32_t generation) noexcept -> event_handle {
+    event_handle out;
+    out.impl = impl_;
+    out.type = kind::timer;
+    out.timer_index = index;
+    out.timer_generation = generation;
+    return out;
+  }
+
+  static auto invalid_handle() noexcept -> event_handle { return event_handle{}; }
+
   auto valid() const noexcept -> bool {
-    if (type == kind::timer) {
-      return timer.valid();
-    }
     if (type == kind::fd) {
-      return fd.valid();
+      return impl != nullptr && fd >= 0 && token != invalid_token;
+    }
+    if (type == kind::timer) {
+      return impl != nullptr && timer_generation != 0;
     }
     return false;
   }
   explicit operator bool() const noexcept { return valid(); }
 
-  void cancel() const noexcept {
-    if (type == kind::timer) {
-      if (timer) {
-        timer.cancel();
-      }
-      return;
-    }
-    if (type == kind::fd) {
-      if (fd) {
-        fd.cancel();
-      }
-    }
-  }
-
-  auto as_timer() const noexcept -> timer_event_handle {
-    if (type == kind::timer) {
-      return timer;
-    }
-    return timer_event_handle::invalid_handle();
-  }
-
-  auto as_fd() const noexcept -> fd_event_handle {
-    if (type == kind::fd) {
-      return fd;
-    }
-    return fd_event_handle::invalid_handle();
-  }
+  void cancel() const noexcept;
 };
 
 /// Reactor completion object (type-erased).

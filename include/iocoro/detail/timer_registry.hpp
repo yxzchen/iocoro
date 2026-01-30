@@ -27,9 +27,8 @@ class timer_registry {
     std::uint32_t generation = 0;
   };
 
-  auto add_timer(std::chrono::steady_clock::time_point expiry, reactor_op_ptr op)
-    -> timer_token;
-  auto cancel(timer_event_handle h) noexcept -> bool;
+  auto add_timer(std::chrono::steady_clock::time_point expiry, reactor_op_ptr op) -> timer_token;
+  auto cancel(timer_token tok) noexcept -> bool;
   auto next_timeout() -> std::optional<std::chrono::milliseconds>;
   auto process_expired(bool stopped) -> std::size_t;
   auto empty() const -> bool;
@@ -81,13 +80,13 @@ inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expi
   return timer_token{index, node.generation};
 }
 
-inline auto timer_registry::cancel(timer_event_handle h) noexcept -> bool {
+inline auto timer_registry::cancel(timer_token tok) noexcept -> bool {
   std::scoped_lock lk{mtx_};
-  if (!h || h.index >= nodes_.size()) {
+  if (tok.generation == 0 || tok.index >= nodes_.size()) {
     return false;
   }
-  auto& node = nodes_[h.index];
-  if (node.generation != h.generation) {
+  auto& node = nodes_[tok.index];
+  if (node.generation != tok.generation) {
     return false;
   }
   if (node.state != timer_state::pending) {

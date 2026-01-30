@@ -17,8 +17,6 @@ namespace iocoro::detail {
 
 class io_context_impl {
  public:
-  using fd_event_handle = detail::fd_event_handle;
-  using timer_event_handle = detail::timer_event_handle;
   using event_handle = detail::event_handle;
 
   io_context_impl();
@@ -42,21 +40,21 @@ class io_context_impl {
   void dispatch(unique_function<void()> f);
 
   template <class Rep, class Period>
-  auto add_timer(std::chrono::duration<Rep, Period> d, reactor_op_ptr op)
-    -> timer_event_handle {
+  auto add_timer(std::chrono::duration<Rep, Period> d, reactor_op_ptr op) -> event_handle {
     return add_timer(std::chrono::steady_clock::now() + d, std::move(op));
   }
   auto add_timer(std::chrono::steady_clock::time_point expiry,
-                 reactor_op_ptr op) -> timer_event_handle;
+                 reactor_op_ptr op) -> event_handle;
 
   /// Cancel a timer registration.
   ///
   /// Thread-safe: can be called from any thread. Completion/abort callbacks
   /// and operation destruction still occur on the reactor thread.
-  void cancel_timer(timer_event_handle h) noexcept;
+  void cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept;
+  void cancel_event(event_handle h) noexcept;
 
-  auto register_fd_read(int fd, reactor_op_ptr op) -> fd_event_handle;
-  auto register_fd_write(int fd, reactor_op_ptr op) -> fd_event_handle;
+  auto register_fd_read(int fd, reactor_op_ptr op) -> event_handle;
+  auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   void deregister_fd(int fd);
 
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
@@ -84,8 +82,6 @@ class io_context_impl {
   auto has_work() -> bool;
 
   void apply_fd_interest(int fd, fd_interest interest);
-  void enqueue_fd_interest(int fd, fd_interest interest);
-  void flush_fd_interest();
 
   std::unique_ptr<backend_interface> backend_;
 
@@ -95,8 +91,6 @@ class io_context_impl {
   timer_registry timers_{};
   posted_queue posted_{};
   std::vector<backend_event> backend_events_{};
-  std::vector<std::pair<int, fd_interest>> pending_interest_{};
-
   std::atomic<std::uintptr_t> thread_token_{0};
 };
 

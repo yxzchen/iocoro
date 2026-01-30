@@ -77,8 +77,8 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
   }
 
   int old_fd = -1;
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     // Mark as opening to block concurrent open/assign.
@@ -117,8 +117,8 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
 }
 
 inline void socket_impl_base::cancel() noexcept {
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     rh = std::exchange(read_handle_, {});
@@ -128,12 +128,12 @@ inline void socket_impl_base::cancel() noexcept {
   rh.cancel();
   wh.cancel();
 
-  /// The fd_event_handle::cancel() method will handle deregistration from the IO loop
+  /// The event_handle::cancel() method will handle deregistration from the IO loop
   /// if no other operations remain, so explicit deregistration here is unnecessary.
 }
 
 inline void socket_impl_base::cancel_read() noexcept {
-  fd_event_handle rh{};
+  detail::event_handle rh{};
   {
     std::scoped_lock lk{mtx_};
     rh = std::exchange(read_handle_, {});
@@ -142,7 +142,7 @@ inline void socket_impl_base::cancel_read() noexcept {
 }
 
 inline void socket_impl_base::cancel_write() noexcept {
-  fd_event_handle wh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     wh = std::exchange(write_handle_, {});
@@ -152,8 +152,8 @@ inline void socket_impl_base::cancel_write() noexcept {
 
 inline void socket_impl_base::close() noexcept {
   int fd = -1;
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::closed) {
@@ -185,8 +185,8 @@ inline void socket_impl_base::close() noexcept {
 
 inline auto socket_impl_base::release() noexcept -> int {
   int fd = -1;
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     fd = fd_.exchange(-1, std::memory_order_acq_rel);
