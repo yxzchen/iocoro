@@ -1,12 +1,10 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
 
-#include <chrono>
 #include <cstddef>
 #include <span>
 #include <system_error>
@@ -23,7 +21,6 @@ template <async_read_stream Stream>
 auto async_read(Stream& s, std::span<std::byte> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const wanted = buf.size();
-  std::size_t total = 0;
 
   while (!buf.empty()) {
     auto r = co_await s.async_read_some(buf);
@@ -36,7 +33,6 @@ auto async_read(Stream& s, std::span<std::byte> buf)
       co_return unexpected(error::eof);
     }
 
-    total += n;
     buf = buf.subspan(n);
   }
 
