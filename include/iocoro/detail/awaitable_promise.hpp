@@ -79,7 +79,23 @@ struct awaitable_promise_base {
 
   void post_resume(std::coroutine_handle<> h) noexcept {
     IOCORO_ENSURE(ex_, "awaitable_promise: post_resume() requires executor");
-    ex_.post([h]() mutable { h.resume(); });
+
+    constexpr std::uint32_t max_inline_depth = 64;
+    thread_local std::uint32_t inline_depth = 0;
+
+    if (inline_depth >= max_inline_depth) {
+      ex_.post([h]() mutable { h.resume(); });
+      return;
+    }
+
+    struct inline_guard {
+      std::uint32_t& depth;
+      ~inline_guard() { --depth; }
+    };
+
+    ++inline_depth;
+    inline_guard guard{inline_depth};
+    ex_.dispatch([h]() mutable { h.resume(); });
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
