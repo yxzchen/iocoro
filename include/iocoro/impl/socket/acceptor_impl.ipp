@@ -4,17 +4,14 @@
 namespace iocoro::detail::socket {
 
 inline void acceptor_impl::cancel_read() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++accept_epoch_;
-  }
+  accept_epoch_.fetch_add(1, std::memory_order_acq_rel);
   base_.cancel_read();
 }
 
 inline void acceptor_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
-    ++accept_epoch_;
+    accept_epoch_.fetch_add(1, std::memory_order_acq_rel);
     listening_ = false;
     accept_active_ = false;
   }
@@ -77,7 +74,7 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
       co_return unexpected(error::busy);
     }
     accept_active_ = true;
-    my_epoch = accept_epoch_;
+    my_epoch = accept_epoch_.load(std::memory_order_acquire);
   }
 
   // RAII guard to ensure accept_active_ is cleared on all exit paths.
@@ -137,11 +134,6 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
 
     co_return unexpected(std::error_code(errno, std::generic_category()));
   }
-}
-
-inline auto acceptor_impl::is_accept_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-  std::scoped_lock lk{mtx_};
-  return accept_epoch_ == epoch;
 }
 
 }  // namespace iocoro::detail::socket

@@ -9,6 +9,7 @@
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <system_error>
@@ -90,9 +91,11 @@ class acceptor_impl {
   mutable std::mutex mtx_{};
   bool listening_{false};
   bool accept_active_{false};
-  std::uint64_t accept_epoch_{0};
+  std::atomic<std::uint64_t> accept_epoch_{0};
 
-  auto is_accept_epoch_current(std::uint64_t epoch) const noexcept -> bool;
+  auto is_accept_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+    return accept_epoch_.load(std::memory_order_acquire) == epoch;
+  }
 };
 
 }  // namespace iocoro::detail::socket

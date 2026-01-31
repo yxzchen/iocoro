@@ -7,35 +7,26 @@
 namespace iocoro::detail::socket {
 
 inline void datagram_socket_impl::cancel() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++send_epoch_;
-    ++receive_epoch_;
-  }
+  send_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  receive_epoch_.fetch_add(1, std::memory_order_acq_rel);
   base_.cancel();
 }
 
 inline void datagram_socket_impl::cancel_read() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++receive_epoch_;
-  }
+  receive_epoch_.fetch_add(1, std::memory_order_acq_rel);
   base_.cancel_read();
 }
 
 inline void datagram_socket_impl::cancel_write() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++send_epoch_;
-  }
+  send_epoch_.fetch_add(1, std::memory_order_acq_rel);
   base_.cancel_write();
 }
 
 inline void datagram_socket_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
-    ++send_epoch_;
-    ++receive_epoch_;
+    send_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    receive_epoch_.fetch_add(1, std::memory_order_acq_rel);
     state_ = dgram_state::idle;
     connected_addr_len_ = 0;
     std::memset(&connected_addr_, 0, sizeof(connected_addr_));
@@ -108,7 +99,7 @@ inline auto datagram_socket_impl::async_send_to(
       co_return unexpected(error::busy);
     }
     send_in_flight_ = true;
-    my_epoch = send_epoch_;
+    my_epoch = send_epoch_.load(std::memory_order_acquire);
     is_connected = (state_ == dgram_state::connected);
   }
 
@@ -200,7 +191,7 @@ inline auto datagram_socket_impl::async_receive_from(
       co_return unexpected(error::busy);
     }
     receive_in_flight_ = true;
-    my_epoch = receive_epoch_;
+    my_epoch = receive_epoch_.load(std::memory_order_acquire);
   }
 
   auto guard = detail::make_scope_exit([this] {
@@ -256,16 +247,6 @@ inline auto datagram_socket_impl::async_receive_from(
 
     co_return unexpected(std::error_code(errno, std::generic_category()));
   }
-}
-
-inline auto datagram_socket_impl::is_send_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-  std::scoped_lock lk{mtx_};
-  return send_epoch_ == epoch;
-}
-
-inline auto datagram_socket_impl::is_receive_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-  std::scoped_lock lk{mtx_};
-  return receive_epoch_ == epoch;
 }
 
 }  // namespace iocoro::detail::socket

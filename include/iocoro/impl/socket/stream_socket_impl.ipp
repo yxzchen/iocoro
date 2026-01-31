@@ -7,36 +7,24 @@
 namespace iocoro::detail::socket {
 
 inline void stream_socket_impl::cancel() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++read_epoch_;
-    ++write_epoch_;
-    ++connect_epoch_;
-  }
+  read_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  write_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  connect_epoch_.fetch_add(1, std::memory_order_acq_rel);
   base_.cancel();
 }
 
 inline void stream_socket_impl::cancel_read() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++read_epoch_;
-  }
+  read_epoch_.fetch_add(1, std::memory_order_acq_rel);
   base_.cancel_read();
 }
 
 inline void stream_socket_impl::cancel_write() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++write_epoch_;
-  }
+  write_epoch_.fetch_add(1, std::memory_order_acq_rel);
   base_.cancel_write();
 }
 
 inline void stream_socket_impl::cancel_connect() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++connect_epoch_;
-  }
+  connect_epoch_.fetch_add(1, std::memory_order_acq_rel);
   // connect waits for writability.
   base_.cancel_write();
 }
@@ -44,9 +32,9 @@ inline void stream_socket_impl::cancel_connect() noexcept {
 inline void stream_socket_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
-    ++read_epoch_;
-    ++write_epoch_;
-    ++connect_epoch_;
+    read_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    write_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    connect_epoch_.fetch_add(1, std::memory_order_acq_rel);
     state_ = conn_state::disconnected;
     shutdown_ = {};
     // NOTE: do not touch read_in_flight_/write_in_flight_ here; their owner is the coroutine.
@@ -86,7 +74,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     }
     connect_in_flight_ = true;
     state_ = conn_state::connecting;
-    my_epoch = connect_epoch_;
+    my_epoch = connect_epoch_.load(std::memory_order_acquire);
   }
 
   // Ensure the "connect owner" flag is always released by the owning coroutine.
@@ -149,7 +137,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 
   {
     std::scoped_lock lk{mtx_};
-    if (connect_epoch_ != my_epoch) {
+    if (connect_epoch_.load(std::memory_order_acquire) != my_epoch) {
       state_ = conn_state::disconnected;
       co_return error::operation_aborted;
     }
@@ -178,7 +166,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
       co_return unexpected(error::busy);
     }
     read_in_flight_ = true;
-    my_epoch = read_epoch_;
+    my_epoch = read_epoch_.load(std::memory_order_acquire);
   }
 
   auto guard = detail::make_scope_exit([this] {
@@ -235,7 +223,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       co_return unexpected(error::busy);
     }
     write_in_flight_ = true;
-    my_epoch = write_epoch_;
+    my_epoch = write_epoch_.load(std::memory_order_acquire);
   }
 
   auto guard = detail::make_scope_exit([this] {
@@ -308,21 +296,6 @@ inline auto stream_socket_impl::shutdown(shutdown_type what) -> std::error_code 
     }
   }
   return {};
-}
-
-inline auto stream_socket_impl::is_read_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-  std::scoped_lock lk{mtx_};
-  return read_epoch_ == epoch;
-}
-
-inline auto stream_socket_impl::is_write_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-  std::scoped_lock lk{mtx_};
-  return write_epoch_ == epoch;
-}
-
-inline auto stream_socket_impl::is_connect_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-  std::scoped_lock lk{mtx_};
-  return connect_epoch_ == epoch;
 }
 
 }  // namespace iocoro::detail::socket

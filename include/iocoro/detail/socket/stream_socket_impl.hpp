@@ -8,6 +8,7 @@
 #include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -165,17 +166,23 @@ class stream_socket_impl {
   mutable std::mutex mtx_{};
 
   conn_state state_{conn_state::disconnected};
-  std::uint64_t read_epoch_{0};
-  std::uint64_t write_epoch_{0};
-  std::uint64_t connect_epoch_{0};
+  std::atomic<std::uint64_t> read_epoch_{0};
+  std::atomic<std::uint64_t> write_epoch_{0};
+  std::atomic<std::uint64_t> connect_epoch_{0};
   shutdown_state shutdown_{};
   bool read_in_flight_{false};
   bool write_in_flight_{false};
   bool connect_in_flight_{false};
 
-  auto is_read_epoch_current(std::uint64_t epoch) const noexcept -> bool;
-  auto is_write_epoch_current(std::uint64_t epoch) const noexcept -> bool;
-  auto is_connect_epoch_current(std::uint64_t epoch) const noexcept -> bool;
+  auto is_read_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+    return read_epoch_.load(std::memory_order_acquire) == epoch;
+  }
+  auto is_write_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+    return write_epoch_.load(std::memory_order_acquire) == epoch;
+  }
+  auto is_connect_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+    return connect_epoch_.load(std::memory_order_acquire) == epoch;
+  }
 };
 
 }  // namespace iocoro::detail::socket
