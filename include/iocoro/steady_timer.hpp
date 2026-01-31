@@ -3,9 +3,9 @@
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
+#include <iocoro/error.hpp>
 #include <chrono>
 #include <cstddef>
 #include <system_error>
@@ -25,19 +25,11 @@ class steady_timer {
   using duration = clock::duration;
 
   explicit steady_timer(any_io_executor ex) noexcept
-      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl),
-        expiry_(clock::now()) {
-    IOCORO_ENSURE(ctx_impl_, "steady_timer: requires IO executor");
-  }
+      : ctx_impl_(ex.io_context_ptr()), expiry_(clock::now()) {}
   steady_timer(any_io_executor ex, time_point at) noexcept
-      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl), expiry_(at) {
-    IOCORO_ENSURE(ctx_impl_, "steady_timer: requires IO executor");
-  }
+      : ctx_impl_(ex.io_context_ptr()), expiry_(at) {}
   steady_timer(any_io_executor ex, duration after) noexcept
-      : ctx_impl_(detail::get_reactor_access(ex.as_any_executor()).impl),
-        expiry_(clock::now() + after) {
-    IOCORO_ENSURE(ctx_impl_, "steady_timer: requires IO executor");
-  }
+      : ctx_impl_(ex.io_context_ptr()), expiry_(clock::now() + after) {}
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
@@ -65,6 +57,9 @@ class steady_timer {
   /// Returns:
   /// - `std::error_code{}` on successful timer expiry.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
+    if (!ctx_impl_) {
+      co_return error::invalid_argument;
+    }
     auto* timer = this;
     co_return co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) {
@@ -76,6 +71,9 @@ class steady_timer {
 
   /// Cancel the pending timer operation.
   void cancel() noexcept {
+    if (!ctx_impl_) {
+      return;
+    }
     detail::io_context_impl::event_handle h{};
     {
       std::scoped_lock lk{mtx_};

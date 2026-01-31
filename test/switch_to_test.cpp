@@ -38,8 +38,10 @@ TEST(switch_to_test, switches_executor_and_thread_pool_thread) {
       r.tid_before = std::this_thread::get_id();
       {
         auto cur_any = co_await iocoro::this_coro::executor;
-        auto cur = iocoro::detail::require_executor<iocoro::thread_pool::executor_type>(cur_any);
-        r.started_on_ex1 = (cur == ex1);
+        auto const* cur =
+          iocoro::detail::any_executor_access::target<iocoro::thread_pool::executor_type>(
+            cur_any);
+        r.started_on_ex1 = cur != nullptr && (*cur == ex1);
       }
 
       co_await iocoro::this_coro::switch_to(iocoro::any_executor{ex2});
@@ -47,8 +49,10 @@ TEST(switch_to_test, switches_executor_and_thread_pool_thread) {
       r.tid_after = std::this_thread::get_id();
       {
         auto cur_any = co_await iocoro::this_coro::executor;
-        auto cur = iocoro::detail::require_executor<iocoro::thread_pool::executor_type>(cur_any);
-        r.resumed_on_ex2 = (cur == ex2);
+        auto const* cur =
+          iocoro::detail::any_executor_access::target<iocoro::thread_pool::executor_type>(
+            cur_any);
+        r.resumed_on_ex2 = cur != nullptr && (*cur == ex2);
       }
 
       done.set_value(r);

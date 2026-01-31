@@ -110,7 +110,7 @@ struct awaitable_promise_base {
       any_executor ex;
       bool await_ready() noexcept { return true; }
       auto await_resume() noexcept -> any_io_executor {
-        return require_io_executor(ex);
+        return to_io_executor(ex);
       }
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
