@@ -2,9 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/bind_executor.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/any_executor.hpp>
 #include <iocoro/expected.hpp>
@@ -15,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stop_token>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -23,6 +22,24 @@ namespace iocoro::detail {
 
 template <typename T>
 using spawn_expected = expected<T, std::exception_ptr>;
+
+struct spawn_context {
+  any_executor parent_ex{};
+  std::stop_token parent_tok{};
+};
+
+template <typename Promise>
+void init_spawned_promise(Promise& promise, any_executor explicit_ex,
+                          spawn_context const& parent) noexcept {
+  promise.inherit_stop_token(parent.parent_tok);
+  if (parent.parent_ex) {
+    promise.inherit_executor(parent.parent_ex);
+  }
+  if (explicit_ex) {
+    promise.set_executor(std::move(explicit_ex));
+  }
+  IOCORO_ENSURE(promise.get_executor(), "co_spawn: requires executor");
+}
 
 /// State for detached/use_awaitable mode (no completion handler).
 /// Uses type-erased unique_function to avoid storing lambda types directly.
@@ -86,13 +103,15 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
 }
 
 template <typename T>
-void spawn_detached_impl(any_executor ex, awaitable<T> a) {
+void spawn_detached_impl(any_executor ex, awaitable<T> a,
+                         spawn_context const& parent = {}) {
   auto h = a.release();
 
-  h.promise().set_executor(ex);
+  init_spawned_promise(h.promise(), std::move(ex), parent);
   h.promise().detach();
 
-  ex.post([h]() mutable {
+  auto exec = h.promise().get_executor();
+  exec.post([h]() mutable {
     try {
       h.resume();
     } catch (...) {
@@ -103,10 +122,10 @@ void spawn_detached_impl(any_executor ex, awaitable<T> a) {
 
 template <typename T>
 struct spawn_result_state {
-  any_executor ex{};
   std::mutex m;
   bool done{false};
   std::coroutine_handle<> waiter{};
+  unique_function<void()> resume{};
   std::exception_ptr ep{};
   [[no_unique_address]] std::conditional_t<std::is_void_v<T>, std::monostate, std::optional<T>>
     value{};
@@ -131,15 +150,14 @@ struct spawn_result_state {
   }
 
   void complete() {
-    std::coroutine_handle<> h{};
+    unique_function<void()> resume_cb{};
     {
       std::scoped_lock lk{m};
       done = true;
-      h = std::exchange(waiter, {});
+      resume_cb = std::exchange(resume, {});
     }
-    if (h) {
-      IOCORO_ENSURE(ex, "spawn_result_state: empty executor with non empty waiter");
-      ex.post([h]() mutable { h.resume(); });
+    if (resume_cb) {
+      resume_cb();
     }
   }
 };
@@ -189,8 +207,11 @@ struct spawn_result_awaiter {
     IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters not supported");
 
     st->waiter = h;
-    st->ex = h.promise().get_executor();
-    IOCORO_ENSURE(st->ex, "co_spawn(use_awaitable): empty executor");
+    auto ex = h.promise().get_executor();
+    IOCORO_ENSURE(ex, "co_spawn(use_awaitable): empty executor");
+    st->resume = [ex, h]() mutable {
+      ex.post([h]() mutable { h.resume(); });
+    };
     return true;
   }
 
@@ -224,15 +245,14 @@ struct spawn_result_awaiter {
 /// Executes a spawned task and stores its result (or exception) in shared state.
 /// Used internally by co_spawn(use_awaitable) to run the task and notify waiters.
 template <typename T>
-auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_result_state<T>> st,
-                              awaitable<T> a) -> awaitable<void> {
-  auto bound = bind_executor<T>(ex, std::move(a));
+auto execute_and_store_result(std::shared_ptr<spawn_result_state<T>> st, awaitable<T> a)
+  -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
-      co_await std::move(bound);
+      co_await std::move(a);
       st->set_value();
     } else {
-      st->set_value(co_await std::move(bound));
+      st->set_value(co_await std::move(a));
     }
   } catch (...) {
     st->set_exception(std::current_exception());

@@ -27,8 +27,13 @@ class timer_registry {
     std::uint32_t generation = 0;
   };
 
+  struct cancel_result {
+    reactor_op_ptr op{};
+    bool cancelled = false;
+  };
+
   auto add_timer(std::chrono::steady_clock::time_point expiry, reactor_op_ptr op) -> timer_token;
-  auto cancel(timer_token tok) noexcept -> bool;
+  auto cancel(timer_token tok) noexcept -> cancel_result;
   auto next_timeout() -> std::optional<std::chrono::milliseconds>;
   auto process_expired(bool stopped) -> std::size_t;
   auto empty() const -> bool;
@@ -80,20 +85,22 @@ inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expi
   return timer_token{index, node.generation};
 }
 
-inline auto timer_registry::cancel(timer_token tok) noexcept -> bool {
+inline auto timer_registry::cancel(timer_token tok) noexcept -> cancel_result {
   std::scoped_lock lk{mtx_};
   if (tok.generation == 0 || tok.index >= nodes_.size()) {
-    return false;
+    return {};
   }
   auto& node = nodes_[tok.index];
   if (node.generation != tok.generation) {
-    return false;
+    return {};
   }
   if (node.state != timer_state::pending) {
-    return false;
+    return {};
   }
   node.state = timer_state::cancelled;
-  return true;
+  auto op = std::move(node.op);
+  node.op = {};
+  return cancel_result{std::move(op), true};
 }
 
 inline auto timer_registry::next_timeout() -> std::optional<std::chrono::milliseconds> {

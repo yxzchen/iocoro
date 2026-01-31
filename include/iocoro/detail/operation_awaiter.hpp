@@ -3,6 +3,7 @@
 #include <stop_token>
 
 #include <iocoro/assert.hpp>
+#include <iocoro/error.hpp>
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/any_executor.hpp>
 #include <coroutine>
@@ -38,6 +39,17 @@ struct operation_awaiter {
     st->ex = h.promise().get_executor();
     IOCORO_ENSURE(st->ex, "operation_awaiter: empty executor");
 
+    std::stop_token tok{};
+    bool has_tok = false;
+    if constexpr (requires { h.promise().get_stop_token(); }) {
+      tok = h.promise().get_stop_token();
+      has_tok = true;
+      if (tok.stop_requested()) {
+        st->ec = error::operation_aborted;
+        return false;
+      }
+    }
+
     struct op_state {
       std::shared_ptr<operation_wait_state> st;
 
@@ -54,10 +66,10 @@ struct operation_awaiter {
 
     auto handle = register_op(make_reactor_op<op_state>(st));
 
-    if constexpr (requires { h.promise().get_stop_token(); }) {
-      auto tok = h.promise().get_stop_token();
-      if (tok.stop_possible()) {
-        reg.emplace(std::move(tok), [handle]() { handle.cancel(); });
+    if (has_tok && tok.stop_possible()) {
+      reg.emplace(tok, [handle]() { handle.cancel(); });
+      if (tok.stop_requested()) {
+        handle.cancel();
       }
     }
     return true;

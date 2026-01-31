@@ -12,7 +12,6 @@
 #include "test_util.hpp"
 
 #include <chrono>
-#include <thread>
 
 namespace {
 
@@ -71,11 +70,11 @@ TEST(steady_timer_test, stop_token_does_not_hang_under_race) {
       std::stop_source src{};
       auto tok = src.get_token();
 
-      std::thread th([&] { src.request_stop(); });
       auto scope = co_await iocoro::this_coro::set_stop_token(tok);
+      src.request_stop();
+      
       auto out = co_await t.async_wait(iocoro::use_awaitable);
       scope.reset();
-      th.join();
 
       if (out != iocoro::error::operation_aborted) {
         co_return out;

@@ -140,7 +140,11 @@ inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point exp
 }
 
 inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept {
-  if (timers_.cancel(timer_registry::timer_token{index, generation})) {
+  auto res = timers_.cancel(timer_registry::timer_token{index, generation});
+  if (res.op) {
+    res.op->vt->on_abort(res.op->block, error::operation_aborted);
+  }
+  if (res.cancelled) {
     wakeup();
   }
 }
