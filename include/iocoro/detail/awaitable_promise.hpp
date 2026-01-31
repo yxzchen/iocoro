@@ -74,11 +74,11 @@ struct awaitable_promise_base {
     if (!continuation_) {
       return;
     }
-    post_resume(continuation_);
+    schedule_resume(continuation_);
   }
 
-  void post_resume(std::coroutine_handle<> h) noexcept {
-    IOCORO_ENSURE(ex_, "awaitable_promise: post_resume() requires executor");
+  void schedule_resume(std::coroutine_handle<> h) noexcept {
+    IOCORO_ENSURE(ex_, "awaitable_promise: schedule_resume() requires executor");
 
     constexpr std::uint32_t max_inline_depth = 64;
     thread_local std::uint32_t inline_depth = 0;
@@ -148,7 +148,7 @@ struct awaitable_promise_base {
         IOCORO_ENSURE(target, "this_coro::switch_to: empty executor");
 
         self->ex_ = std::move(target);
-        self->post_resume(h);
+        self->schedule_resume(h);
         return true;
       }
 
