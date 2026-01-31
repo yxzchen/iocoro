@@ -4,6 +4,7 @@
 #include <iocoro/thread_pool.hpp>
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -83,4 +84,31 @@ TEST(strand_test, different_strands_do_not_serialize_each_other) {
   std::unique_lock lk{m};
   cv.wait(lk, [&] { return done.load() == total; });
   EXPECT_GE(max_in_flight.load(), 2);
+}
+
+TEST(strand_test, dispatch_runs_inline_on_same_strand) {
+  iocoro::thread_pool pool{2};
+  auto s = iocoro::make_strand(pool.get_executor());
+
+  std::mutex m;
+  std::condition_variable cv;
+  std::array<int, 3> order{};
+  std::atomic<int> index{0};
+  std::atomic<bool> done{false};
+
+  s.post([&] {
+    order[static_cast<std::size_t>(index++)] = 1;
+    s.dispatch([&] { order[static_cast<std::size_t>(index++)] = 2; });
+    order[static_cast<std::size_t>(index++)] = 3;
+
+    std::scoped_lock lk{m};
+    done.store(true);
+    cv.notify_all();
+  });
+
+  std::unique_lock lk{m};
+  cv.wait(lk, [&] { return done.load(); });
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 2);
+  EXPECT_EQ(order[2], 3);
 }

@@ -48,3 +48,37 @@ TEST(switch_to_test, switches_executor_and_thread_pool_thread) {
   cv.wait(lk, [&] { return done.load(); });
   EXPECT_TRUE(on_pool.load());
 }
+
+TEST(switch_to_test, switch_to_same_executor_keeps_binding) {
+  iocoro::io_context ctx;
+  auto ex1 = ctx.get_executor();
+
+  std::mutex m;
+  std::condition_variable cv;
+  std::atomic<bool> done{false};
+  std::atomic<bool> still_same{false};
+
+  iocoro::co_spawn(
+    ex1,
+    [&]() -> iocoro::awaitable<void> {
+      auto before = co_await iocoro::this_coro::executor;
+      co_await iocoro::this_coro::switch_to(iocoro::any_executor{ex1});
+      auto after = co_await iocoro::this_coro::executor;
+      if (after == before) {
+        still_same.store(true);
+      }
+      co_return;
+    },
+    [&](iocoro::expected<void, std::exception_ptr> r) {
+      (void)r;
+      std::scoped_lock lk{m};
+      done.store(true);
+      cv.notify_all();
+    });
+
+  ctx.run();
+
+  std::unique_lock lk{m};
+  cv.wait(lk, [&] { return done.load(); });
+  EXPECT_TRUE(still_same.load());
+}

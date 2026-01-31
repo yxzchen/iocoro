@@ -4,6 +4,7 @@
 #include <iocoro/io_context.hpp>
 
 #include <atomic>
+#include <vector>
 
 TEST(io_executor_test, default_executor_is_empty) {
   iocoro::any_io_executor ex{};
@@ -47,4 +48,22 @@ TEST(io_executor_test, dispatch_posts_when_not_on_context_thread) {
 
   ctx.run();
   EXPECT_EQ(count.load(), 1);
+}
+
+TEST(io_executor_test, dispatch_runs_inline_on_context_thread) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::vector<int> order;
+  ex.post([&] {
+    order.push_back(1);
+    ex.dispatch([&] { order.push_back(2); });
+    order.push_back(3);
+  });
+
+  ctx.run();
+  ASSERT_EQ(order.size(), 3U);
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 2);
+  EXPECT_EQ(order[2], 3);
 }

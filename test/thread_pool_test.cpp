@@ -2,6 +2,7 @@
 
 #include <iocoro/thread_pool.hpp>
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -56,4 +57,40 @@ TEST(thread_pool_test, exception_handler_is_called) {
   std::unique_lock lk{m};
   cv.wait(lk, [&] { return called.load(); });
   EXPECT_TRUE(called.load());
+}
+
+TEST(thread_pool_test, stop_and_join_are_idempotent) {
+  iocoro::thread_pool pool{2};
+
+  pool.stop();
+  pool.stop();
+  pool.join();
+  pool.join();
+}
+
+TEST(thread_pool_test, dispatch_runs_inline_on_worker_thread) {
+  iocoro::thread_pool pool{1};
+  auto ex = pool.get_executor();
+
+  std::mutex m;
+  std::condition_variable cv;
+  std::array<int, 3> order{};
+  std::atomic<int> index{0};
+  std::atomic<bool> done{false};
+
+  ex.post([&] {
+    order[static_cast<std::size_t>(index++)] = 1;
+    ex.dispatch([&] { order[static_cast<std::size_t>(index++)] = 2; });
+    order[static_cast<std::size_t>(index++)] = 3;
+
+    std::scoped_lock lk{m};
+    done.store(true);
+    cv.notify_all();
+  });
+
+  std::unique_lock lk{m};
+  cv.wait(lk, [&] { return done.load(); });
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 2);
+  EXPECT_EQ(order[2], 3);
 }

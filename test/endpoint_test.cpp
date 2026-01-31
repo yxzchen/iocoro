@@ -24,3 +24,15 @@ TEST(endpoint_test, parse_rejects_invalid_ports) {
   ASSERT_FALSE(ep);
   EXPECT_EQ(ep.error(), iocoro::error::invalid_argument);
 }
+
+TEST(endpoint_test, parse_rejects_missing_port) {
+  auto ep = iocoro::ip::tcp::endpoint::from_string("127.0.0.1");
+  ASSERT_FALSE(ep);
+  EXPECT_EQ(ep.error(), iocoro::error::invalid_argument);
+}
+
+TEST(endpoint_test, parse_rejects_unbracketed_ipv6) {
+  auto ep = iocoro::ip::tcp::endpoint::from_string("::1:8080");
+  ASSERT_FALSE(ep);
+  EXPECT_EQ(ep.error(), iocoro::error::invalid_argument);
+}

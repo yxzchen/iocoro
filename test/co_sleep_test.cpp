@@ -28,3 +28,14 @@ TEST(co_sleep_test, co_sleep_uses_current_executor) {
 
   ASSERT_TRUE(r);
 }
+
+TEST(co_sleep_test, co_sleep_zero_duration_completes) {
+  iocoro::io_context ctx;
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<void> {
+      co_await iocoro::co_sleep(ctx.get_executor(), std::chrono::milliseconds{0});
+    }());
+
+  ASSERT_TRUE(r);
+}

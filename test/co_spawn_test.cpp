@@ -55,3 +55,24 @@ TEST(co_spawn_test, co_spawn_use_awaitable_rethrows_exception) {
   ASSERT_FALSE(r);
   ASSERT_TRUE(r.error());
 }
+
+TEST(co_spawn_test, detached_light_stress_runs_all_tasks) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<int> count{0};
+  constexpr int total = 50;
+
+  for (int i = 0; i < total; ++i) {
+    iocoro::co_spawn(
+      ex,
+      [&]() -> iocoro::awaitable<void> {
+        count.fetch_add(1);
+        co_return;
+      },
+      iocoro::detached);
+  }
+
+  ctx.run();
+  EXPECT_EQ(count.load(), total);
+}

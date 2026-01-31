@@ -72,3 +72,46 @@ TEST(when_any_test, variadic_rethrows_exception_if_first) {
   ASSERT_FALSE(r);
   ASSERT_TRUE(r.error());
 }
+
+TEST(when_any_test, variadic_single_element_returns_index_zero) {
+  iocoro::io_context ctx;
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, std::variant<int>>> {
+      auto only = []() -> iocoro::awaitable<int> { co_return 7; }();
+      co_return co_await iocoro::when_any(std::move(only));
+    }());
+
+  ASSERT_TRUE(r);
+  EXPECT_EQ(r->first, 0U);
+  EXPECT_EQ(std::get<0>(r->second), 7);
+}
+
+TEST(when_any_test, variadic_void_returns_monostate) {
+  iocoro::io_context ctx;
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, std::variant<std::monostate>>> {
+      auto only = []() -> iocoro::awaitable<void> { co_return; }();
+      co_return co_await iocoro::when_any(std::move(only));
+    }());
+
+  ASSERT_TRUE(r);
+  EXPECT_EQ(r->first, 0U);
+  EXPECT_EQ(r->second.index(), 0U);
+}
+
+TEST(when_any_test, container_single_element_returns_index_zero) {
+  iocoro::io_context ctx;
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, int>> {
+      std::vector<iocoro::awaitable<int>> tasks;
+      tasks.emplace_back([]() -> iocoro::awaitable<int> { co_return 9; }());
+      co_return co_await iocoro::when_any(std::move(tasks));
+    }());
+
+  ASSERT_TRUE(r);
+  EXPECT_EQ(r->first, 0U);
+  EXPECT_EQ(r->second, 9);
+}

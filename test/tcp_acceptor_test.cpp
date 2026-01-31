@@ -58,3 +58,52 @@ TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   ASSERT_TRUE(*r);
   EXPECT_EQ(**r, 4U);
 }
+
+TEST(tcp_acceptor_test, accepts_multiple_connections_sequentially) {
+  iocoro::io_context ctx;
+  iocoro::ip::tcp::acceptor acc{ctx};
+
+  iocoro::ip::tcp::endpoint listen_ep{iocoro::ip::address_v4::loopback(), 0};
+  auto ec = acc.listen(listen_ep);
+  ASSERT_FALSE(ec) << ec.message();
+
+  auto local_ep = acc.local_endpoint();
+  ASSERT_TRUE(local_ep);
+
+  std::thread client([ep = *local_ep] {
+    for (int i = 0; i < 2; ++i) {
+      int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+      if (fd < 0) {
+        return;
+      }
+      if (::connect(fd, ep.data(), ep.size()) != 0) {
+        (void)::close(fd);
+        return;
+      }
+      (void)::send(fd, "ping", 4, 0);
+      (void)::close(fd);
+    }
+  });
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+      for (int i = 0; i < 2; ++i) {
+        auto accepted = co_await acc.async_accept();
+        if (!accepted) {
+          co_return iocoro::unexpected(accepted.error());
+        }
+        std::array<std::byte, 4> in{};
+        auto rd = co_await iocoro::io::async_read(*accepted, std::span{in});
+        if (!rd) {
+          co_return iocoro::unexpected(rd.error());
+        }
+      }
+      co_return 4U;
+    }());
+
+  client.join();
+
+  ASSERT_TRUE(r);
+  ASSERT_TRUE(*r);
+  EXPECT_EQ(**r, 4U);
+}

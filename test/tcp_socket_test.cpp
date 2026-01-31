@@ -71,3 +71,20 @@ TEST(tcp_socket_test, connect_and_exchange_data) {
   ASSERT_TRUE(*r);
   EXPECT_EQ(**r, 4U);
 }
+
+TEST(tcp_socket_test, connect_to_closed_port_returns_error) {
+  auto [listen_fd, port] = iocoro::test::make_listen_socket_ipv4();
+  ASSERT_GE(listen_fd.get(), 0);
+  ASSERT_NE(port, 0);
+  listen_fd.reset();
+
+  iocoro::io_context ctx;
+  iocoro::ip::tcp::socket sock{ctx};
+  iocoro::ip::tcp::endpoint ep{iocoro::ip::address_v4::loopback(), port};
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::error_code> { co_return co_await sock.async_connect(ep); }());
+
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(*r);
+}

@@ -67,3 +67,42 @@ TEST(when_all_test, rethrows_first_exception_after_all_tasks_complete) {
   ASSERT_FALSE(r);
   ASSERT_TRUE(r.error());
 }
+
+TEST(when_all_test, empty_container_returns_empty_vector) {
+  iocoro::io_context ctx;
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::vector<int>> {
+      std::vector<iocoro::awaitable<int>> tasks;
+      co_return co_await iocoro::when_all(std::move(tasks));
+    }());
+
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(r->empty());
+}
+
+TEST(when_all_test, zero_variadic_returns_empty_tuple) {
+  iocoro::io_context ctx;
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::tuple<>> {
+      co_return co_await iocoro::when_all();
+    }());
+
+  ASSERT_TRUE(r);
+}
+
+TEST(when_all_test, container_single_element_returns_value) {
+  iocoro::io_context ctx;
+
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::vector<int>> {
+      std::vector<iocoro::awaitable<int>> tasks;
+      tasks.emplace_back([]() -> iocoro::awaitable<int> { co_return 7; }());
+      co_return co_await iocoro::when_all(std::move(tasks));
+    }());
+
+  ASSERT_TRUE(r);
+  ASSERT_EQ(r->size(), 1U);
+  EXPECT_EQ((*r)[0], 7);
+}

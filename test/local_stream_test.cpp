@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <thread>
 
 #include <sys/socket.h>
@@ -64,4 +65,15 @@ TEST(local_stream_test, accept_and_exchange_data) {
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);
   EXPECT_EQ(**r, 4U);
+}
+
+TEST(local_stream_test, endpoint_from_path_rejects_invalid_lengths) {
+  auto empty = iocoro::local::endpoint::from_path("");
+  ASSERT_FALSE(empty);
+  EXPECT_EQ(empty.error(), iocoro::error::invalid_argument);
+
+  std::string long_path(sizeof(sockaddr_un::sun_path), 'a');
+  auto too_long = iocoro::local::endpoint::from_path(long_path);
+  ASSERT_FALSE(too_long);
+  EXPECT_EQ(too_long.error(), iocoro::error::invalid_argument);
 }
