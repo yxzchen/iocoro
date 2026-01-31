@@ -45,8 +45,7 @@ inline thread_local thread_pool_worker_context* thread_pool_ctx = nullptr;
 ///   policies. It is primarily a building block for higher-level executors.
 class thread_pool {
  public:
-  class basic_executor_type;
-  typedef basic_executor_type executor_type;
+  class executor_type;
 
   /// Type for exception handler callback
   using exception_handler_t = std::function<void(std::exception_ptr)>;
@@ -127,15 +126,15 @@ class thread_pool {
 /// A lightweight executor that schedules work onto a thread_pool.
 ///
 /// Holds shared ownership of pool state for lifetime safety.
-class thread_pool::basic_executor_type {
+class thread_pool::executor_type {
  public:
-  basic_executor_type() noexcept = default;
-  explicit basic_executor_type(std::shared_ptr<state> s) noexcept : state_(std::move(s)) {}
+  executor_type() noexcept = default;
+  explicit executor_type(std::shared_ptr<state> s) noexcept : state_(std::move(s)) {}
 
-  basic_executor_type(basic_executor_type const&) noexcept = default;
-  auto operator=(basic_executor_type const&) noexcept -> basic_executor_type& = default;
-  basic_executor_type(basic_executor_type&&) noexcept = default;
-  auto operator=(basic_executor_type&&) noexcept -> basic_executor_type& = default;
+  executor_type(executor_type const&) noexcept = default;
+  auto operator=(executor_type const&) noexcept -> executor_type& = default;
+  executor_type(executor_type&&) noexcept = default;
+  auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
   template <class F>
     requires std::is_invocable_v<F&>
@@ -150,7 +149,7 @@ class thread_pool::basic_executor_type {
       if (!locked) {
         return;
       }
-      detail::executor_guard g{any_executor{basic_executor_type{std::move(locked)}}};
+      detail::executor_guard g{any_executor{executor_type{std::move(locked)}}};
       fn();
     };
 
@@ -191,7 +190,7 @@ class thread_pool::basic_executor_type {
 
     auto const cur_any = detail::get_current_executor();
     if (cur_any) {
-      auto const* cur = detail::any_executor_access::target<basic_executor_type>(cur_any);
+      auto const* cur = detail::any_executor_access::target<executor_type>(cur_any);
       if (cur != nullptr && (*cur == *this)) {
         f();
         return;
@@ -208,17 +207,17 @@ class thread_pool::basic_executor_type {
 
   explicit operator bool() const noexcept { return state_ != nullptr; }
 
-  friend auto operator==(basic_executor_type const& a,
-                         basic_executor_type const& b) noexcept -> bool {
+  friend auto operator==(executor_type const& a,
+                         executor_type const& b) noexcept -> bool {
     return a.state_.get() == b.state_.get();
   }
-  friend auto operator!=(basic_executor_type const& a,
-                         basic_executor_type const& b) noexcept -> bool {
+  friend auto operator!=(executor_type const& a,
+                         executor_type const& b) noexcept -> bool {
     return !(a == b);
   }
 
  private:
-  friend class work_guard<basic_executor_type>;
+  friend class work_guard<executor_type>;
 
   void add_work_guard() const noexcept {
     if (state_) {
@@ -245,14 +244,14 @@ class thread_pool::basic_executor_type {
 namespace iocoro::detail {
 
 template <>
-struct executor_traits<thread_pool::basic_executor_type> {
-  static auto capabilities(thread_pool::basic_executor_type const& ex) noexcept
+struct executor_traits<thread_pool::executor_type> {
+  static auto capabilities(thread_pool::executor_type const& ex) noexcept
     -> executor_capability {
     (void)ex;
     return executor_capability::none;
   }
 
-  static auto io_context(thread_pool::basic_executor_type const&) noexcept -> io_context_impl* {
+  static auto io_context(thread_pool::executor_type const&) noexcept -> io_context_impl* {
     return nullptr;
   }
 };
