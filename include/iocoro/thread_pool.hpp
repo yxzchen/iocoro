@@ -6,6 +6,7 @@
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/lockfree_mpmc_queue.hpp>
 #include <iocoro/detail/unique_function.hpp>
+#include <iocoro/detail/work_guard_counter.hpp>
 #include <iocoro/work_guard.hpp>
 
 #include <atomic>
@@ -95,7 +96,7 @@ class thread_pool {
     std::vector<std::unique_ptr<worker_state>> workers;
 
     std::atomic<pool_state> lifecycle{pool_state::running};
-    std::atomic<std::size_t> work_guard_count{0};
+    detail::work_guard_counter work_guard{};
 
     std::size_t n_threads{};
 
@@ -106,7 +107,7 @@ class thread_pool {
       if (lc == pool_state::running) {
         return true;
       }
-      return work_guard_count.load(std::memory_order_acquire) > 0;
+      return work_guard.has_work();
     }
 
     auto request_stop() noexcept -> bool {
@@ -221,14 +222,13 @@ class thread_pool::executor_type {
 
   void add_work_guard() const noexcept {
     if (state_) {
-      state_->work_guard_count.fetch_add(1, std::memory_order_acq_rel);
+      state_->work_guard.add();
     }
   }
 
   void remove_work_guard() const noexcept {
     if (state_) {
-      auto old = state_->work_guard_count.fetch_sub(1, std::memory_order_acq_rel);
-      IOCORO_ENSURE(old > 0, "remove_work_guard without add_work_guard");
+      auto const old = state_->work_guard.remove();
       if (old == 1) {
         // Last guard removed, wake threads
         state_->cv.notify_all();

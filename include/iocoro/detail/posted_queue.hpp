@@ -1,7 +1,7 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
 #include <iocoro/detail/unique_function.hpp>
+#include <iocoro/detail/work_guard_counter.hpp>
 
 #include <atomic>
 #include <mutex>
@@ -49,20 +49,18 @@ class posted_queue {
     return n;
   }
 
-  void add_work_guard() noexcept { work_guard_.fetch_add(1, std::memory_order_acq_rel); }
+  void add_work_guard() noexcept { work_guard_.add(); }
 
   auto remove_work_guard() noexcept -> std::size_t {
-    auto const old = work_guard_.fetch_sub(1, std::memory_order_acq_rel);
-    IOCORO_ENSURE(old > 0, "posted_queue: remove_work_guard() without add_work_guard()");
-    return old;
+    return work_guard_.remove();
   }
 
   auto work_guard_count() const noexcept -> std::size_t {
-    return work_guard_.load(std::memory_order_acquire);
+    return work_guard_.count();
   }
 
   auto has_work() const -> bool {
-    if (work_guard_count() > 0) {
+    if (work_guard_.has_work()) {
       return true;
     }
     std::scoped_lock lk{mtx_};
@@ -72,7 +70,7 @@ class posted_queue {
  private:
   mutable std::mutex mtx_{};
   std::queue<unique_function<void()>> queue_{};
-  std::atomic<std::size_t> work_guard_{0};
+  work_guard_counter work_guard_{};
 };
 
 }  // namespace iocoro::detail

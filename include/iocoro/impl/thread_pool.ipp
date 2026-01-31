@@ -93,7 +93,7 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s, std::size_t index
 
     auto should_stop = [&]() noexcept -> bool {
       return s->lifecycle.load(std::memory_order_acquire) == pool_state::stopping &&
-             s->work_guard_count.load(std::memory_order_acquire) == 0 &&
+             s->work_guard.count() == 0 &&
              s->global_pending.load(std::memory_order_acquire) == 0 && local_empty();
     };
 
@@ -104,7 +104,7 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s, std::size_t index
           return true;
         }
         if (s->lifecycle.load(std::memory_order_acquire) == pool_state::stopping &&
-            s->work_guard_count.load(std::memory_order_acquire) == 0) {
+            s->work_guard.count() == 0) {
           return true;
         }
         return false;
