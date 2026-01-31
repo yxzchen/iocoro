@@ -101,6 +101,20 @@ class thread_pool {
     std::size_t n_threads{};
 
     std::atomic<std::shared_ptr<exception_handler_t>> on_task_exception{};
+
+    auto can_accept_work() const noexcept -> bool {
+      auto const lc = lifecycle.load(std::memory_order_acquire);
+      if (lc == pool_state::running) {
+        return true;
+      }
+      return work_guard_count.load(std::memory_order_acquire) > 0;
+    }
+
+    auto request_stop() noexcept -> bool {
+      auto expected = pool_state::running;
+      return lifecycle.compare_exchange_strong(
+        expected, pool_state::stopping, std::memory_order_acq_rel);
+    }
   };
 
   std::shared_ptr<state> state_;
@@ -152,17 +166,13 @@ class thread_pool::basic_executor_type {
       return;
     }
 
-    auto const lifecycle = state_->lifecycle.load(std::memory_order_acquire);
-    if (lifecycle != pool_state::running &&
-        state_->work_guard_count.load(std::memory_order_acquire) == 0) {
+    if (!state_->can_accept_work()) {
       return;
     }
 
     auto task = detail::unique_function<void()>{std::move(make_task)};
     while (!state_->global.try_enqueue(task)) {
-      auto const current = state_->lifecycle.load(std::memory_order_acquire);
-      if (current != pool_state::running &&
-          state_->work_guard_count.load(std::memory_order_acquire) == 0) {
+      if (!state_->can_accept_work()) {
         return;
       }
       std::this_thread::yield();

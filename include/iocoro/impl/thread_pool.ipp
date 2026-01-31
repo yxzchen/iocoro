@@ -91,6 +91,12 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s, std::size_t index
       return local.local.empty();
     };
 
+    auto should_stop = [&]() noexcept -> bool {
+      return s->lifecycle.load(std::memory_order_acquire) == pool_state::stopping &&
+             s->work_guard_count.load(std::memory_order_acquire) == 0 &&
+             s->global_pending.load(std::memory_order_acquire) == 0 && local_empty();
+    };
+
     if (!pop_local() && !pop_global() && !steal_from_others()) {
       std::unique_lock lock{s->cv_mutex};
       s->cv.wait(lock, [&] {
@@ -104,9 +110,7 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s, std::size_t index
         return false;
       });
 
-      if (s->lifecycle.load(std::memory_order_acquire) == pool_state::stopping &&
-          s->work_guard_count.load(std::memory_order_acquire) == 0 &&
-          s->global_pending.load(std::memory_order_acquire) == 0 && local_empty()) {
+      if (should_stop()) {
         break;
       }
       continue;
@@ -165,13 +169,8 @@ inline void thread_pool::stop() noexcept {
   if (!state_) {
     return;
   }
-  auto expected = pool_state::running;
-  if (state_->lifecycle.compare_exchange_strong(
-        expected, pool_state::stopping, std::memory_order_acq_rel)) {
-    state_->cv.notify_all();
-  } else {
-    state_->cv.notify_all();
-  }
+  (void)state_->request_stop();
+  state_->cv.notify_all();
 }
 
 inline void thread_pool::join() noexcept {
