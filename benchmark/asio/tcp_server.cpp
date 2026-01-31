@@ -21,6 +21,10 @@ awaitable_type echo(tcp_socket socket)
       char data[1024];
       for (;;) {
          std::size_t n = co_await socket.async_read_some(net::buffer(data), use_awaitable);
+         if (n == 0) {
+            co_return;
+         }
+
          co_await async_write(socket, net::buffer(data, n), use_awaitable);
       }
    } catch (std::exception const&) {
