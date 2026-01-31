@@ -38,15 +38,8 @@ class strand_executor {
     IOCORO_ENSURE(state_, "strand_executor::post: empty state");
     IOCORO_ENSURE(state_->base, "strand_executor::post: empty base executor");
 
-    bool should_schedule = false;
-    {
-      std::scoped_lock lk{state_->m};
-      state_->tasks.emplace(std::forward<F>(f));
-      if (!state_->active) {
-        state_->active = true;
-        should_schedule = true;
-      }
-    }
+    auto fn = detail::unique_function<void()>{std::forward<F>(f)};
+    bool const should_schedule = state_->enqueue(std::move(fn));
 
     if (should_schedule) {
       // Schedule a drain on the underlying executor.
@@ -95,6 +88,27 @@ class strand_executor {
     std::mutex m{};
     std::queue<detail::unique_function<void()>> tasks{};
     bool active{false};  // true if a drain is scheduled or currently running
+
+    auto enqueue(detail::unique_function<void()> fn) -> bool {
+      std::scoped_lock lk{m};
+      tasks.emplace(std::move(fn));
+      if (active) {
+        return false;
+      }
+      active = true;
+      return true;
+    }
+
+    auto try_pop(detail::unique_function<void()>& out) -> bool {
+      std::scoped_lock lk{m};
+      if (tasks.empty()) {
+        active = false;
+        return false;
+      }
+      out = std::move(tasks.front());
+      tasks.pop();
+      return true;
+    }
   };
 
   static void drain(std::shared_ptr<state> st) noexcept {
@@ -105,23 +119,14 @@ class strand_executor {
     strand_executor ex{st};
     detail::executor_guard g{any_executor{ex}};
 
-    for (;;) {
-      detail::unique_function<void()> fn{};
-      {
-        std::scoped_lock lk{st->m};
-        if (st->tasks.empty()) {
-          st->active = false;
-          return;
-        }
-        fn = std::move(st->tasks.front());
-        st->tasks.pop();
-      }
-
+    detail::unique_function<void()> fn{};
+    while (st->try_pop(fn)) {
       try {
         fn();
       } catch (...) {
         // Scheduling APIs are noexcept; swallow task exceptions.
       }
+      fn = {};
     }
   }
 
