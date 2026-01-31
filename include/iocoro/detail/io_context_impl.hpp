@@ -57,6 +57,9 @@ class io_context_impl {
   auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   void deregister_fd(int fd);
 
+  auto arm_fd_interest(int fd) noexcept -> std::error_code;
+  void disarm_fd_interest(int fd) noexcept;
+
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
 
   void add_work_guard() noexcept;

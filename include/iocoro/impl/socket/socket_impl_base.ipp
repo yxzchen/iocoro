@@ -9,6 +9,8 @@
 namespace iocoro::detail::socket {
 
 inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> std::error_code {
+  int fd = -1;
+  bool opened = false;
   {
     std::scoped_lock lk{mtx_};
     if (state_ != fd_state::closed || native_handle() >= 0) {
@@ -17,7 +19,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     state_ = fd_state::opening;
   }
 
-  int fd = ::socket(domain, type, protocol);
+  fd = ::socket(domain, type, protocol);
   if (fd < 0) {
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::opening) {
@@ -35,12 +37,21 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
       state_ = fd_state::open;
-      return {};
+      opened = true;
     }
-    // Aborted by close()/assign() while opening.
-    // We intentionally do not adopt the fd.
   }
 
+  if (opened) {
+    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
+    if (reg_ec) {
+      close();
+      return reg_ec;
+    }
+    return {};
+  }
+
+  // Aborted by close()/assign() while opening.
+  // We intentionally do not adopt the fd.
   (void)::close(fd);
   return error::busy;
 }
@@ -51,6 +62,7 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
   }
 
   int old_fd = -1;
+  bool assigned = false;
   detail::event_handle rh{};
   detail::event_handle wh{};
   {
@@ -69,6 +81,7 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
   rh.cancel();
   wh.cancel();
   if (old_fd >= 0) {
+    ctx_impl_->disarm_fd_interest(old_fd);
     (void)::close(old_fd);
   }
 
@@ -81,8 +94,17 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
     if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
       state_ = fd_state::open;
-      return {};
+      assigned = true;
     }
+  }
+
+  if (assigned) {
+    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
+    if (reg_ec) {
+      close();
+      return reg_ec;
+    }
+    return {};
   }
 
   // Aborted by close() while assigning.
@@ -150,6 +172,7 @@ inline void socket_impl_base::close() noexcept {
   rh.cancel();
   wh.cancel();
   if (fd >= 0) {
+    ctx_impl_->disarm_fd_interest(fd);
     (void)::close(fd);
   }
 }
@@ -169,6 +192,9 @@ inline auto socket_impl_base::release() noexcept -> int {
   // Cancel any in-flight ops and deregister interest, but do NOT close the fd.
   rh.cancel();
   wh.cancel();
+  if (fd >= 0) {
+    ctx_impl_->disarm_fd_interest(fd);
+  }
   return fd;
 }
 

@@ -144,7 +144,6 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> even
   if (result.replaced) {
     result.replaced->vt->on_abort(result.replaced->block, error::operation_aborted);
   }
-  apply_fd_interest(fd, result.interest);
   wakeup();
   if (result.token == 0) {
     return event_handle::invalid_handle();
@@ -157,7 +156,6 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   if (result.replaced) {
     result.replaced->vt->on_abort(result.replaced->block, error::operation_aborted);
   }
-  apply_fd_interest(fd, result.interest);
   wakeup();
   if (result.token == 0) {
     return event_handle::invalid_handle();
@@ -165,12 +163,28 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   return event_handle::make_fd(this, fd, detail::fd_event_kind::write, result.token);
 }
 
+inline auto io_context_impl::arm_fd_interest(int fd) noexcept -> std::error_code {
+  if (fd < 0) {
+    return error::invalid_argument;
+  }
+  try {
+    apply_fd_interest(fd, fd_interest{true, true});
+  } catch (...) {
+    return error::internal_error;
+  }
+  wakeup();
+  return {};
+}
+
+inline void io_context_impl::disarm_fd_interest(int fd) noexcept {
+  if (fd < 0) {
+    return;
+  }
+  backend_->remove_fd_interest(fd);
+}
+
 inline void io_context_impl::deregister_fd(int fd) {
   auto removed = fd_registry_.deregister(fd);
-  if (removed.had_any) {
-    apply_fd_interest(fd, removed.interest);
-  }
-
   if (removed.read) {
     removed.read->vt->on_abort(removed.read->block, error::operation_aborted);
   }
@@ -187,7 +201,6 @@ inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,
     return;
   }
 
-  apply_fd_interest(fd, result.interest);
   if (result.removed) {
     result.removed->vt->on_abort(result.removed->block, error::operation_aborted);
   }
@@ -270,8 +283,6 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
     }
 
     auto ready = fd_registry_.take_ready(ev.fd, ev.can_read, ev.can_write);
-    apply_fd_interest(ev.fd, ready.interest);
-
     process_one(ready.read, ev.is_error, ev.ec);
     process_one(ready.write, ev.is_error, ev.ec);
   }
