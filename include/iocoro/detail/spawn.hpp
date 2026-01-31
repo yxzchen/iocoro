@@ -26,14 +26,6 @@ struct spawn_context {
   any_executor ex{};
 };
 
-inline auto make_spawn_context(any_executor explicit_ex,
-                               any_executor parent_ex = {}) noexcept -> spawn_context {
-  if (explicit_ex) {
-    return spawn_context{std::move(explicit_ex)};
-  }
-  return spawn_context{std::move(parent_ex)};
-}
-
 template <typename Promise>
 void init_spawned_promise(Promise& promise, spawn_context ctx) noexcept {
   if (ctx.ex) {

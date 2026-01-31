@@ -44,10 +44,10 @@ void when_all_start_variadic(any_executor fallback_ex,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
   (detail::spawn_task<void>(
-     detail::make_spawn_context([&]() {
+     detail::spawn_context{[&]() {
        auto task_ex = std::get<Is>(tasks).get_executor();
        return task_ex ? task_ex : fallback_ex;
-     }()),
+     }()},
      [st, task = std::move(std::get<Is>(tasks))]() mutable -> awaitable<void> {
        return when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
          st, std::move(task));
@@ -152,7 +152,7 @@ auto when_all(std::vector<awaitable<T>> tasks)
     auto task_executor = tasks[i].get_executor();
     auto exec = task_executor ? task_executor : fallback_ex;
     detail::spawn_task<void>(
-      detail::make_spawn_context(exec),
+      detail::spawn_context{exec},
       [st, i, task = std::move(tasks[i])]() mutable -> awaitable<void> {
         return detail::when_all_container_run_one<T>(st, i, std::move(task));
       },

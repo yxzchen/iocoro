@@ -31,7 +31,7 @@ template <typename F>
 void co_spawn(any_executor ex, F&& f, detached_t) {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
-  auto ctx = detail::make_spawn_context(std::move(ex));
+  auto ctx = detail::spawn_context{std::move(ex)};
   detail::spawn_task<value_type>(std::move(ctx), std::forward<F>(f),
                                  detail::detached_completion<value_type>{});
 }
@@ -45,7 +45,7 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
   auto st = std::make_shared<detail::spawn_result_state<value_type>>();
-  auto ctx = detail::make_spawn_context(std::move(ex));
+  auto ctx = detail::spawn_context{std::move(ex)};
 
   detail::spawn_task<value_type>(std::move(ctx), std::forward<F>(f),
                                  detail::result_state_completion<value_type>{st});
@@ -61,7 +61,7 @@ template <typename F, typename Completion>
 void co_spawn(any_executor ex, F&& f, Completion&& completion) {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
-  auto ctx = detail::make_spawn_context(std::move(ex));
+  auto ctx = detail::spawn_context{std::move(ex)};
   detail::spawn_task<value_type>(std::move(ctx), std::forward<F>(f),
                                  std::forward<Completion>(completion));
 }
