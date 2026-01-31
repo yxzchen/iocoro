@@ -6,11 +6,8 @@
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
-#include <stop_token>
-
 #include <chrono>
 #include <cstddef>
-#include <mutex>
 #include <system_error>
 
 namespace iocoro {
@@ -20,7 +17,7 @@ namespace iocoro {
 /// Model:
 /// - Each async_wait() creates a new timer operation.
 /// - cancel() cancels the current pending timer.
-/// - Setting a new expiry (expires_at/after) cancels the previous timer.
+/// - Updating expiry affects subsequent waits.
 class steady_timer {
  public:
   using clock = std::chrono::steady_clock;
@@ -63,11 +60,10 @@ class steady_timer {
     cancel();
   }
 
-  /// Wait until expiry (or cancellation) as an awaitable.
+  /// Wait until expiry as an awaitable.
   ///
   /// Returns:
   /// - `std::error_code{}` on successful timer expiry.
-  /// - `error::operation_aborted` if cancelled via current coroutine cancellation context.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
     auto* timer = this;
     co_return co_await detail::operation_awaiter{

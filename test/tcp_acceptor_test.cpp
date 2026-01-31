@@ -196,41 +196,6 @@ TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   ASSERT_FALSE(ec) << ec.message();
 }
 
-TEST(tcp_acceptor_test, cancel_aborts_waiting_accept) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-
-  auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
-    iocoro::ip::tcp::acceptor a{ex};
-    auto ep = iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0};
-    if (auto ec = a.listen(ep, 16)) {
-      co_return ec;
-    }
-
-    std::error_code out{};
-    auto task = iocoro::co_spawn(
-      ex,
-      [&]() -> iocoro::awaitable<void> {
-        auto r = co_await a.async_accept();
-        if (!r) out = r.error();
-      },
-      iocoro::use_awaitable);
-
-    // Give async_accept a chance to run accept()->EAGAIN and arm wait_read_ready().
-    (void)co_await iocoro::co_sleep(10ms);
-    a.cancel();
-
-    try {
-      co_await std::move(task);
-    } catch (...) {
-    }
-
-    co_return out;
-  }());
-
-  EXPECT_EQ(got, iocoro::error::operation_aborted);
-}
-
 TEST(tcp_acceptor_test, close_aborts_waiting_accept) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
@@ -315,8 +280,8 @@ TEST(tcp_acceptor_test, concurrent_async_accept_returns_busy) {
     } catch (...) {
     }
 
-    // Cancel first accept.
-    a.cancel();
+    // Close to terminate the first accept.
+    a.close();
 
     try {
       co_await std::move(t1);

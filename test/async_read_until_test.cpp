@@ -5,7 +5,6 @@
 #include <iocoro/io/read_until.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/this_coro.hpp>
 
 #include "test_util.hpp"
 
@@ -30,11 +29,6 @@ struct mock_read_stream {
 
   auto async_read_some(std::span<std::byte> buf)
     -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-    auto tok = co_await iocoro::this_coro::stop_token;
-    if (tok.stop_requested()) {
-      co_return iocoro::unexpected(iocoro::error::operation_aborted);
-    }
-
     if (pos >= data.size()) {
       co_return iocoro::expected<std::size_t, std::error_code>(0);
     }

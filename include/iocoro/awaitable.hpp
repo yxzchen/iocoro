@@ -55,9 +55,6 @@ class awaitable {
     if constexpr (requires { h.promise().get_executor(); }) {
       coro_.promise().inherit_executor(h.promise().get_executor());
     }
-    if constexpr (requires { h.promise().get_stop_token(); }) {
-      coro_.promise().inherit_stop_token(h.promise().get_stop_token());
-    }
     return coro_;
   }
   auto await_resume() -> T {

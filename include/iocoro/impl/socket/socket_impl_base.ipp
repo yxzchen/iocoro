@@ -127,9 +127,6 @@ inline void socket_impl_base::cancel() noexcept {
 
   rh.cancel();
   wh.cancel();
-
-  /// The event_handle::cancel() method will handle deregistration from the IO loop
-  /// if no other operations remain, so explicit deregistration here is unnecessary.
 }
 
 inline void socket_impl_base::cancel_read() noexcept {

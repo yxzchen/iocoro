@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <stop_token>
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/executor_guard.hpp>
@@ -139,7 +138,7 @@ class socket_impl_base {
   /// cancelled. The caller is responsible for managing the returned fd, including closing it.
   auto release() noexcept -> int;
 
-  /// Publish the current cancellation handle for the "read readiness" waiter.
+  /// Publish the current handle for the "read readiness" waiter.
   ///
   /// Ownership / contract:
   /// - `socket_impl_base` stores exactly ONE handle per direction (read/write).
@@ -154,15 +153,14 @@ class socket_impl_base {
     read_handle_ = h;
   }
 
-  /// Publish the current cancellation handle for the "write readiness" waiter.
+  /// Publish the current handle for the "write readiness" waiter.
   /// See `set_read_handle()` for the ownership/contract details.
   void set_write_handle(event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     write_handle_ = h;
   }
 
-  /// Wait until the native fd becomes readable (read readiness), observing the current coroutine
-  /// cancellation context.
+  /// Wait until the native fd becomes readable (read readiness).
   auto wait_read_ready() -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;
@@ -175,8 +173,7 @@ class socket_impl_base {
       }};
   }
 
-  /// Wait until the native fd becomes writable (write readiness), observing the current coroutine
-  /// cancellation context.
+  /// Wait until the native fd becomes writable (write readiness).
   auto wait_write_ready() -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;

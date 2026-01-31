@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <stop_token>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/expected.hpp>

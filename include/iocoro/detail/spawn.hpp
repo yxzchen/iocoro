@@ -13,7 +13,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stop_token>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -25,20 +24,18 @@ using spawn_expected = expected<T, std::exception_ptr>;
 
 struct spawn_context {
   any_executor ex{};
-  std::stop_token tok{};
 };
 
-inline auto make_spawn_context(any_executor explicit_ex, std::stop_token parent_tok,
+inline auto make_spawn_context(any_executor explicit_ex,
                                any_executor parent_ex = {}) noexcept -> spawn_context {
   if (explicit_ex) {
-    return spawn_context{std::move(explicit_ex), std::move(parent_tok)};
+    return spawn_context{std::move(explicit_ex)};
   }
-  return spawn_context{std::move(parent_ex), std::move(parent_tok)};
+  return spawn_context{std::move(parent_ex)};
 }
 
 template <typename Promise>
 void init_spawned_promise(Promise& promise, spawn_context ctx) noexcept {
-  promise.set_stop_token(std::move(ctx.tok));
   if (ctx.ex) {
     promise.set_executor(std::move(ctx.ex));
   }

@@ -2,11 +2,9 @@
 
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/co_spawn.hpp>
-#include <stop_token>
 #include <iocoro/io_context.hpp>
 #include <iocoro/local/endpoint.hpp>
 #include <iocoro/local/stream.hpp>
-#include <iocoro/this_coro.hpp>
 
 #include "test_util.hpp"
 
@@ -228,47 +226,6 @@ TEST(local_stream_test, open_bind_listen_accept_and_exchange_data) {
   ASSERT_FALSE(ec) << ec.message();
 }
 
-TEST(local_stream_test, cancel_aborts_waiting_accept) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-
-  auto path = make_temp_unix_path();
-  unlink_guard g{path};
-  auto ep_r = iocoro::local::endpoint::from_path(path);
-  ASSERT_TRUE(ep_r) << ep_r.error().message();
-  auto ep = *ep_r;
-
-  auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
-    iocoro::local::stream::acceptor a{ex};
-    if (auto ec = a.listen(ep, 16)) {
-      co_return ec;
-    }
-
-    std::error_code out{};
-    auto task = iocoro::co_spawn(
-      ex,
-      [&]() -> iocoro::awaitable<void> {
-        auto r = co_await a.async_accept();
-        if (!r) {
-          out = r.error();
-        }
-      },
-      iocoro::use_awaitable);
-
-    (void)co_await iocoro::co_sleep(10ms);
-    a.cancel();
-
-    try {
-      co_await std::move(task);
-    } catch (...) {
-    }
-
-    co_return out;
-  }());
-
-  EXPECT_EQ(got, iocoro::error::operation_aborted);
-}
-
 TEST(local_stream_test, close_aborts_waiting_accept) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
@@ -390,68 +347,6 @@ TEST(local_stream_test, async_connect_and_exchange_data) {
   }());
 
   ASSERT_FALSE(ec) << ec.message();
-}
-
-TEST(local_stream_test, read_some_with_stop_token_aborts) {
-  iocoro::io_context ctx;
-  auto ex = ctx.get_executor();
-
-  auto path = make_temp_unix_path();
-  unlink_guard g{path};
-
-  auto ep_r = iocoro::local::endpoint::from_path(path);
-  ASSERT_TRUE(ep_r) << ep_r.error().message();
-  auto ep = *ep_r;
-
-  auto got = iocoro::sync_wait_for(ctx, 1s, [&]() -> iocoro::awaitable<std::error_code> {
-    iocoro::local::stream::acceptor a{ex};
-    if (auto ec = a.listen(ep, 16)) {
-      co_return ec;
-    }
-
-    std::stop_source src{};
-    std::error_code read_ec{};
-
-    auto server_task = iocoro::co_spawn(
-      ex,
-      [&]() -> iocoro::awaitable<void> {
-        auto accepted = co_await a.async_accept();
-        if (!accepted) {
-          read_ec = accepted.error();
-          co_return;
-        }
-
-        auto s = std::move(*accepted);
-        std::array<std::byte, 8> buf{};
-        auto scope = co_await iocoro::this_coro::set_stop_token(src.get_token());
-        auto r = co_await s.async_read_some(buf);
-        scope.reset();
-        if (!r) {
-          read_ec = r.error();
-        } else {
-          read_ec = {};
-        }
-      },
-      iocoro::use_awaitable);
-
-    // Client connects but does not send anything, so server read blocks.
-    iocoro::local::stream::socket c{ex};
-    if (auto ec = co_await c.async_connect(ep)) {
-      co_return ec;
-    }
-
-    (void)co_await iocoro::co_sleep(ex, 10ms);
-    src.request_stop();
-
-    try {
-      co_await std::move(server_task);
-    } catch (...) {
-    }
-
-    co_return read_ec;
-  }());
-
-  EXPECT_EQ(got, iocoro::error::operation_aborted);
 }
 
 }  // namespace

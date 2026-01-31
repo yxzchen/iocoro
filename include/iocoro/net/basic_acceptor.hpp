@@ -25,7 +25,7 @@ namespace iocoro::net {
 ///
 /// This is a networking facade layered on top of:
 /// - `iocoro::detail::socket_handle_base<Impl>`: a small, reusable PImpl wrapper that provides
-///   fd lifecycle and common cancellation/option APIs.
+///   fd lifecycle and common option APIs.
 /// - `iocoro::detail::socket::acceptor_impl`: protocol-agnostic acceptor implementation.
 /// - Protocol semantics (endpoint conversion, socket type/protocol) are handled here in the facade.
 ///

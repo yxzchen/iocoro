@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stop_token>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
@@ -29,11 +28,6 @@ namespace iocoro::detail::socket {
 /// - At most one in-flight read and one in-flight write are intended (full-duplex).
 /// - Conflicting operations should return `error::busy` (first stage: stub).
 ///
-/// Cancellation token contract (ties into `socket_impl_base`):
-/// - This type guarantees at most one in-flight readiness waiter per direction via
-///   `read_in_flight_` / `write_in_flight_`.
-/// - It is therefore valid for `socket_impl_base` to store only the most-recent cancel handle
-///   per direction (read/write).
 class stream_socket_impl {
  public:
   stream_socket_impl() noexcept = delete;
@@ -109,40 +103,25 @@ class stream_socket_impl {
   ///
   /// Semantics:
   /// - Aborts waiters registered with the reactor (connect/read/write readiness waits).
-  /// - Does NOT directly modify stream-level state (e.g. conn_state). The awaiting coroutines
-  ///   observe cancellation via their wait result and clean up accordingly.
-  /// - Does NOT reset in-flight flags here; the awaiting coroutines will clear them on resume.
+  /// - Does NOT directly modify stream-level state (e.g. conn_state).
   void cancel() noexcept;
 
   /// Cancel pending read-side operations (best-effort).
-  ///
-  /// Semantics:
-  /// - Aborts the currently-registered "read readiness" waiter (if any).
-  /// - Does NOT affect write-side operations.
   void cancel_read() noexcept;
 
   /// Cancel pending write-side operations (best-effort).
-  ///
-  /// Semantics:
-  /// - Aborts the currently-registered "write readiness" waiter (if any).
-  /// - Does NOT affect read-side operations.
   ///
   /// Note: connect() readiness waits are implemented via writability. Therefore, cancel_write()
   /// may also abort an in-flight async_connect() if it is currently waiting for writability.
   void cancel_write() noexcept;
 
   /// Cancel pending connect operations (best-effort).
-  ///
-  /// Notes:
-  /// - connect readiness waits are implemented via writability.
-  /// - This increments connect_epoch_ so the connect coroutine can reliably detect cancellation
-  ///   even if the reactor handle was not yet published at the time of cancellation.
   void cancel_connect() noexcept;
 
   /// Close the stream socket (best-effort, idempotent).
   ///
   /// Semantics:
-  /// - Cancels and closes the underlying fd via socket_impl_base.
+  /// - Closes the underlying fd via socket_impl_base.
   /// - Resets stream-level state so the object can be reused after a later assign/open.
   void close() noexcept;
 

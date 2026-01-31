@@ -17,7 +17,6 @@ namespace iocoro {
 /// Semantics:
 /// - Timer is scheduled on the provided IO-capable executor.
 /// - Completion is resumed via the timer's executor (never inline).
-/// - If the awaiting coroutine is destroyed, the timer is implicitly cancelled.
 inline auto co_sleep(any_io_executor ex, std::chrono::steady_clock::duration d) -> awaitable<void> {
   IOCORO_ENSURE(ex, "co_sleep: requires a non-empty IO executor");
 

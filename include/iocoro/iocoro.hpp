@@ -25,8 +25,6 @@
 // Timers & composition
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/with_timeout.hpp>
-
 #include <iocoro/when_all.hpp>
 #include <iocoro/when_any.hpp>
 
@@ -38,7 +36,6 @@
 #include <iocoro/socket_option.hpp>
 
 // Async I/O algorithms
-#include <iocoro/io/connect.hpp>
 #include <iocoro/io/read.hpp>
 #include <iocoro/io/read_until.hpp>
 #include <iocoro/io/stream_concepts.hpp>

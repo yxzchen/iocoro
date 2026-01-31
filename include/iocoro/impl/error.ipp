@@ -51,8 +51,6 @@ class error_category_impl : public std::error_category {
         return "broken pipe";
       case error::connection_reset:
         return "connection reset";
-      case error::timed_out:
-        return "timed out";
       default:
         return "unknown error";
     }

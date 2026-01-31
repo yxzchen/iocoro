@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stop_token>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
@@ -39,11 +38,6 @@ namespace iocoro::detail::socket {
 /// - At most one in-flight send and one in-flight receive are allowed.
 /// - Conflicting operations return `error::busy`.
 ///
-/// Cancellation token contract (ties into `socket_impl_base`):
-/// - This type guarantees at most one in-flight readiness waiter per direction via
-///   `send_in_flight_` / `receive_in_flight_`.
-/// - It is therefore valid for `socket_impl_base` to store only the most-recent cancel handle
-///   per direction (read/write).
 class datagram_socket_impl {
  public:
   datagram_socket_impl() noexcept = delete;
