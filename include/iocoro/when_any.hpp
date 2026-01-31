@@ -52,14 +52,17 @@ void when_any_start_variadic(any_executor fallback_ex, std::stop_token parent_to
                              [[maybe_unused]] std::shared_ptr<when_any_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
-  (co_spawn([&]() {
-              auto task_ex = std::get<Is>(tasks).get_executor();
-              return task_ex ? task_ex : fallback_ex;
-            }(),
-            parent_tok,
-            when_any_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-              st, std::move(std::get<Is>(tasks))),
-            detached),
+  (detail::spawn_task<void>(
+     detail::make_spawn_context([&]() {
+       auto task_ex = std::get<Is>(tasks).get_executor();
+       return task_ex ? task_ex : fallback_ex;
+     }(),
+                                parent_tok),
+     [st, task = std::move(std::get<Is>(tasks))]() mutable -> awaitable<void> {
+       return when_any_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
+         st, std::move(task));
+     },
+     detail::detached_completion<void>{}),
    ...);
 }
 
@@ -174,8 +177,12 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     auto task_executor = tasks[i].get_executor();
     auto exec = task_executor ? task_executor : fallback_ex;
-    co_spawn(exec, parent_tok, detail::when_any_container_run_one<T>(st, i, std::move(tasks[i])),
-             detached);
+    detail::spawn_task<void>(
+      detail::make_spawn_context(exec, parent_tok),
+      [st, i, task = std::move(tasks[i])]() mutable -> awaitable<void> {
+        return detail::when_any_container_run_one<T>(st, i, std::move(task));
+      },
+      detail::detached_completion<void>{});
   }
 
   co_await detail::await_when(st);

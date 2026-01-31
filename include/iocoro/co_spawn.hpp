@@ -39,11 +39,9 @@ template <typename F>
 void co_spawn(any_executor ex, std::stop_token parent_tok, F&& f, detached_t) {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
-  auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
-  auto entry = detail::spawn_entry_point<value_type>(std::move(state));
-
-  detail::spawn_detached_impl(std::move(ex), std::move(entry),
-                              detail::spawn_context{any_executor{}, std::move(parent_tok)});
+  auto ctx = detail::make_spawn_context(std::move(ex), std::move(parent_tok));
+  detail::spawn_task<value_type>(std::move(ctx), std::forward<F>(f),
+                                 detail::detached_completion<value_type>{});
 }
 
 /// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
@@ -62,12 +60,10 @@ auto co_spawn(any_executor ex, std::stop_token parent_tok, F&& f, use_awaitable_
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
   auto st = std::make_shared<detail::spawn_result_state<value_type>>();
+  auto ctx = detail::make_spawn_context(std::move(ex), std::move(parent_tok));
 
-  auto state = std::make_shared<detail::spawn_state<value_type>>(std::forward<F>(f));
-  auto entry = detail::spawn_entry_point<value_type>(std::move(state));
-
-  co_spawn(std::move(ex), std::move(parent_tok),
-           detail::execute_and_store_result<value_type>(st, std::move(entry)), detached);
+  detail::spawn_task<value_type>(std::move(ctx), std::forward<F>(f),
+                                 detail::result_state_completion<value_type>{st});
   return detail::await_result<value_type>(std::move(st));
 }
 
@@ -88,12 +84,9 @@ template <typename F, typename Completion>
 void co_spawn(any_executor ex, std::stop_token parent_tok, F&& f, Completion&& completion) {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
-  auto state = std::make_shared<detail::spawn_state_with_completion<value_type>>(
-    std::forward<F>(f), std::forward<Completion>(completion));
-  auto entry = detail::spawn_entry_point_with_completion<value_type>(std::move(state));
-
-  detail::spawn_detached_impl(std::move(ex), std::move(entry),
-                              detail::spawn_context{any_executor{}, std::move(parent_tok)});
+  auto ctx = detail::make_spawn_context(std::move(ex), std::move(parent_tok));
+  detail::spawn_task<value_type>(std::move(ctx), std::forward<F>(f),
+                                 std::forward<Completion>(completion));
 }
 
 /// Overload for awaitable<T>: converts to factory lambda and forwards to unified implementation.

@@ -24,33 +24,26 @@ template <typename T>
 using spawn_expected = expected<T, std::exception_ptr>;
 
 struct spawn_context {
-  any_executor parent_ex{};
-  std::stop_token parent_tok{};
+  any_executor ex{};
+  std::stop_token tok{};
 };
 
-template <typename Promise>
-void init_spawned_promise(Promise& promise, any_executor explicit_ex,
-                          spawn_context const& parent) noexcept {
-  promise.inherit_stop_token(parent.parent_tok);
-  if (parent.parent_ex) {
-    promise.inherit_executor(parent.parent_ex);
-  }
+inline auto make_spawn_context(any_executor explicit_ex, std::stop_token parent_tok,
+                               any_executor parent_ex = {}) noexcept -> spawn_context {
   if (explicit_ex) {
-    promise.set_executor(std::move(explicit_ex));
+    return spawn_context{std::move(explicit_ex), std::move(parent_tok)};
+  }
+  return spawn_context{std::move(parent_ex), std::move(parent_tok)};
+}
+
+template <typename Promise>
+void init_spawned_promise(Promise& promise, spawn_context ctx) noexcept {
+  promise.set_stop_token(std::move(ctx.tok));
+  if (ctx.ex) {
+    promise.set_executor(std::move(ctx.ex));
   }
   IOCORO_ENSURE(promise.get_executor(), "co_spawn: requires executor");
 }
-
-/// State for detached/use_awaitable mode (no completion handler).
-/// Uses type-erased unique_function to avoid storing lambda types directly.
-template <typename T>
-struct spawn_state {
-  unique_function<awaitable<T>()> factory{};
-
-  template <typename F>
-    requires std::is_invocable_r_v<awaitable<T>, F&>
-  explicit spawn_state(F&& f) : factory(std::forward<F>(f)) {}
-};
 
 /// State for completion callback mode.
 /// Both factory and completion are type-erased.
@@ -75,15 +68,6 @@ void safe_invoke_completion(F& completion, spawn_expected<T> result) noexcept {
   }
 }
 
-/// Unified coroutine entry point for co_spawn.
-///
-/// This is the only coroutine wrapper responsible for owning and invoking the user-supplied
-/// callable (or an awaitable wrapped as a callable).
-template <typename T>
-auto spawn_entry_point(std::shared_ptr<spawn_state<T>> state) -> awaitable<T> {
-  co_return co_await state->factory();
-}
-
 template <typename T>
 auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completion<T>> state)
   -> awaitable<void> {
@@ -103,11 +87,10 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
 }
 
 template <typename T>
-void spawn_detached_impl(any_executor ex, awaitable<T> a,
-                         spawn_context const& parent = {}) {
+void spawn_detached_impl(spawn_context ctx, awaitable<T> a) {
   auto h = a.release();
 
-  init_spawned_promise(h.promise(), std::move(ex), parent);
+  init_spawned_promise(h.promise(), std::move(ctx));
   h.promise().detach();
 
   auto exec = h.promise().get_executor();
@@ -161,6 +144,41 @@ struct spawn_result_state {
     }
   }
 };
+
+template <typename T>
+struct detached_completion {
+  void operator()(spawn_expected<T>) const noexcept {}
+};
+
+template <typename T>
+struct result_state_completion {
+  std::shared_ptr<spawn_result_state<T>> st{};
+
+  void operator()(spawn_expected<T> r) const noexcept {
+    if (!st) {
+      return;
+    }
+    if (!r) {
+      st->set_exception(r.error());
+      st->complete();
+      return;
+    }
+    if constexpr (std::is_void_v<T>) {
+      st->set_value();
+    } else {
+      st->set_value(std::move(*r));
+    }
+    st->complete();
+  }
+};
+
+template <typename T, typename Factory, typename Completion>
+void spawn_task(spawn_context ctx, Factory&& factory, Completion&& completion) {
+  auto state = std::make_shared<spawn_state_with_completion<T>>(
+    std::forward<Factory>(factory), std::forward<Completion>(completion));
+  auto entry = spawn_entry_point_with_completion<T>(std::move(state));
+  spawn_detached_impl(std::move(ctx), std::move(entry));
+}
 
 /// Awaiter for retrieving the result of a spawned coroutine.
 /// Used by co_spawn(use_awaitable) to wait for completion and extract the result.
@@ -241,24 +259,6 @@ struct spawn_result_awaiter {
     }
   }
 };
-
-/// Executes a spawned task and stores its result (or exception) in shared state.
-/// Used internally by co_spawn(use_awaitable) to run the task and notify waiters.
-template <typename T>
-auto execute_and_store_result(std::shared_ptr<spawn_result_state<T>> st, awaitable<T> a)
-  -> awaitable<void> {
-  try {
-    if constexpr (std::is_void_v<T>) {
-      co_await std::move(a);
-      st->set_value();
-    } else {
-      st->set_value(co_await std::move(a));
-    }
-  } catch (...) {
-    st->set_exception(std::current_exception());
-  }
-  st->complete();
-}
 
 /// Returns an awaitable that retrieves the result from a spawn_result_state.
 /// Used internally by co_spawn(use_awaitable) to return an awaitable to the caller.
