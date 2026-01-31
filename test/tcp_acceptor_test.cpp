@@ -29,27 +29,7 @@ namespace {
 
 using namespace std::chrono_literals;
 
-struct unique_fd {
-  int fd{-1};
-  unique_fd() = default;
-  explicit unique_fd(int f) : fd(f) {}
-  unique_fd(unique_fd const&) = delete;
-  auto operator=(unique_fd const&) -> unique_fd& = delete;
-  unique_fd(unique_fd&& o) noexcept : fd(std::exchange(o.fd, -1)) {}
-  auto operator=(unique_fd&& o) noexcept -> unique_fd& {
-    if (this != &o) {
-      reset();
-      fd = std::exchange(o.fd, -1);
-    }
-    return *this;
-  }
-  ~unique_fd() { reset(); }
-  void reset(int f = -1) noexcept {
-    if (fd >= 0) ::close(fd);
-    fd = f;
-  }
-  explicit operator bool() const noexcept { return fd >= 0; }
-};
+using iocoro::test::unique_fd;
 
 static auto connect_to(std::uint16_t port) -> unique_fd {
   int fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);

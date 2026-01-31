@@ -5,6 +5,7 @@
 #include <iocoro/shutdown.hpp>
 #include <iocoro/io_context.hpp>
 
+#include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <cstddef>
@@ -159,21 +160,6 @@ class stream_socket_impl {
     bool write = false;
   };
 
-  // Minimal scope-exit helper (no exceptions thrown from body).
-  template <class F>
-  class final_action {
-   public:
-    explicit final_action(F f) noexcept : f_(std::move(f)) {}
-    ~final_action() { f_(); }
-
-   private:
-    F f_;
-  };
-  template <class F>
-  static auto finally(F f) noexcept -> final_action<F> {
-    return final_action<F>(std::move(f));
-  }
-
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
@@ -186,6 +172,10 @@ class stream_socket_impl {
   bool read_in_flight_{false};
   bool write_in_flight_{false};
   bool connect_in_flight_{false};
+
+  auto is_read_epoch_current(std::uint64_t epoch) const noexcept -> bool;
+  auto is_write_epoch_current(std::uint64_t epoch) const noexcept -> bool;
+  auto is_connect_epoch_current(std::uint64_t epoch) const noexcept -> bool;
 };
 
 }  // namespace iocoro::detail::socket

@@ -112,7 +112,7 @@ inline auto datagram_socket_impl::async_send_to(
     is_connected = (state_ == dgram_state::connected);
   }
 
-  auto guard = finally([this] {
+  auto guard = detail::make_scope_exit([this] {
     std::scoped_lock lk{mtx_};
     send_in_flight_ = false;
   });
@@ -152,11 +152,8 @@ inline auto datagram_socket_impl::async_send_to(
       if (ec) {
         co_return unexpected(ec);
       }
-      {
-        std::scoped_lock lk{mtx_};
-        if (send_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!is_send_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }
@@ -206,7 +203,7 @@ inline auto datagram_socket_impl::async_receive_from(
     my_epoch = receive_epoch_;
   }
 
-  auto guard = finally([this] {
+  auto guard = detail::make_scope_exit([this] {
     std::scoped_lock lk{mtx_};
     receive_in_flight_ = false;
   });
@@ -251,17 +248,24 @@ inline auto datagram_socket_impl::async_receive_from(
       if (ec) {
         co_return unexpected(ec);
       }
-      {
-        std::scoped_lock lk{mtx_};
-        if (receive_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!is_receive_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }
 
     co_return unexpected(std::error_code(errno, std::generic_category()));
   }
+}
+
+inline auto datagram_socket_impl::is_send_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+  std::scoped_lock lk{mtx_};
+  return send_epoch_ == epoch;
+}
+
+inline auto datagram_socket_impl::is_receive_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+  std::scoped_lock lk{mtx_};
+  return receive_epoch_ == epoch;
 }
 
 }  // namespace iocoro::detail::socket

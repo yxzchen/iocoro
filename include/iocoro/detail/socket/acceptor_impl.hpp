@@ -14,7 +14,6 @@
 #include <system_error>
 
 // Native socket APIs (generic / non-domain-specific).
-#include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
@@ -86,16 +85,14 @@ class acceptor_impl {
   auto async_accept() -> awaitable<expected<int, std::error_code>>;
 
  private:
-  static auto set_nonblocking(int fd) noexcept -> bool;
-
-  static auto set_cloexec(int fd) noexcept -> bool;
-
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
   bool listening_{false};
   bool accept_active_{false};
   std::uint64_t accept_epoch_{0};
+
+  auto is_accept_epoch_current(std::uint64_t epoch) const noexcept -> bool;
 };
 
 }  // namespace iocoro::detail::socket

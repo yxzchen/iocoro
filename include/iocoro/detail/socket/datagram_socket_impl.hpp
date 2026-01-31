@@ -4,6 +4,7 @@
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 
+#include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <cstddef>
@@ -134,21 +135,6 @@ class datagram_socket_impl {
     connected   // Socket connected to a remote peer.
   };
 
-  // Minimal scope-exit helper (no exceptions thrown from body).
-  template <class F>
-  class final_action {
-   public:
-    explicit final_action(F f) noexcept : f_(std::move(f)) {}
-    ~final_action() { f_(); }
-
-   private:
-    F f_;
-  };
-  template <class F>
-  static auto finally(F f) noexcept -> final_action<F> {
-    return final_action<F>(std::move(f));
-  }
-
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
@@ -162,6 +148,9 @@ class datagram_socket_impl {
   // Store the connected endpoint for validation.
   sockaddr_storage connected_addr_{};
   socklen_t connected_addr_len_{0};
+
+  auto is_send_epoch_current(std::uint64_t epoch) const noexcept -> bool;
+  auto is_receive_epoch_current(std::uint64_t epoch) const noexcept -> bool;
 };
 
 }  // namespace iocoro::detail::socket

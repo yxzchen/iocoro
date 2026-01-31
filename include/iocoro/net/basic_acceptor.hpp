@@ -8,16 +8,13 @@
 #include <iocoro/error.hpp>
 
 #include <iocoro/detail/socket/acceptor_impl.hpp>
+#include <iocoro/detail/socket_endpoint_utils.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
 
 #include <concepts>
 #include <utility>
 #include <functional>
 #include <system_error>
-
-// Native socket APIs for endpoint conversion.
-#include <sys/socket.h>
-#include <cerrno>
 
 namespace iocoro::net {
 
@@ -82,22 +79,7 @@ class basic_acceptor
   }
 
   auto local_endpoint() const -> expected<endpoint, std::error_code> {
-    auto const fd = this->impl_->native_handle();
-    if (fd < 0) {
-      return unexpected(error::not_open);
-    }
-
-    sockaddr_storage ss{};
-    socklen_t len = sizeof(ss);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
-      return unexpected(std::error_code(errno, std::generic_category()));
-    }
-    return endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
-  }
-
-  /// Accept and return the connected native fd (low-level building block).
-  auto async_accept_fd() -> awaitable<expected<int, std::error_code>> {
-    co_return co_await this->impl_->async_accept();
+    return ::iocoro::detail::socket::get_local_endpoint<endpoint>(this->impl_->native_handle());
   }
 
   /// Accept and return a connected `socket`.
@@ -129,6 +111,12 @@ class basic_acceptor
 
   using base_type::get_option;
   using base_type::set_option;
+
+ private:
+  /// Accept and return the connected native fd (low-level building block).
+  auto async_accept_fd() -> awaitable<expected<int, std::error_code>> {
+    co_return co_await this->impl_->async_accept();
+  }
 };
 
 }  // namespace iocoro::net

@@ -1,38 +1,12 @@
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 #include <iocoro/any_executor.hpp>
 
-#include <fcntl.h>
 #include <unistd.h>
 
 namespace iocoro::detail::socket {
-
-namespace {
-
-inline auto set_nonblocking(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFL, 0);
-  if (flags < 0) {
-    return false;
-  }
-  if ((flags & O_NONBLOCK) != 0) {
-    return true;
-  }
-  return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-}
-
-inline auto set_cloexec(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFD, 0);
-  if (flags < 0) {
-    return false;
-  }
-  if ((flags & FD_CLOEXEC) != 0) {
-    return true;
-  }
-  return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
-}
-
-}  // namespace
 
 inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> std::error_code {
   {

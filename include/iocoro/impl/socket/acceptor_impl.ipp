@@ -1,4 +1,5 @@
 #include <iocoro/detail/socket/acceptor_impl.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 
 namespace iocoro::detail::socket {
 
@@ -91,11 +92,8 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
 
   for (;;) {
     // Cancellation check to close the "cancel between accept() and wait_read_ready()" race.
-    {
-      std::scoped_lock lk{mtx_};
-      if (accept_epoch_ != my_epoch) {
-        co_return unexpected(error::operation_aborted);
-      }
+    if (!is_accept_epoch_current(my_epoch)) {
+      co_return unexpected(error::operation_aborted);
     }
 
 #if defined(__linux__)
@@ -112,12 +110,9 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
 #endif
 
     if (fd >= 0) {
-      {
-        std::scoped_lock lk{mtx_};
-        if (accept_epoch_ != my_epoch) {
-          (void)::close(fd);
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!is_accept_epoch_current(my_epoch)) {
+        (void)::close(fd);
+        co_return unexpected(error::operation_aborted);
       }
       co_return fd;
     }
@@ -127,21 +122,15 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      {
-        std::scoped_lock lk{mtx_};
-        if (accept_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!is_accept_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       auto ec = co_await base_.wait_read_ready();
       if (ec) {
         co_return unexpected(ec);
       }
-      {
-        std::scoped_lock lk{mtx_};
-        if (accept_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!is_accept_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }
@@ -150,26 +139,9 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
   }
 }
 
-inline auto acceptor_impl::set_nonblocking(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFL, 0);
-  if (flags < 0) {
-    return false;
-  }
-  if ((flags & O_NONBLOCK) != 0) {
-    return true;
-  }
-  return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-}
-
-inline auto acceptor_impl::set_cloexec(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFD, 0);
-  if (flags < 0) {
-    return false;
-  }
-  if ((flags & FD_CLOEXEC) != 0) {
-    return true;
-  }
-  return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+inline auto acceptor_impl::is_accept_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+  std::scoped_lock lk{mtx_};
+  return accept_epoch_ == epoch;
 }
 
 }  // namespace iocoro::detail::socket

@@ -90,7 +90,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   // Ensure the "connect owner" flag is always released by the owning coroutine.
-  auto connect_guard = finally([this] {
+  auto connect_guard = detail::make_scope_exit([this] {
     std::scoped_lock lk{mtx_};
     connect_in_flight_ = false;
   });
@@ -125,13 +125,11 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     co_return wait_ec;
   }
 
-  {
-    // If cancel()/close() happened while we were waiting, treat as aborted.
+  // If cancel()/close() happened while we were waiting, treat as aborted.
+  if (!is_connect_epoch_current(my_epoch)) {
     std::scoped_lock lk{mtx_};
-    if (connect_epoch_ != my_epoch) {
-      state_ = conn_state::disconnected;
-      co_return error::operation_aborted;
-    }
+    state_ = conn_state::disconnected;
+    co_return error::operation_aborted;
   }
 
   int so_error = 0;
@@ -183,7 +181,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
     my_epoch = read_epoch_;
   }
 
-  auto guard = finally([this] {
+  auto guard = detail::make_scope_exit([this] {
     std::scoped_lock lk{mtx_};
     read_in_flight_ = false;
   });
@@ -208,11 +206,8 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
       if (ec) {
         co_return unexpected(ec);
       }
-      {
-        std::scoped_lock lk{mtx_};
-        if (read_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!is_read_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }
@@ -243,7 +238,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
     my_epoch = write_epoch_;
   }
 
-  auto guard = finally([this] {
+  auto guard = detail::make_scope_exit([this] {
     std::scoped_lock lk{mtx_};
     write_in_flight_ = false;
   });
@@ -269,11 +264,8 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       if (ec) {
         co_return unexpected(ec);
       }
-      {
-        std::scoped_lock lk{mtx_};
-        if (write_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!is_write_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }
@@ -316,6 +308,21 @@ inline auto stream_socket_impl::shutdown(shutdown_type what) -> std::error_code 
     }
   }
   return {};
+}
+
+inline auto stream_socket_impl::is_read_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+  std::scoped_lock lk{mtx_};
+  return read_epoch_ == epoch;
+}
+
+inline auto stream_socket_impl::is_write_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+  std::scoped_lock lk{mtx_};
+  return write_epoch_ == epoch;
+}
+
+inline auto stream_socket_impl::is_connect_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+  std::scoped_lock lk{mtx_};
+  return connect_epoch_ == epoch;
 }
 
 }  // namespace iocoro::detail::socket

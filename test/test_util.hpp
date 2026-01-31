@@ -13,6 +13,13 @@
 #include <type_traits>
 #include <utility>
 
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <cerrno>
+
 namespace iocoro {
 
 /// Exception thrown by sync_wait_for when the timeout expires.
@@ -119,5 +126,72 @@ auto sync_wait_for(io_context& ctx, std::chrono::duration<Rep, Period> timeout, 
 
   return detail::take_or_throw<T>(st);
 }
+
+namespace test {
+
+struct unique_fd {
+  int fd{-1};
+  unique_fd() = default;
+  explicit unique_fd(int f) : fd(f) {}
+  unique_fd(unique_fd const&) = delete;
+  auto operator=(unique_fd const&) -> unique_fd& = delete;
+  unique_fd(unique_fd&& o) noexcept : fd(std::exchange(o.fd, -1)) {}
+  auto operator=(unique_fd&& o) noexcept -> unique_fd& {
+    if (this != &o) {
+      reset();
+      fd = std::exchange(o.fd, -1);
+    }
+    return *this;
+  }
+  ~unique_fd() { reset(); }
+  void reset(int f = -1) noexcept {
+    if (fd >= 0) {
+      (void)::close(fd);
+    }
+    fd = f;
+  }
+  explicit operator bool() const noexcept { return fd >= 0; }
+};
+
+inline auto make_listen_socket_ipv4(std::uint16_t& port_out) -> unique_fd {
+  int fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (fd < 0) {
+    return unique_fd{};
+  }
+
+  // Best-effort: make accept loop non-blocking and avoid test hangs on failures.
+  if (int flags = ::fcntl(fd, F_GETFL, 0); flags >= 0) {
+    (void)::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  }
+
+  int one = 1;
+  (void)::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(0);
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    (void)::close(fd);
+    return unique_fd{};
+  }
+
+  socklen_t len = sizeof(addr);
+  if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+    (void)::close(fd);
+    return unique_fd{};
+  }
+
+  if (::listen(fd, 16) != 0) {
+    (void)::close(fd);
+    return unique_fd{};
+  }
+
+  port_out = ntohs(addr.sin_port);
+  return unique_fd{fd};
+}
+
+}  // namespace test
 
 }  // namespace iocoro

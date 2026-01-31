@@ -8,14 +8,11 @@
 #include <iocoro/error.hpp>
 
 #include <iocoro/detail/socket/datagram_socket_impl.hpp>
+#include <iocoro/detail/socket_endpoint_utils.hpp>
 
 #include <cstddef>
 #include <span>
 #include <system_error>
-
-// Native socket APIs for endpoint conversion.
-#include <sys/socket.h>
-#include <cerrno>
 
 namespace iocoro::net {
 
@@ -122,17 +119,7 @@ class basic_datagram_socket
 
   /// Get the local endpoint.
   auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
-    auto const fd = this->impl_->native_handle();
-    if (fd < 0) {
-      return unexpected(error::not_open);
-    }
-
-    sockaddr_storage ss{};
-    socklen_t len = sizeof(ss);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
-      return unexpected(std::error_code(errno, std::generic_category()));
-    }
-    return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+    return ::iocoro::detail::socket::get_local_endpoint<endpoint_type>(this->impl_->native_handle());
   }
 
   /// Get the remote endpoint (only valid if connected).
@@ -144,16 +131,7 @@ class basic_datagram_socket
     if (!this->impl_->is_connected()) {
       return unexpected(error::not_connected);
     }
-
-    sockaddr_storage ss{};
-    socklen_t len = sizeof(ss);
-    if (::getpeername(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
-      if (errno == ENOTCONN) {
-        return unexpected(error::not_connected);
-      }
-      return unexpected(std::error_code(errno, std::generic_category()));
-    }
-    return endpoint_type::from_native(reinterpret_cast<sockaddr*>(&ss), len);
+    return ::iocoro::detail::socket::get_remote_endpoint<endpoint_type>(fd);
   }
 
   auto is_bound() const noexcept -> bool { return this->impl_->is_bound(); }
