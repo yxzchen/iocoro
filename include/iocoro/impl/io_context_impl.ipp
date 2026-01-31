@@ -41,19 +41,25 @@ inline auto io_context_impl::running_in_this_thread() const noexcept -> bool {
   return thread_token_.load(std::memory_order_acquire) == this_thread_token();
 }
 
+inline auto io_context_impl::is_stopped() const noexcept -> bool {
+  return stopped_.load(std::memory_order_acquire);
+}
+
+inline auto io_context_impl::should_continue() -> bool {
+  return !is_stopped() && has_work();
+}
+
 inline auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
   std::size_t count = 0;
-  while (!stopped_.load(std::memory_order_acquire) && has_work()) {
+  while (should_continue()) {
     count += process_posted();
     count += process_timers();
-
-    if (stopped_.load(std::memory_order_acquire) || !has_work()) {
+    if (!should_continue()) {
       break;
     }
-
-    count += process_events(get_timeout());
+    count += process_events(next_wait(std::nullopt));
   }
   return count;
 }
@@ -61,8 +67,7 @@ inline auto io_context_impl::run() -> std::size_t {
 inline auto io_context_impl::run_one() -> std::size_t {
   set_thread_id();
 
-  std::size_t count = 0;
-  count += process_posted();
+  std::size_t count = process_posted();
   if (count > 0) {
     return count;
   }
@@ -72,10 +77,10 @@ inline auto io_context_impl::run_one() -> std::size_t {
     return count;
   }
 
-  if (stopped_.load(std::memory_order_acquire) || !has_work()) {
+  if (!should_continue()) {
     return 0;
   }
-  return process_events(get_timeout());
+  return process_events(next_wait(std::nullopt));
 }
 
 inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
@@ -84,29 +89,18 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
   auto const deadline = std::chrono::steady_clock::now() + timeout;
   std::size_t count = 0;
 
-  while (!stopped_.load(std::memory_order_acquire) && has_work()) {
-    auto const now = std::chrono::steady_clock::now();
-    if (now >= deadline) {
+  while (should_continue()) {
+    if (std::chrono::steady_clock::now() >= deadline) {
       break;
     }
 
     count += process_posted();
     count += process_timers();
-
-    if (stopped_.load(std::memory_order_acquire) || !has_work()) {
+    if (!should_continue()) {
       break;
     }
 
-    auto const remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::max(deadline - now, std::chrono::steady_clock::duration::zero()));
-
-    std::chrono::milliseconds wait_ms = remaining;
-    auto const timer_timeout = get_timeout();
-    if (timer_timeout) {
-      wait_ms = std::min(wait_ms, *timer_timeout);
-    }
-
-    count += process_events(wait_ms);
+    count += process_events(next_wait(deadline));
   }
   return count;
 }
@@ -124,7 +118,7 @@ inline void io_context_impl::post(unique_function<void()> f) {
 }
 
 inline void io_context_impl::dispatch(unique_function<void()> f) {
-  if (running_in_this_thread() && !stopped_.load(std::memory_order_acquire)) {
+  if (running_in_this_thread() && !is_stopped()) {
     f();
   } else {
     post(std::move(f));
@@ -229,31 +223,36 @@ inline void io_context_impl::remove_work_guard() noexcept {
 }
 
 inline auto io_context_impl::process_timers() -> std::size_t {
-  return timers_.process_expired(stopped_.load(std::memory_order_acquire));
+  return timers_.process_expired(is_stopped());
 }
 
 inline auto io_context_impl::process_posted() -> std::size_t {
-  return posted_.process(stopped_.load(std::memory_order_acquire));
+  return posted_.process(is_stopped());
 }
 
 inline auto io_context_impl::get_timeout() -> std::optional<std::chrono::milliseconds> {
   return timers_.next_timeout();
 }
 
+inline auto io_context_impl::next_wait(std::optional<std::chrono::steady_clock::time_point> deadline)
+  -> std::optional<std::chrono::milliseconds> {
+  auto const timer_timeout = get_timeout();
+  if (!deadline) {
+    return timer_timeout;
+  }
+  auto const now = std::chrono::steady_clock::now();
+  if (now >= *deadline) {
+    return std::chrono::milliseconds(0);
+  }
+  auto const remaining = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now);
+  if (!timer_timeout) {
+    return remaining;
+  }
+  return std::min(remaining, *timer_timeout);
+}
+
 inline auto io_context_impl::has_work() -> bool {
-  if (posted_.work_guard_count() > 0) {
-    return true;
-  }
-  if (!posted_.empty()) {
-    return true;
-  }
-  if (!timers_.empty()) {
-    return true;
-  }
-  if (!fd_registry_.empty()) {
-    return true;
-  }
-  return false;
+  return posted_.has_work() || !timers_.empty() || !fd_registry_.empty();
 }
 
 inline auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)

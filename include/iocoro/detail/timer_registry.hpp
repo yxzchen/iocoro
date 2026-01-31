@@ -125,8 +125,17 @@ inline auto timer_registry::next_timeout() -> std::optional<std::chrono::millise
 
 inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
   std::size_t count = 0;
-  std::vector<std::pair<reactor_op_ptr, bool>> ready{};
+  struct ready_entry {
+    reactor_op_ptr op{};
+    bool completed = false;
+  };
+  std::vector<ready_entry> ready{};
   ready.reserve(8);
+  auto push_ready = [&](reactor_op_ptr op, bool completed) {
+    if (op) {
+      ready.push_back(ready_entry{std::move(op), completed});
+    }
+  };
 
   for (;;) {
     std::unique_lock lk{mtx_};
@@ -142,9 +151,7 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
       auto op = std::move(node.op);
       recycle_node(idx);
       lk.unlock();
-      if (op) {
-        ready.emplace_back(std::move(op), false);
-      }
+      push_ready(std::move(op), false);
       continue;
     }
 
@@ -163,17 +170,15 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
     auto op = std::move(node.op);
     recycle_node(idx);
     lk.unlock();
-    if (op) {
-      ready.emplace_back(std::move(op), true);
-    }
+    push_ready(std::move(op), true);
   }
 
   for (auto& entry : ready) {
-    if (entry.second) {
-      entry.first->vt->on_complete(entry.first->block);
+    if (entry.completed) {
+      entry.op->vt->on_complete(entry.op->block);
       ++count;
     } else {
-      entry.first->vt->on_abort(entry.first->block, error::operation_aborted);
+      entry.op->vt->on_abort(entry.op->block, error::operation_aborted);
     }
   }
 

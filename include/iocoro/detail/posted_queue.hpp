@@ -61,6 +61,14 @@ class posted_queue {
     return work_guard_.load(std::memory_order_acquire);
   }
 
+  auto has_work() const -> bool {
+    if (work_guard_count() > 0) {
+      return true;
+    }
+    std::scoped_lock lk{mtx_};
+    return !queue_.empty();
+  }
+
   auto empty() const -> bool {
     std::scoped_lock lk{mtx_};
     return queue_.empty();

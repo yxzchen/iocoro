@@ -63,6 +63,18 @@ class fd_registry {
     std::uint64_t write_token = invalid_token;
   };
 
+  struct slot_ref {
+    reactor_op_ptr* op = nullptr;
+    std::uint64_t* token = nullptr;
+  };
+
+  static auto slot_for(fd_ops& ops, fd_event_kind kind) noexcept -> slot_ref {
+    if (kind == fd_event_kind::read) {
+      return slot_ref{&ops.read_op, &ops.read_token};
+    }
+    return slot_ref{&ops.write_op, &ops.write_token};
+  }
+
   auto interest_for(fd_ops const& ops) const noexcept -> fd_interest {
     return fd_interest{ops.read_op != nullptr, ops.write_op != nullptr};
   }
@@ -104,35 +116,21 @@ inline auto fd_registry::register_impl(int fd, reactor_op_ptr op, fd_event_kind 
     }
 
     auto& ops = operations_[static_cast<std::size_t>(fd)];
-    if (kind == fd_event_kind::read) {
-      if (op) {
-        token = ops.read_token = next_token_++;
-      }
-      if (!ops.read_op && op) {
-        ++active_count_;
-        if (static_cast<std::size_t>(fd) > max_active_fd_) {
-          max_active_fd_ = static_cast<std::size_t>(fd);
-        }
-      }
-      if (ops.read_op && !op) {
-        --active_count_;
-      }
-      old = std::exchange(ops.read_op, std::move(op));
-    } else {
-      if (op) {
-        token = ops.write_token = next_token_++;
-      }
-      if (!ops.write_op && op) {
-        ++active_count_;
-        if (static_cast<std::size_t>(fd) > max_active_fd_) {
-          max_active_fd_ = static_cast<std::size_t>(fd);
-        }
-      }
-      if (ops.write_op && !op) {
-        --active_count_;
-      }
-      old = std::exchange(ops.write_op, std::move(op));
+    auto slot = slot_for(ops, kind);
+    bool const had_op = static_cast<bool>(*slot.op);
+    if (op) {
+      token = *slot.token = next_token_++;
     }
+    if (!had_op && op) {
+      ++active_count_;
+      if (static_cast<std::size_t>(fd) > max_active_fd_) {
+        max_active_fd_ = static_cast<std::size_t>(fd);
+      }
+    }
+    if (had_op && !op) {
+      --active_count_;
+    }
+    old = std::exchange(*slot.op, std::move(op));
     interest = interest_for(ops);
   }
 
@@ -152,20 +150,12 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
     }
 
     auto& ops = operations_[static_cast<std::size_t>(fd)];
-    if (kind == fd_event_kind::read) {
-      if (ops.read_op && ops.read_token == token) {
-        removed = std::move(ops.read_op);
-        ops.read_token = 0;
-        matched = true;
-        --active_count_;
-      }
-    } else {
-      if (ops.write_op && ops.write_token == token) {
-        removed = std::move(ops.write_op);
-        ops.write_token = 0;
-        matched = true;
-        --active_count_;
-      }
+    auto slot = slot_for(ops, kind);
+    if (*slot.op && *slot.token == token) {
+      removed = std::move(*slot.op);
+      *slot.token = 0;
+      matched = true;
+      --active_count_;
     }
 
     if (!matched) {
