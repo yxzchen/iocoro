@@ -45,18 +45,14 @@ inline auto io_context_impl::is_stopped() const noexcept -> bool {
   return stopped_.load(std::memory_order_acquire);
 }
 
-inline auto io_context_impl::should_continue() -> bool {
-  return !is_stopped() && has_work();
-}
-
 inline auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
   std::size_t count = 0;
-  while (should_continue()) {
+  while (!is_stopped() && has_work()) {
     count += process_posted();
     count += process_timers();
-    if (!should_continue()) {
+    if (is_stopped() || !has_work()) {
       break;
     }
     count += process_events(next_wait(std::nullopt));
@@ -77,7 +73,7 @@ inline auto io_context_impl::run_one() -> std::size_t {
     return count;
   }
 
-  if (!should_continue()) {
+  if (is_stopped() || !has_work()) {
     return 0;
   }
   return process_events(next_wait(std::nullopt));
@@ -89,14 +85,14 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
   auto const deadline = std::chrono::steady_clock::now() + timeout;
   std::size_t count = 0;
 
-  while (should_continue()) {
+  while (!is_stopped() && has_work()) {
     if (std::chrono::steady_clock::now() >= deadline) {
       break;
     }
 
     count += process_posted();
     count += process_timers();
-    if (!should_continue()) {
+    if (is_stopped() || !has_work()) {
       break;
     }
 
@@ -230,13 +226,9 @@ inline auto io_context_impl::process_posted() -> std::size_t {
   return posted_.process(is_stopped());
 }
 
-inline auto io_context_impl::get_timeout() -> std::optional<std::chrono::milliseconds> {
-  return timers_.next_timeout();
-}
-
 inline auto io_context_impl::next_wait(std::optional<std::chrono::steady_clock::time_point> deadline)
   -> std::optional<std::chrono::milliseconds> {
-  auto const timer_timeout = get_timeout();
+  auto const timer_timeout = timers_.next_timeout();
   if (!deadline) {
     return timer_timeout;
   }
@@ -280,8 +272,8 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
     auto ready = fd_registry_.take_ready(ev.fd, ev.can_read, ev.can_write);
     apply_fd_interest(ev.fd, ready.interest);
 
-    process_one(ready.ops.read, ev.is_error, ev.ec);
-    process_one(ready.ops.write, ev.is_error, ev.ec);
+    process_one(ready.read, ev.is_error, ev.ec);
+    process_one(ready.write, ev.is_error, ev.ec);
   }
   return count;
 }

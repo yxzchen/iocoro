@@ -69,11 +69,6 @@ class posted_queue {
     return !queue_.empty();
   }
 
-  auto empty() const -> bool {
-    std::scoped_lock lk{mtx_};
-    return queue_.empty();
-  }
-
  private:
   mutable std::mutex mtx_{};
   std::queue<unique_function<void()>> queue_{};

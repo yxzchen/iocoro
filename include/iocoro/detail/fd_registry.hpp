@@ -17,13 +17,9 @@ struct fd_interest {
 class fd_registry {
  public:
   static constexpr std::uint64_t invalid_token = 0;
-  struct ready_ops {
+  struct ready_result {
     reactor_op_ptr read{};
     reactor_op_ptr write{};
-  };
-
-  struct ready_result {
-    ready_ops ops{};
     fd_interest interest{};
   };
 
@@ -233,7 +229,7 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
     }
   }
 
-  return ready_result{ready_ops{std::move(read), std::move(write)}, interest};
+  return ready_result{std::move(read), std::move(write), interest};
 }
 
 inline auto fd_registry::empty() const -> bool {

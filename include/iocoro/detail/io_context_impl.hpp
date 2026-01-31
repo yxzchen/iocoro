@@ -76,13 +76,11 @@ class io_context_impl {
   auto process_timers() -> std::size_t;
   auto process_posted() -> std::size_t;
 
-  auto get_timeout() -> std::optional<std::chrono::milliseconds>;
   auto next_wait(std::optional<std::chrono::steady_clock::time_point> deadline)
     -> std::optional<std::chrono::milliseconds>;
   void wakeup();
 
   auto is_stopped() const noexcept -> bool;
-  auto should_continue() -> bool;
   auto has_work() -> bool;
 
   void apply_fd_interest(int fd, fd_interest interest);
