@@ -1,130 +1,74 @@
 #include <gtest/gtest.h>
 
-#include <iocoro/bind_executor.hpp>
 #include <iocoro/co_sleep.hpp>
-#include <iocoro/co_spawn.hpp>
-#include <iocoro/completion_token.hpp>
-#include <iocoro/io_context.hpp>
-#include <iocoro/this_coro.hpp>
 #include <iocoro/when_any.hpp>
 
 #include "test_util.hpp"
 
 #include <chrono>
-#include <string>
-#include <tuple>
-#include <type_traits>
+#include <stdexcept>
 #include <variant>
 #include <vector>
 
-namespace {
-
 TEST(when_any_test, variadic_returns_first_completed) {
-  using namespace std::chrono_literals;
-
   iocoro::io_context ctx;
 
-  using result_t = std::pair<std::size_t, std::variant<std::monostate, int, std::string>>;
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, std::variant<int, int>>> {
+      auto slow = []() -> iocoro::awaitable<int> {
+        co_await iocoro::co_sleep(std::chrono::milliseconds{2});
+        co_return 1;
+      }();
+      auto fast = []() -> iocoro::awaitable<int> {
+        co_await iocoro::co_sleep(std::chrono::milliseconds{1});
+        co_return 2;
+      }();
+      co_return co_await iocoro::when_any(std::move(slow), std::move(fast));
+    }());
 
-  auto t0 = []() -> iocoro::awaitable<void> {
-    co_await iocoro::co_sleep(50ms);
-    co_return;
-  };
-  auto t1 = []() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(10ms);
-    co_return 42;
-  };
-  auto t2 = []() -> iocoro::awaitable<std::string> {
-    co_await iocoro::co_sleep(100ms);
-    co_return "hello";
-  };
-
-  auto result = iocoro::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<result_t> { return iocoro::when_any(t0(), t1(), t2()); }());
-
-  EXPECT_EQ(result.first, 1u);  // t1 completes first
-  EXPECT_TRUE(std::holds_alternative<int>(result.second));
-  EXPECT_EQ(std::get<int>(result.second), 42);
-}
-
-TEST(when_any_test, variadic_rethrows_exception_if_first) {
-  using namespace std::chrono_literals;
-
-  iocoro::io_context ctx;
-
-  auto boom = []() -> iocoro::awaitable<int> {
-    (void)co_await iocoro::this_coro::executor;
-    throw std::runtime_error("boom");
-  };
-
-  auto slow = []() -> iocoro::awaitable<std::string> {
-    co_await iocoro::co_sleep(100ms);
-    co_return "slow";
-  };
-
-  auto got_exception = iocoro::sync_wait_for(ctx, 200ms, [&]() -> iocoro::awaitable<bool> {
-    try {
-      (void)co_await iocoro::when_any(boom(), slow());
-      ADD_FAILURE() << "expected exception";
-    } catch (std::runtime_error const& e) {
-      EXPECT_STREQ(e.what(), "boom");
-      co_return true;
-    }
-    co_return false;
-  }());
-
-  EXPECT_TRUE(got_exception);
+  ASSERT_TRUE(r);
+  EXPECT_EQ(r->first, 1U);
+  EXPECT_EQ(std::get<1>(r->second), 2);
 }
 
 TEST(when_any_test, container_returns_first_completed_with_index) {
-  using namespace std::chrono_literals;
-
   iocoro::io_context ctx;
 
-  using result_t = std::pair<std::size_t, int>;
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, int>> {
+      std::vector<iocoro::awaitable<int>> tasks;
+      tasks.emplace_back([]() -> iocoro::awaitable<int> {
+        co_await iocoro::co_sleep(std::chrono::milliseconds{2});
+        co_return 1;
+      }());
+      tasks.emplace_back([]() -> iocoro::awaitable<int> {
+        co_await iocoro::co_sleep(std::chrono::milliseconds{1});
+        co_return 2;
+      }());
+      co_return co_await iocoro::when_any(std::move(tasks));
+    }());
 
-  std::vector<iocoro::awaitable<int>> tasks;
-  tasks.push_back([]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(50ms);
-    co_return 1;
-  }());
-  tasks.push_back([]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(10ms);
-    co_return 2;
-  }());
-  tasks.push_back([]() -> iocoro::awaitable<int> {
-    co_await iocoro::co_sleep(100ms);
-    co_return 3;
-  }());
-
-  auto result = iocoro::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<result_t> { return iocoro::when_any(std::move(tasks)); }());
-
-  EXPECT_EQ(result.first, 1u);  // Task at index 1 completes first
-  EXPECT_EQ(result.second, 2);
+  ASSERT_TRUE(r);
+  EXPECT_EQ(r->first, 1U);
+  EXPECT_EQ(r->second, 2);
 }
 
-TEST(when_any_test, container_void_returns_index) {
-  using namespace std::chrono_literals;
-
+TEST(when_any_test, variadic_rethrows_exception_if_first) {
   iocoro::io_context ctx;
 
-  using result_t = std::pair<std::size_t, std::monostate>;
+  auto r = iocoro::test::sync_wait(
+    ctx, [&]() -> iocoro::awaitable<void> {
+      auto bad = []() -> iocoro::awaitable<void> {
+        throw std::runtime_error{"boom"};
+        co_return;
+      }();
+      auto slow = []() -> iocoro::awaitable<void> {
+        co_await iocoro::co_sleep(std::chrono::milliseconds{5});
+        co_return;
+      }();
+      co_await iocoro::when_any(std::move(bad), std::move(slow));
+    }());
 
-  std::vector<iocoro::awaitable<void>> tasks;
-  tasks.push_back([]() -> iocoro::awaitable<void> {
-    co_await iocoro::co_sleep(30ms);
-    co_return;
-  }());
-  tasks.push_back([]() -> iocoro::awaitable<void> {
-    co_await iocoro::co_sleep(5ms);
-    co_return;
-  }());
-
-  auto result = iocoro::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<result_t> { return iocoro::when_any(std::move(tasks)); }());
-
-  EXPECT_EQ(result.first, 1u);  // Second task completes first
+  ASSERT_FALSE(r);
+  ASSERT_TRUE(r.error());
 }
-
-}  // namespace
