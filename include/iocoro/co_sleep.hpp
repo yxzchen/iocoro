@@ -21,7 +21,7 @@ inline auto co_sleep(any_io_executor ex, std::chrono::steady_clock::duration d) 
   IOCORO_ENSURE(ex, "co_sleep: requires a non-empty IO executor");
 
   steady_timer t{ex};
-  (void)t.expires_after(d);
+  t.expires_after(d);
   (void)co_await t.async_wait(use_awaitable);
 }
 

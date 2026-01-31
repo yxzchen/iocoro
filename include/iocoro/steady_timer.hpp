@@ -26,9 +26,9 @@ class steady_timer {
 
   explicit steady_timer(any_io_executor ex) noexcept
       : ctx_impl_(ex.io_context_ptr()), expiry_(clock::now()) {}
-  steady_timer(any_io_executor ex, time_point at) noexcept
+  explicit steady_timer(any_io_executor ex, time_point at) noexcept
       : ctx_impl_(ex.io_context_ptr()), expiry_(at) {}
-  steady_timer(any_io_executor ex, duration after) noexcept
+  explicit steady_timer(any_io_executor ex, duration after) noexcept
       : ctx_impl_(ex.io_context_ptr()), expiry_(clock::now() + after) {}
 
   steady_timer(steady_timer const&) = delete;
@@ -57,29 +57,17 @@ class steady_timer {
   /// Returns:
   /// - `std::error_code{}` on successful timer expiry.
   auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
-    if (!ctx_impl_) {
-      co_return error::invalid_argument;
-    }
     auto* timer = this;
-    co_return co_await detail::operation_awaiter{
+    auto ec = co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) {
-        auto h = timer->ctx_impl_->add_timer(timer->expiry(), std::move(rop));
-        timer->set_timer_handle(h);
-        return h;
+        return timer->register_timer(std::move(rop));
       }};
+    co_return ec;
   }
 
   /// Cancel the pending timer operation.
   void cancel() noexcept {
-    if (!ctx_impl_) {
-      return;
-    }
-    detail::io_context_impl::event_handle h{};
-    {
-      std::scoped_lock lk{mtx_};
-      h = std::exchange(handle_, detail::io_context_impl::event_handle::invalid_handle());
-    }
-
+    auto h = take_handle();
     if (h) {
       h.cancel();
     }
@@ -87,12 +75,26 @@ class steady_timer {
 
   time_point expiry() { return expiry_; }
 
-  void set_timer_handle(detail::io_context_impl::event_handle h) noexcept {
+ private:
+  auto register_timer(detail::reactor_op_ptr rop) noexcept -> detail::io_context_impl::event_handle {
+    if (!ctx_impl_) {
+      return detail::io_context_impl::event_handle::invalid_handle();
+    }
+    auto h = ctx_impl_->add_timer(expiry(), std::move(rop));
+    set_handle(h);
+    return h;
+  }
+
+  void set_handle(detail::io_context_impl::event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     handle_ = h;
   }
 
- private:
+  auto take_handle() noexcept -> detail::io_context_impl::event_handle {
+    std::scoped_lock lk{mtx_};
+    return std::exchange(handle_, detail::io_context_impl::event_handle::invalid_handle());
+  }
+
   detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
   mutable std::mutex mtx_{};

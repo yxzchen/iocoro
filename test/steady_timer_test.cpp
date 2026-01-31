@@ -46,6 +46,7 @@ TEST(steady_timer_test, steady_timer_async_wait_resumes_on_fire) {
 
   auto ec = iocoro::sync_wait_for(ctx, 200ms, task());
   EXPECT_FALSE(ec) << ec.message();
+  EXPECT_NE(ec, iocoro::error::invalid_argument);
 }
 
 }  // namespace
