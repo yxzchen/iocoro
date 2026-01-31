@@ -68,6 +68,47 @@ TEST(switch_to_test, switches_executor_and_thread_pool_thread) {
   EXPECT_NE(r.tid_before, r.tid_after);
 }
 
+TEST(switch_to_test, awaitable_resume_returns_to_associated_executor) {
+  iocoro::thread_pool pool1{1};
+  iocoro::thread_pool pool2{1};
+
+  auto ex1 = pool1.get_executor();
+  auto ex2 = pool2.get_executor();
+
+  std::promise<bool> done;
+  auto fut = done.get_future();
+
+  iocoro::co_spawn(
+    ex1,
+    [ex1, ex2, done = std::move(done)]() mutable -> iocoro::awaitable<void> {
+      auto before_tid = std::this_thread::get_id();
+
+      auto result = co_await iocoro::co_spawn(
+        ex2,
+        [ex2]() -> iocoro::awaitable<std::thread::id> {
+          auto before_switch = std::this_thread::get_id();
+          co_await iocoro::this_coro::switch_to(iocoro::any_executor{ex2});
+          co_return before_switch;
+        },
+        iocoro::use_awaitable);
+
+      (void)result;
+
+      auto after_tid = std::this_thread::get_id();
+      auto cur_any = co_await iocoro::this_coro::executor;
+      auto const* cur =
+        iocoro::detail::any_executor_access::target<iocoro::thread_pool::executor_type>(
+          cur_any);
+      bool const ok = cur != nullptr && (*cur == ex1) && (before_tid == after_tid);
+      done.set_value(ok);
+      co_return;
+    },
+    iocoro::detached);
+
+  ASSERT_EQ(fut.wait_for(2s), std::future_status::ready);
+  EXPECT_TRUE(fut.get());
+}
+
 }  // namespace
 
 

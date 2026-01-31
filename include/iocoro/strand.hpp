@@ -55,15 +55,20 @@ class strand_executor {
     IOCORO_ENSURE(state_->base, "strand_executor::dispatch: empty base executor");
 
     auto const cur_any = detail::get_current_executor();
-    if (cur_any) {
-      auto const* cur = detail::any_executor_access::target<strand_executor>(cur_any);
-      if (cur != nullptr && (*cur == *this)) {
-        f();
-        return;
-      }
+    auto const* cur = cur_any
+      ? detail::any_executor_access::target<strand_executor>(cur_any)
+      : nullptr;
+    if (cur != nullptr && (*cur == *this)) {
+      f();
+      return;
     }
 
-    post(std::forward<F>(f));
+    auto fn = detail::unique_function<void()>{std::forward<F>(f)};
+    bool const should_schedule = state_->enqueue(std::move(fn));
+    if (should_schedule) {
+      auto st = state_;
+      state_->base.dispatch([st]() noexcept { strand_executor::drain(std::move(st)); });
+    }
   }
 
   explicit operator bool() const noexcept { return state_ != nullptr && static_cast<bool>(state_->base); }
