@@ -11,7 +11,7 @@ namespace iocoro::detail {
 /// A minimal, reusable PImpl wrapper for socket-like I/O handles.
 ///
 /// Responsibilities:
-/// - Own and share an implementation object (`Impl`) via `std::shared_ptr`.
+/// - Own an implementation object (`Impl`) via `std::unique_ptr`.
 /// - Provide common "handle" operations: IO executor access, open state, cancel/close,
 ///   socket options, and native_handle.
 ///
@@ -27,26 +27,18 @@ class socket_handle_base {
   socket_handle_base() = delete;
 
   explicit socket_handle_base(any_io_executor ex)
-      : impl_(std::make_shared<Impl>(ex)), ex_(std::move(ex)) {}
+      : impl_(std::make_unique<Impl>(ex)), ex_(std::move(ex)) {}
   explicit socket_handle_base(io_context& ctx) : socket_handle_base(ctx.get_executor()) {}
 
   socket_handle_base(socket_handle_base const&) = delete;
   socket_handle_base& operator=(socket_handle_base const&) = delete;
 
-  /// "Move" is intentionally implemented as shared-ownership transfer (copy the shared_ptr)
-  /// so the moved-from handle remains usable and retains a valid impl object.
-  ///
-  /// This keeps the invariant: impl_ is never null for any handle object.
-  socket_handle_base(socket_handle_base&& other) noexcept : impl_(other.impl_), ex_(other.ex_) {}
-  socket_handle_base& operator=(socket_handle_base&& other) noexcept {
-    if (this != &other) {
-      impl_ = other.impl_;
-      ex_ = other.ex_;
-    }
-    return *this;
-  }
+  socket_handle_base(socket_handle_base&& other) noexcept = default;
+  socket_handle_base& operator=(socket_handle_base&& other) noexcept = default;
 
-  auto get_io_context_impl() const noexcept -> io_context_impl* { return impl_->get_io_context_impl(); }
+  auto get_io_context_impl() const noexcept -> io_context_impl* {
+    return impl_->get_io_context_impl();
+  }
   auto get_executor() const noexcept -> any_io_executor { return ex_; }
 
   auto is_open() const noexcept -> bool { return impl_->is_open(); }
@@ -69,8 +61,13 @@ class socket_handle_base {
 
   auto native_handle() const noexcept -> int { return impl_->native_handle(); }
 
+  auto impl() noexcept -> Impl& { return *impl_; }
+  auto impl() const noexcept -> Impl const& { return *impl_; }
+  auto impl_ptr() noexcept -> Impl* { return impl_.get(); }
+  auto impl_ptr() const noexcept -> Impl const* { return impl_.get(); }
+
  protected:
-  std::shared_ptr<Impl> impl_;
+  std::unique_ptr<Impl> impl_;
   any_io_executor ex_{};
 };
 

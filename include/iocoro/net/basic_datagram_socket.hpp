@@ -36,18 +36,17 @@ namespace iocoro::net {
 /// - Once opened, the address family is fixed (no mixing IPv4/IPv6).
 /// - For connected sockets, send_to() requires the destination to match the connected endpoint.
 template <class Protocol>
-class basic_datagram_socket
-    : public ::iocoro::detail::socket_handle_base<::iocoro::detail::socket::datagram_socket_impl> {
+class basic_datagram_socket {
  public:
   using protocol_type = Protocol;
   using endpoint_type = typename Protocol::endpoint;
   using impl_type = ::iocoro::detail::socket::datagram_socket_impl;
-  using base_type = ::iocoro::detail::socket_handle_base<impl_type>;
+  using handle_type = ::iocoro::detail::socket_handle_base<impl_type>;
 
   basic_datagram_socket() = delete;
 
-  explicit basic_datagram_socket(any_io_executor ex) : base_type(ex) {}
-  explicit basic_datagram_socket(io_context& ctx) : base_type(ctx) {}
+  explicit basic_datagram_socket(any_io_executor ex) : handle_(std::move(ex)) {}
+  explicit basic_datagram_socket(io_context& ctx) : handle_(ctx) {}
 
   basic_datagram_socket(basic_datagram_socket const&) = delete;
   auto operator=(basic_datagram_socket const&) -> basic_datagram_socket& = delete;
@@ -60,13 +59,13 @@ class basic_datagram_socket
   /// Must be called before receiving data.
   auto bind(endpoint_type const& local_ep) -> std::error_code {
     // Open if not already open.
-    if (!this->impl_->is_open()) {
-      auto ec = this->impl_->open(local_ep.family(), Protocol::type(), Protocol::protocol());
+    if (!handle_.impl().is_open()) {
+      auto ec = handle_.impl().open(local_ep.family(), Protocol::type(), Protocol::protocol());
       if (ec) {
         return ec;
       }
     }
-    return this->impl_->bind(local_ep.data(), local_ep.size());
+    return handle_.impl().bind(local_ep.data(), local_ep.size());
   }
 
   /// Connect the socket to a remote endpoint.
@@ -74,13 +73,13 @@ class basic_datagram_socket
   /// After connecting, only send_to() to the connected endpoint is allowed.
   auto connect(endpoint_type const& remote_ep) -> std::error_code {
     // Open if not already open.
-    if (!this->impl_->is_open()) {
-      auto ec = this->impl_->open(remote_ep.family(), Protocol::type(), Protocol::protocol());
+    if (!handle_.impl().is_open()) {
+      auto ec = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
       if (ec) {
         return ec;
       }
     }
-    return this->impl_->connect(remote_ep.data(), remote_ep.size());
+    return handle_.impl().connect(remote_ep.data(), remote_ep.size());
   }
 
   /// Send a datagram to the specified destination.
@@ -88,7 +87,7 @@ class basic_datagram_socket
   /// The entire buffer is sent as a single datagram (message boundary preserved).
   auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
       -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return co_await this->impl_->async_send_to(buffer, destination.data(), destination.size());
+    co_return co_await handle_.impl().async_send_to(buffer, destination.data(), destination.size());
   }
 
   /// Receive a datagram and retrieve the source endpoint.
@@ -102,7 +101,7 @@ class basic_datagram_socket
     socklen_t len = sizeof(ss);
 
     auto result =
-      co_await this->impl_->async_receive_from(buffer, reinterpret_cast<sockaddr*>(&ss), &len);
+      co_await handle_.impl().async_receive_from(buffer, reinterpret_cast<sockaddr*>(&ss), &len);
 
     if (!result) {
       co_return unexpected(result.error());
@@ -119,35 +118,47 @@ class basic_datagram_socket
 
   /// Get the local endpoint.
   auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
-    return ::iocoro::detail::socket::get_local_endpoint<endpoint_type>(this->impl_->native_handle());
+    return ::iocoro::detail::socket::get_local_endpoint<endpoint_type>(handle_.native_handle());
   }
 
   /// Get the remote endpoint (only valid if connected).
   auto remote_endpoint() const -> expected<endpoint_type, std::error_code> {
-    auto const fd = this->impl_->native_handle();
+    auto const fd = handle_.native_handle();
     if (fd < 0) {
       return unexpected(error::not_open);
     }
-    if (!this->impl_->is_connected()) {
+    if (!handle_.impl().is_connected()) {
       return unexpected(error::not_connected);
     }
     return ::iocoro::detail::socket::get_remote_endpoint<endpoint_type>(fd);
   }
 
-  auto is_bound() const noexcept -> bool { return this->impl_->is_bound(); }
-  auto is_connected() const noexcept -> bool { return this->impl_->is_connected(); }
+  auto is_bound() const noexcept -> bool { return handle_.impl().is_bound(); }
+  auto is_connected() const noexcept -> bool { return handle_.impl().is_connected(); }
 
-  using base_type::native_handle;
+  auto get_executor() const noexcept -> any_io_executor { return handle_.get_executor(); }
 
-  using base_type::close;
-  using base_type::is_open;
+  auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  using base_type::cancel;
-  using base_type::cancel_read;
-  using base_type::cancel_write;
+  void close() noexcept { handle_.close(); }
+  auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
-  using base_type::get_option;
-  using base_type::set_option;
+  void cancel() noexcept { handle_.cancel(); }
+  void cancel_read() noexcept { handle_.cancel_read(); }
+  void cancel_write() noexcept { handle_.cancel_write(); }
+
+  template <class Option>
+  auto set_option(Option const& opt) -> std::error_code {
+    return handle_.set_option(opt);
+  }
+
+  template <class Option>
+  auto get_option(Option& opt) -> std::error_code {
+    return handle_.get_option(opt);
+  }
+
+ private:
+  handle_type handle_;
 };
 
 }  // namespace iocoro::net

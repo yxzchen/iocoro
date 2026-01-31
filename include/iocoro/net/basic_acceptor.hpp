@@ -32,19 +32,18 @@ namespace iocoro::net {
 /// - `async_accept()` returns a connected `basic_stream_socket<Protocol>` and adopts the
 ///   accepted native fd internally.
 template <class Protocol>
-class basic_acceptor
-    : public ::iocoro::detail::socket_handle_base<::iocoro::detail::socket::acceptor_impl> {
+class basic_acceptor {
  public:
   using protocol_type = Protocol;
   using endpoint = typename Protocol::endpoint;
   using socket = basic_stream_socket<Protocol>;
   using impl_type = ::iocoro::detail::socket::acceptor_impl;
-  using base_type = ::iocoro::detail::socket_handle_base<impl_type>;
+  using handle_type = ::iocoro::detail::socket_handle_base<impl_type>;
 
   basic_acceptor() = delete;
 
-  explicit basic_acceptor(any_io_executor ex) : base_type(ex) {}
-  explicit basic_acceptor(io_context& ctx) : base_type(ctx) {}
+  explicit basic_acceptor(any_io_executor ex) : handle_(std::move(ex)) {}
+  explicit basic_acceptor(io_context& ctx) : handle_(ctx) {}
 
   basic_acceptor(basic_acceptor const&) = delete;
   auto operator=(basic_acceptor const&) -> basic_acceptor& = delete;
@@ -66,20 +65,20 @@ class basic_acceptor
   template <class Configure>
     requires std::invocable<Configure, basic_acceptor&>
   auto listen(endpoint const& ep, int backlog, Configure&& configure) -> std::error_code {
-    if (!this->is_open()) {
-      if (auto ec = this->impl_->open(ep.family(), Protocol::type(), Protocol::protocol())) {
+    if (!is_open()) {
+      if (auto ec = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol())) {
         return ec;
       }
     }
     std::invoke(std::forward<Configure>(configure), *this);
-    if (auto ec = this->impl_->bind(ep.data(), ep.size())) {
+    if (auto ec = handle_.impl().bind(ep.data(), ep.size())) {
       return ec;
     }
-    return this->impl_->listen(backlog);
+    return handle_.impl().listen(backlog);
   }
 
   auto local_endpoint() const -> expected<endpoint, std::error_code> {
-    return ::iocoro::detail::socket::get_local_endpoint<endpoint>(this->impl_->native_handle());
+    return ::iocoro::detail::socket::get_local_endpoint<endpoint>(handle_.native_handle());
   }
 
   /// Accept and return a connected `socket`.
@@ -93,7 +92,7 @@ class basic_acceptor
       co_return unexpected(r.error());
     }
     // Temporarily construct IO executor from io_context_impl to create socket.
-    auto* ctx_impl = this->get_io_context_impl();
+    auto* ctx_impl = handle_.get_io_context_impl();
     socket s{any_io_executor{io_context::executor_type{*ctx_impl}}};
     if (auto ec = s.assign(*r)) {
       co_return unexpected(ec);
@@ -101,22 +100,33 @@ class basic_acceptor
     co_return s;
   }
 
-  using base_type::native_handle;
+  auto get_executor() const noexcept -> any_io_executor { return handle_.get_executor(); }
 
-  using base_type::close;
-  using base_type::is_open;
+  auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  using base_type::cancel;
-  using base_type::cancel_read;
+  void close() noexcept { handle_.close(); }
+  auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
-  using base_type::get_option;
-  using base_type::set_option;
+  void cancel() noexcept { handle_.cancel(); }
+  void cancel_read() noexcept { handle_.cancel_read(); }
+
+  template <class Option>
+  auto set_option(Option const& opt) -> std::error_code {
+    return handle_.set_option(opt);
+  }
+
+  template <class Option>
+  auto get_option(Option& opt) -> std::error_code {
+    return handle_.get_option(opt);
+  }
 
  private:
   /// Accept and return the connected native fd (low-level building block).
   auto async_accept_fd() -> awaitable<expected<int, std::error_code>> {
-    co_return co_await this->impl_->async_accept();
+    co_return co_await handle_.impl().async_accept();
   }
+
+  handle_type handle_;
 };
 
 }  // namespace iocoro::net

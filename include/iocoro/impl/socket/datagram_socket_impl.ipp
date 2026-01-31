@@ -7,30 +7,30 @@
 namespace iocoro::detail::socket {
 
 inline void datagram_socket_impl::cancel() noexcept {
-  send_epoch_.fetch_add(1, std::memory_order_acq_rel);
-  receive_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  send_op_.cancel();
+  receive_op_.cancel();
   base_.cancel();
 }
 
 inline void datagram_socket_impl::cancel_read() noexcept {
-  receive_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  receive_op_.cancel();
   base_.cancel_read();
 }
 
 inline void datagram_socket_impl::cancel_write() noexcept {
-  send_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  send_op_.cancel();
   base_.cancel_write();
 }
 
 inline void datagram_socket_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
-    send_epoch_.fetch_add(1, std::memory_order_acq_rel);
-    receive_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    send_op_.cancel();
+    receive_op_.cancel();
     state_ = dgram_state::idle;
     connected_addr_len_ = 0;
     std::memset(&connected_addr_, 0, sizeof(connected_addr_));
-    // NOTE: do not touch send_in_flight_/receive_in_flight_ here; their owner is the coroutine.
+    // NOTE: do not touch active flags here; their owner is the coroutine.
   }
   base_.close();
 }
@@ -95,18 +95,15 @@ inline auto datagram_socket_impl::async_send_to(
 
   {
     std::scoped_lock lk{mtx_};
-    if (send_in_flight_) {
+    if (send_op_.active) {
       co_return unexpected(error::busy);
     }
-    send_in_flight_ = true;
-    my_epoch = send_epoch_.load(std::memory_order_acquire);
+    send_op_.active = true;
+    my_epoch = send_op_.epoch.load(std::memory_order_acquire);
     is_connected = (state_ == dgram_state::connected);
   }
 
-  auto guard = detail::make_scope_exit([this] {
-    std::scoped_lock lk{mtx_};
-    send_in_flight_ = false;
-  });
+  auto guard = detail::make_scope_exit([this] { send_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -143,7 +140,7 @@ inline auto datagram_socket_impl::async_send_to(
       if (ec) {
         co_return unexpected(ec);
       }
-      if (!is_send_epoch_current(my_epoch)) {
+      if (!send_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
       continue;
@@ -187,17 +184,14 @@ inline auto datagram_socket_impl::async_receive_from(
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (receive_in_flight_) {
+    if (receive_op_.active) {
       co_return unexpected(error::busy);
     }
-    receive_in_flight_ = true;
-    my_epoch = receive_epoch_.load(std::memory_order_acquire);
+    receive_op_.active = true;
+    my_epoch = receive_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = detail::make_scope_exit([this] {
-    std::scoped_lock lk{mtx_};
-    receive_in_flight_ = false;
-  });
+  auto guard = detail::make_scope_exit([this] { receive_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return unexpected(error::invalid_argument);
@@ -239,7 +233,7 @@ inline auto datagram_socket_impl::async_receive_from(
       if (ec) {
         co_return unexpected(ec);
       }
-      if (!is_receive_epoch_current(my_epoch)) {
+      if (!receive_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
       continue;

@@ -5,6 +5,7 @@
 #include <iocoro/io_context.hpp>
 
 #include <iocoro/detail/scope_guard.hpp>
+#include <iocoro/detail/socket/op_state.hpp>
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <atomic>
@@ -141,21 +142,13 @@ class datagram_socket_impl {
   mutable std::mutex mtx_{};
 
   dgram_state state_{dgram_state::idle};
-  std::atomic<std::uint64_t> send_epoch_{0};
-  std::atomic<std::uint64_t> receive_epoch_{0};
-  bool send_in_flight_{false};
-  bool receive_in_flight_{false};
+  op_state send_op_{};
+  op_state receive_op_{};
 
   // Store the connected endpoint for validation.
   sockaddr_storage connected_addr_{};
   socklen_t connected_addr_len_{0};
 
-  auto is_send_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-    return send_epoch_.load(std::memory_order_acquire) == epoch;
-  }
-  auto is_receive_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-    return receive_epoch_.load(std::memory_order_acquire) == epoch;
-  }
 };
 
 }  // namespace iocoro::detail::socket

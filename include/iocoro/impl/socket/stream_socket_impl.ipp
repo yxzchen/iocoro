@@ -7,24 +7,24 @@
 namespace iocoro::detail::socket {
 
 inline void stream_socket_impl::cancel() noexcept {
-  read_epoch_.fetch_add(1, std::memory_order_acq_rel);
-  write_epoch_.fetch_add(1, std::memory_order_acq_rel);
-  connect_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  read_op_.cancel();
+  write_op_.cancel();
+  connect_op_.cancel();
   base_.cancel();
 }
 
 inline void stream_socket_impl::cancel_read() noexcept {
-  read_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  read_op_.cancel();
   base_.cancel_read();
 }
 
 inline void stream_socket_impl::cancel_write() noexcept {
-  write_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  write_op_.cancel();
   base_.cancel_write();
 }
 
 inline void stream_socket_impl::cancel_connect() noexcept {
-  connect_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  connect_op_.cancel();
   // connect waits for writability.
   base_.cancel_write();
 }
@@ -32,12 +32,12 @@ inline void stream_socket_impl::cancel_connect() noexcept {
 inline void stream_socket_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
-    read_epoch_.fetch_add(1, std::memory_order_acq_rel);
-    write_epoch_.fetch_add(1, std::memory_order_acq_rel);
-    connect_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    read_op_.cancel();
+    write_op_.cancel();
+    connect_op_.cancel();
     state_ = conn_state::disconnected;
     shutdown_ = {};
-    // NOTE: do not touch read_in_flight_/write_in_flight_ here; their owner is the coroutine.
+    // NOTE: do not touch active flags here; their owner is the coroutine.
   }
   base_.close();
 }
@@ -63,7 +63,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (connect_in_flight_) {
+    if (connect_op_.active) {
       co_return error::busy;
     }
     if (state_ == conn_state::connecting) {
@@ -72,16 +72,13 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     if (state_ == conn_state::connected) {
       co_return error::already_connected;
     }
-    connect_in_flight_ = true;
+    connect_op_.active = true;
     state_ = conn_state::connecting;
-    my_epoch = connect_epoch_.load(std::memory_order_acquire);
+    my_epoch = connect_op_.epoch.load(std::memory_order_acquire);
   }
 
   // Ensure the "connect owner" flag is always released by the owning coroutine.
-  auto connect_guard = detail::make_scope_exit([this] {
-    std::scoped_lock lk{mtx_};
-    connect_in_flight_ = false;
-  });
+  auto connect_guard = detail::make_scope_exit([this] { connect_op_.finish(mtx_); });
 
   // We intentionally keep syscall logic outside the mutex.
   auto ec = std::error_code{};
@@ -114,7 +111,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   // If cancel()/close() happened while we were waiting, treat as aborted.
-  if (!is_connect_epoch_current(my_epoch)) {
+  if (!connect_op_.is_epoch_current(my_epoch)) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
     co_return error::operation_aborted;
@@ -137,7 +134,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 
   {
     std::scoped_lock lk{mtx_};
-    if (connect_epoch_.load(std::memory_order_acquire) != my_epoch) {
+    if (!connect_op_.is_epoch_current(my_epoch)) {
       state_ = conn_state::disconnected;
       co_return error::operation_aborted;
     }
@@ -162,17 +159,14 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
     if (shutdown_.read) {
       co_return 0;
     }
-    if (read_in_flight_) {
+    if (read_op_.active) {
       co_return unexpected(error::busy);
     }
-    read_in_flight_ = true;
-    my_epoch = read_epoch_.load(std::memory_order_acquire);
+    read_op_.active = true;
+    my_epoch = read_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = detail::make_scope_exit([this] {
-    std::scoped_lock lk{mtx_};
-    read_in_flight_ = false;
-  });
+  auto guard = detail::make_scope_exit([this] { read_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -192,9 +186,21 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       auto ec = co_await base_.wait_read_ready();
       if (ec) {
+        if (ec == error::eof) {
+          for (;;) {
+            auto n2 = ::read(fd, buffer.data(), buffer.size());
+            if (n2 >= 0) {
+              co_return static_cast<std::size_t>(n2);
+            }
+            if (errno == EINTR) {
+              continue;
+            }
+            break;
+          }
+        }
         co_return unexpected(ec);
       }
-      if (!is_read_epoch_current(my_epoch)) {
+      if (!read_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
       continue;
@@ -219,17 +225,14 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
     if (shutdown_.write) {
       co_return unexpected(error::broken_pipe);
     }
-    if (write_in_flight_) {
+    if (write_op_.active) {
       co_return unexpected(error::busy);
     }
-    write_in_flight_ = true;
-    my_epoch = write_epoch_.load(std::memory_order_acquire);
+    write_op_.active = true;
+    my_epoch = write_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = detail::make_scope_exit([this] {
-    std::scoped_lock lk{mtx_};
-    write_in_flight_ = false;
-  });
+  auto guard = detail::make_scope_exit([this] { write_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -252,7 +255,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       if (ec) {
         co_return unexpected(ec);
       }
-      if (!is_write_epoch_current(my_epoch)) {
+      if (!write_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
       continue;
