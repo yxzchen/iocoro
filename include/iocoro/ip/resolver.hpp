@@ -9,12 +9,13 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/thread_pool.hpp>
 
 #include <atomic>
 #include <cstring>
 #include <memory>
-#include <optional>
+#include <stop_token>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -81,8 +82,8 @@ class resolver {
   /// - Failure: std::error_code (from getaddrinfo).
   ///
   /// Cancellation:
-  /// - This resolver does NOT currently support cancellation. Once started, the underlying
-  ///   getaddrinfo() call will run to completion on the configured thread_pool executor.
+  /// - Cancellation is best-effort: the coroutine can be canceled, but the underlying
+  ///   getaddrinfo() call will still run to completion on the thread_pool executor.
   ///
   /// Note: This function uses getaddrinfo, which is a blocking system call. To avoid blocking
   /// the io_context thread, the call is executed on the thread_pool provided at construction
@@ -137,6 +138,8 @@ struct resolver<Protocol>::resolve_awaiter {
     std::coroutine_handle<> continuation;
     any_executor ex;
     expected<results_type, std::error_code> result{};
+    std::atomic<bool> done{false};
+    std::unique_ptr<std::stop_callback<::iocoro::detail::unique_function<void()>>> stop_cb{};
   };
   std::shared_ptr<result_state> state;
 
@@ -158,9 +161,38 @@ struct resolver<Protocol>::resolve_awaiter {
 
     auto host_copy = host;
     auto service_copy = service;
+    auto st = state;
+    auto weak_state = std::weak_ptr<result_state>{st};
+
+    if constexpr (requires {
+                    h.promise().get_stop_token();
+                  }) {
+      auto token = h.promise().get_stop_token();
+      if (token.stop_requested()) {
+        if (!st->done.exchange(true)) {
+          st->result = unexpected(error::operation_aborted);
+          st->ex.post([st]() { st->continuation.resume(); });
+        }
+      } else {
+        st->stop_cb =
+          std::make_unique<std::stop_callback<::iocoro::detail::unique_function<void()>>>(
+            token, ::iocoro::detail::unique_function<void()>{[weak_state]() mutable {
+              auto st = weak_state.lock();
+              if (!st) {
+                return;
+              }
+              if (st->done.exchange(true)) {
+                return;
+              }
+              st->result = unexpected(error::operation_aborted);
+              st->ex.post([st]() { st->continuation.resume(); });
+            }});
+      }
+    }
 
     pool_ex.post(
-      [state = state, host_copy = std::move(host_copy), service_copy = std::move(service_copy)]() {
+      [st, host_copy = std::move(host_copy), service_copy = std::move(service_copy)]() {
+        expected<results_type, std::error_code> result{};
         try {
           // Build hints for getaddrinfo based on Protocol.
           addrinfo hints;
@@ -178,7 +210,7 @@ struct resolver<Protocol>::resolve_awaiter {
           if (ret != 0) {
             // getaddrinfo error.
             // Map EAI_* error codes to addrinfo_error and create a proper error_code.
-            state->result = unexpected(std::error_code(ret, addrinfo_error_category()));
+            result = unexpected(std::error_code(ret, addrinfo_error_category()));
           } else {
             // Success: convert addrinfo list to Protocol::endpoint list.
             results_type endpoints;
@@ -190,14 +222,20 @@ struct resolver<Protocol>::resolve_awaiter {
               // Silently skip addresses that cannot be converted (e.g., unsupported family).
             }
             ::freeaddrinfo(result_list);
-            state->result = std::move(endpoints);
+            result = std::move(endpoints);
           }
         } catch (...) {
-          state->result = unexpected(error::internal_error);
+          result = unexpected(error::internal_error);
         }
 
+        if (st->done.exchange(true)) {
+          return;
+        }
+
+        st->result = std::move(result);
+        st->stop_cb.reset();
         // Post coroutine resumption back to the captured IO executor.
-        state->ex.post([state]() { state->continuation.resume(); });
+        st->ex.post([st]() { st->continuation.resume(); });
       });
   }
 

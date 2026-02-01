@@ -4,12 +4,14 @@
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_cast.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/this_coro.hpp>
 
 #include <cassert>
 #include <coroutine>
 #include <exception>
-#include <optional>
+#include <memory>
+#include <stop_token>
 #include <utility>
 
 namespace iocoro {
@@ -24,6 +26,8 @@ struct awaitable_promise_base {
   std::coroutine_handle<> continuation_{};
   std::exception_ptr exception_{};
   bool detached_{false};
+  std::stop_source stop_source_{};
+  std::unique_ptr<std::stop_callback<unique_function<void()>>> parent_stop_cb_{};
 
   awaitable_promise_base() noexcept = default;
 
@@ -59,6 +63,30 @@ struct awaitable_promise_base {
     if (!ex_) {
       ex_ = std::move(parent_ex);
     }
+  }
+
+  auto get_stop_token() const noexcept -> std::stop_token {
+    return stop_source_.get_token();
+  }
+
+  void inherit_stop_token(std::stop_token parent) {
+    if (!parent.stop_possible() || parent_stop_cb_) {
+      return;
+    }
+    if (parent.stop_requested()) {
+      request_stop();
+      return;
+    }
+    parent_stop_cb_ = std::make_unique<std::stop_callback<unique_function<void()>>>(
+      parent, unique_function<void()>{[this]() { request_stop(); }});
+  }
+
+  void request_stop() noexcept {
+    stop_source_.request_stop();
+  }
+
+  auto stop_requested() const noexcept -> bool {
+    return stop_source_.stop_requested();
   }
 
   void detach() noexcept {
