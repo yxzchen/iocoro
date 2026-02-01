@@ -27,9 +27,10 @@ auto read_some_with_timeout(ip::tcp::socket& socket,
   steady_timer timer(ex);
   timer.expires_after(timeout);
 
-  auto result = co_await (socket.async_read_some(buf) || timer.async_wait(use_awaitable));
+  auto [index, result] =
+    co_await (socket.async_read_some(buf) || timer.async_wait(use_awaitable));
 
-  if (std::holds_alternative<expected<std::size_t, std::error_code>>(result)) {
+  if (index == 0U) {
     auto r = std::get<expected<std::size_t, std::error_code>>(result);
     if (!r) {
       throw std::system_error(r.error());
@@ -48,9 +49,9 @@ auto write_with_timeout(ip::tcp::socket& socket,
   steady_timer timer(ex);
   timer.expires_after(timeout);
 
-  auto result = co_await (io::async_write(socket, buf) || timer.async_wait(use_awaitable));
+  auto [index, result] = co_await (io::async_write(socket, buf) || timer.async_wait(use_awaitable));
 
-  if (std::holds_alternative<expected<std::size_t, std::error_code>>(result)) {
+  if (index == 0U) {
     auto r = std::get<expected<std::size_t, std::error_code>>(result);
     if (!r) {
       throw std::system_error(r.error());
@@ -77,9 +78,9 @@ auto connect_with_timeout(ip::tcp::socket& socket,
     co_return std::monostate{};
   };
 
-  auto result = co_await (connect_task() || timer.async_wait(use_awaitable));
+  auto [index, result] = co_await (connect_task() || timer.async_wait(use_awaitable));
 
-  if (std::holds_alternative<std::monostate>(result)) {
+  if (index == 0U) {
     co_return;
   }
 
@@ -97,11 +98,11 @@ auto resolve_with_timeout(ip::tcp::resolver& resolver,
   steady_timer timer(ex);
   timer.expires_after(timeout);
 
-  auto result =
+  auto [index, result] =
     co_await (resolver.async_resolve(std::move(host), std::move(service)) ||
               timer.async_wait(use_awaitable));
 
-  if (std::holds_alternative<expected<ip::tcp::resolver::results_type, std::error_code>>(result)) {
+  if (index == 0U) {
     auto r = std::get<expected<ip::tcp::resolver::results_type, std::error_code>>(result);
     if (!r) {
       throw std::system_error(r.error());

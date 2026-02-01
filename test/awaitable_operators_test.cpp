@@ -43,13 +43,11 @@ TEST(awaitable_operators, timer_race_cancels_loser) {
     iocoro::steady_timer slow_timer(ex);
     slow_timer.expires_after(50ms);
 
-    auto result =
+    auto [index, result] =
       co_await (wait_timer_value(fast_timer, fast_ec, 7) || wait_timer_ec(slow_timer, slow_ec));
 
-    EXPECT_TRUE(std::holds_alternative<int>(result));
-    if (std::holds_alternative<int>(result)) {
-      EXPECT_EQ(std::get<int>(result), 7);
-    }
+    EXPECT_EQ(index, 0U);
+    EXPECT_EQ(std::get<int>(result), 7);
   };
 
   auto r = iocoro::test::sync_wait(ctx, task());

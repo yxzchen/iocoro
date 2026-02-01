@@ -24,6 +24,7 @@ struct when_or_state : when_state_base {
 
   std::mutex result_m{};
   std::optional<result_variant> result{};
+  std::size_t completed_index{0};
   awaitable<A> task_a;
   awaitable<B> task_b;
 
@@ -33,6 +34,7 @@ struct when_or_state : when_state_base {
   template <std::size_t I, class V>
   void set_value(V&& v) {
     std::scoped_lock lk{result_m};
+    completed_index = I;
     result.emplace(std::in_place_index<I>, std::forward<V>(v));
   }
 
@@ -83,13 +85,14 @@ auto when_or_run_one(std::shared_ptr<when_or_state<A, B>> st) -> awaitable<void>
       st->complete();
     }
   }
+  co_return;
 }
 
 }  // namespace detail
 
 template <class A, class B>
 auto operator||(awaitable<A> a, awaitable<B> b)
-  -> awaitable<std::variant<detail::when_value_t<A>, detail::when_value_t<B>>> {
+  -> awaitable<std::pair<std::size_t, std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
   auto fallback_ex = co_await this_coro::executor;
   IOCORO_ENSURE(fallback_ex, "operator||: requires a bound executor");
 
@@ -114,11 +117,13 @@ auto operator||(awaitable<A> a, awaitable<B> b)
   co_await detail::await_when(st);
 
   std::exception_ptr ep{};
+  std::size_t index{};
   std::optional<typename detail::when_or_state<A, B>::result_variant> result{};
   {
     std::scoped_lock lk{st->result_m};
     ep = st->first_ep;
     if (!ep) {
+      index = st->completed_index;
       result = std::move(st->result);
     }
   }
@@ -128,7 +133,7 @@ auto operator||(awaitable<A> a, awaitable<B> b)
   }
 
   IOCORO_ENSURE(result.has_value(), "operator||: missing result");
-  co_return std::move(*result);
+  co_return std::make_pair(index, std::move(*result));
 }
 
 }  // namespace iocoro
