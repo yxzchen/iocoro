@@ -2,9 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/bind_executor.hpp>
 #include <iocoro/completion_token.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/any_executor.hpp>
 #include <iocoro/expected.hpp>
@@ -24,16 +22,17 @@ namespace iocoro::detail {
 template <typename T>
 using spawn_expected = expected<T, std::exception_ptr>;
 
-/// State for detached/use_awaitable mode (no completion handler).
-/// Uses type-erased unique_function to avoid storing lambda types directly.
-template <typename T>
-struct spawn_state {
-  unique_function<awaitable<T>()> factory{};
-
-  template <typename F>
-    requires std::is_invocable_r_v<awaitable<T>, F&>
-  explicit spawn_state(F&& f) : factory(std::forward<F>(f)) {}
+struct spawn_context {
+  any_executor ex{};
 };
+
+template <typename Promise>
+void init_spawned_promise(Promise& promise, spawn_context ctx) noexcept {
+  if (ctx.ex) {
+    promise.set_executor(std::move(ctx.ex));
+  }
+  IOCORO_ENSURE(promise.get_executor(), "co_spawn: requires executor");
+}
 
 /// State for completion callback mode.
 /// Both factory and completion are type-erased.
@@ -58,15 +57,6 @@ void safe_invoke_completion(F& completion, spawn_expected<T> result) noexcept {
   }
 }
 
-/// Unified coroutine entry point for co_spawn.
-///
-/// This is the only coroutine wrapper responsible for owning and invoking the user-supplied
-/// callable (or an awaitable wrapped as a callable).
-template <typename T>
-auto spawn_entry_point(std::shared_ptr<spawn_state<T>> state) -> awaitable<T> {
-  co_return co_await state->factory();
-}
-
 template <typename T>
 auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completion<T>> state)
   -> awaitable<void> {
@@ -86,13 +76,14 @@ auto spawn_entry_point_with_completion(std::shared_ptr<spawn_state_with_completi
 }
 
 template <typename T>
-void spawn_detached_impl(any_executor ex, awaitable<T> a) {
+void spawn_detached_impl(spawn_context ctx, awaitable<T> a) {
   auto h = a.release();
 
-  h.promise().set_executor(ex);
+  init_spawned_promise(h.promise(), std::move(ctx));
   h.promise().detach();
 
-  ex.post([h]() mutable {
+  auto exec = h.promise().get_executor();
+  exec.post([h]() mutable {
     try {
       h.resume();
     } catch (...) {
@@ -102,11 +93,11 @@ void spawn_detached_impl(any_executor ex, awaitable<T> a) {
 }
 
 template <typename T>
-struct spawn_wait_state {
-  any_executor ex{};
+struct spawn_result_state {
   std::mutex m;
   bool done{false};
   std::coroutine_handle<> waiter{};
+  unique_function<void()> resume{};
   std::exception_ptr ep{};
   [[no_unique_address]] std::conditional_t<std::is_void_v<T>, std::monostate, std::optional<T>>
     value{};
@@ -131,19 +122,52 @@ struct spawn_wait_state {
   }
 
   void complete() {
-    std::coroutine_handle<> h{};
+    unique_function<void()> resume_cb{};
     {
       std::scoped_lock lk{m};
       done = true;
-      h = waiter;
-      waiter = {};
+      resume_cb = std::exchange(resume, {});
     }
-    if (h) {
-      IOCORO_ENSURE(ex, "spawn_wait_state: empty executor with non empty waiter");
-      ex.post([h]() { h.resume(); });
+    if (resume_cb) {
+      resume_cb();
     }
   }
 };
+
+template <typename T>
+struct detached_completion {
+  void operator()(spawn_expected<T>) const noexcept {}
+};
+
+template <typename T>
+struct result_state_completion {
+  std::shared_ptr<spawn_result_state<T>> st{};
+
+  void operator()(spawn_expected<T> r) const noexcept {
+    if (!st) {
+      return;
+    }
+    if (!r) {
+      st->set_exception(r.error());
+      st->complete();
+      return;
+    }
+    if constexpr (std::is_void_v<T>) {
+      st->set_value();
+    } else {
+      st->set_value(std::move(*r));
+    }
+    st->complete();
+  }
+};
+
+template <typename T, typename Factory, typename Completion>
+void spawn_task(spawn_context ctx, Factory&& factory, Completion&& completion) {
+  auto state = std::make_shared<spawn_state_with_completion<T>>(
+    std::forward<Factory>(factory), std::forward<Completion>(completion));
+  auto entry = spawn_entry_point_with_completion<T>(std::move(state));
+  spawn_detached_impl(std::move(ctx), std::move(entry));
+}
 
 /// Awaiter for retrieving the result of a spawned coroutine.
 /// Used by co_spawn(use_awaitable) to wait for completion and extract the result.
@@ -170,16 +194,18 @@ struct spawn_result_awaiter {
   // - C++17/20 aggregate initialization rules changes
   // - Compiler-specific temporary materialization behavior
   // - Interaction between move semantics and aggregate members
-  explicit spawn_result_awaiter(std::shared_ptr<spawn_wait_state<T>> st_) : st(std::move(st_)) {}
+  explicit spawn_result_awaiter(std::shared_ptr<spawn_result_state<T>> st_) : st(std::move(st_)) {}
 
-  std::shared_ptr<spawn_wait_state<T>> st;
+  std::shared_ptr<spawn_result_state<T>> st;
 
   bool await_ready() const noexcept {
     std::scoped_lock lk{st->m};
     return st->done;
   }
 
-  bool await_suspend(std::coroutine_handle<> h) {
+  template <class Promise>
+    requires requires(Promise& p) { p.get_executor(); }
+  bool await_suspend(std::coroutine_handle<Promise> h) {
     std::scoped_lock lk{st->m};
     if (st->done) {
       return false;
@@ -188,7 +214,11 @@ struct spawn_result_awaiter {
     IOCORO_ENSURE(!st->waiter, "co_spawn(use_awaitable): multiple awaiters not supported");
 
     st->waiter = h;
-    st->ex = get_current_executor();
+    auto ex = h.promise().get_executor();
+    IOCORO_ENSURE(ex, "co_spawn(use_awaitable): empty executor");
+    st->resume = [ex, h]() mutable {
+      ex.post([h]() mutable { h.resume(); });
+    };
     return true;
   }
 
@@ -219,29 +249,10 @@ struct spawn_result_awaiter {
   }
 };
 
-/// Executes a spawned task and stores its result (or exception) in shared state.
-/// Used internally by co_spawn(use_awaitable) to run the task and notify waiters.
-template <typename T>
-auto execute_and_store_result(any_executor ex, std::shared_ptr<spawn_wait_state<T>> st,
-                              awaitable<T> a) -> awaitable<void> {
-  auto bound = bind_executor<T>(ex, std::move(a));
-  try {
-    if constexpr (std::is_void_v<T>) {
-      co_await std::move(bound);
-      st->set_value();
-    } else {
-      st->set_value(co_await std::move(bound));
-    }
-  } catch (...) {
-    st->set_exception(std::current_exception());
-  }
-  st->complete();
-}
-
-/// Returns an awaitable that retrieves the result from a spawn_wait_state.
+/// Returns an awaitable that retrieves the result from a spawn_result_state.
 /// Used internally by co_spawn(use_awaitable) to return an awaitable to the caller.
 template <typename T>
-auto await_result(std::shared_ptr<spawn_wait_state<T>> st) -> awaitable<T> {
+auto await_result(std::shared_ptr<spawn_result_state<T>> st) -> awaitable<T> {
   co_return co_await spawn_result_awaiter<T>{std::move(st)};
 }
 

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
 #include <iocoro/any_executor.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 
 namespace iocoro::detail {
 
@@ -11,16 +10,20 @@ struct any_executor_access {
   static auto target(any_executor const& ex) noexcept -> T const* {
     return ex.target<T>();
   }
+
+  static auto io_context(any_executor const& ex) noexcept -> io_context_impl* {
+    return ex.io_context_ptr();
+  }
 };
 
-/// Require any_executor to be of specific type, abort if not.
-/// @throws assertion failure if executor is not of target type or is empty.
-template <executor Target>
-inline auto require_executor(any_executor const& ex) noexcept -> Target {
-  IOCORO_ENSURE(ex, "require_executor: requires a valid executor");
-  auto const* p = any_executor_access::target<Target>(ex);
-  IOCORO_ENSURE(p, "require_executor: executor is not of required type");
-  return *p;
+inline auto to_io_executor(any_executor const& ex) noexcept -> any_io_executor {
+  if (!ex) {
+    return any_io_executor{};
+  }
+  if (!ex.supports_io()) {
+    return any_io_executor{};
+  }
+  return any_io_executor{ex};
 }
 
 }  // namespace iocoro::detail

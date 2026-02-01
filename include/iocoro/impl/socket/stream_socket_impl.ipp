@@ -7,36 +7,24 @@
 namespace iocoro::detail::socket {
 
 inline void stream_socket_impl::cancel() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++read_epoch_;
-    ++write_epoch_;
-    ++connect_epoch_;
-  }
+  read_op_.cancel();
+  write_op_.cancel();
+  connect_op_.cancel();
   base_.cancel();
 }
 
 inline void stream_socket_impl::cancel_read() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++read_epoch_;
-  }
+  read_op_.cancel();
   base_.cancel_read();
 }
 
 inline void stream_socket_impl::cancel_write() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++write_epoch_;
-  }
+  write_op_.cancel();
   base_.cancel_write();
 }
 
 inline void stream_socket_impl::cancel_connect() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++connect_epoch_;
-  }
+  connect_op_.cancel();
   // connect waits for writability.
   base_.cancel_write();
 }
@@ -44,12 +32,12 @@ inline void stream_socket_impl::cancel_connect() noexcept {
 inline void stream_socket_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
-    ++read_epoch_;
-    ++write_epoch_;
-    ++connect_epoch_;
+    read_op_.cancel();
+    write_op_.cancel();
+    connect_op_.cancel();
     state_ = conn_state::disconnected;
     shutdown_ = {};
-    // NOTE: do not touch read_in_flight_/write_in_flight_ here; their owner is the coroutine.
+    // NOTE: do not touch active flags here; their owner is the coroutine.
   }
   base_.close();
 }
@@ -65,18 +53,17 @@ inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> std
   return {};
 }
 
-inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len,
-                                              cancellation_token tok) -> awaitable<std::error_code> {
+inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len)
+  -> awaitable<std::error_code> {
   if (!is_open()) {
     co_return error::not_open;
   }
 
   auto const fd = base_.native_handle();
-
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (connect_in_flight_) {
+    if (connect_op_.active) {
       co_return error::busy;
     }
     if (state_ == conn_state::connecting) {
@@ -85,22 +72,13 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     if (state_ == conn_state::connected) {
       co_return error::already_connected;
     }
-    connect_in_flight_ = true;
+    connect_op_.active = true;
     state_ = conn_state::connecting;
-    my_epoch = connect_epoch_;
+    my_epoch = connect_op_.epoch.load(std::memory_order_acquire);
   }
 
   // Ensure the "connect owner" flag is always released by the owning coroutine.
-  auto connect_guard = finally([this] {
-    std::scoped_lock lk{mtx_};
-    connect_in_flight_ = false;
-  });
-
-  if (tok.stop_requested()) {
-    std::scoped_lock lk{mtx_};
-    state_ = conn_state::disconnected;
-    co_return error::operation_aborted;
-  }
+  auto connect_guard = detail::make_scope_exit([this] { connect_op_.finish(mtx_); });
 
   // We intentionally keep syscall logic outside the mutex.
   auto ec = std::error_code{};
@@ -125,20 +103,18 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   // Wait for writability, then check SO_ERROR.
-  auto wait_ec = co_await base_.wait_write_ready(tok);
+  auto wait_ec = co_await base_.wait_write_ready();
   if (wait_ec) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
     co_return wait_ec;
   }
 
-  {
-    // If cancel()/close() happened while we were waiting, treat as aborted.
+  // If cancel()/close() happened while we were waiting, treat as aborted.
+  if (!connect_op_.is_epoch_current(my_epoch)) {
     std::scoped_lock lk{mtx_};
-    if (connect_epoch_ != my_epoch) {
-      state_ = conn_state::disconnected;
-      co_return error::operation_aborted;
-    }
+    state_ = conn_state::disconnected;
+    co_return error::operation_aborted;
   }
 
   int so_error = 0;
@@ -158,7 +134,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 
   {
     std::scoped_lock lk{mtx_};
-    if (connect_epoch_ != my_epoch) {
+    if (!connect_op_.is_epoch_current(my_epoch)) {
       state_ = conn_state::disconnected;
       co_return error::operation_aborted;
     }
@@ -167,7 +143,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   co_return std::error_code{};
 }
 
-inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, cancellation_token tok)
+inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
@@ -183,21 +159,14 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, can
     if (shutdown_.read) {
       co_return 0;
     }
-    if (read_in_flight_) {
+    if (read_op_.active) {
       co_return unexpected(error::busy);
     }
-    read_in_flight_ = true;
-    my_epoch = read_epoch_;
+    read_op_.active = true;
+    my_epoch = read_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = finally([this] {
-    std::scoped_lock lk{mtx_};
-    read_in_flight_ = false;
-  });
-
-  if (tok.stop_requested()) {
-    co_return unexpected(error::operation_aborted);
-  }
+  auto guard = detail::make_scope_exit([this] { read_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -215,15 +184,24 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, can
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_read_ready(tok);
+      auto ec = co_await base_.wait_read_ready();
       if (ec) {
+        if (ec == error::eof) {
+          for (;;) {
+            auto n2 = ::read(fd, buffer.data(), buffer.size());
+            if (n2 >= 0) {
+              co_return static_cast<std::size_t>(n2);
+            }
+            if (errno == EINTR) {
+              continue;
+            }
+            break;
+          }
+        }
         co_return unexpected(ec);
       }
-      {
-        std::scoped_lock lk{mtx_};
-        if (read_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!read_op_.is_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }
@@ -231,7 +209,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer, can
   }
 }
 
-inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer, cancellation_token tok)
+inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
@@ -247,21 +225,14 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
     if (shutdown_.write) {
       co_return unexpected(error::broken_pipe);
     }
-    if (write_in_flight_) {
+    if (write_op_.active) {
       co_return unexpected(error::busy);
     }
-    write_in_flight_ = true;
-    my_epoch = write_epoch_;
+    write_op_.active = true;
+    my_epoch = write_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = finally([this] {
-    std::scoped_lock lk{mtx_};
-    write_in_flight_ = false;
-  });
-
-  if (tok.stop_requested()) {
-    co_return unexpected(error::operation_aborted);
-  }
+  auto guard = detail::make_scope_exit([this] { write_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -280,15 +251,12 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_write_ready(tok);
+      auto ec = co_await base_.wait_write_ready();
       if (ec) {
         co_return unexpected(ec);
       }
-      {
-        std::scoped_lock lk{mtx_};
-        if (write_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!write_op_.is_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }

@@ -1,73 +1,26 @@
 #pragma once
 
-#include <iocoro/detail/timer_entry.hpp>
+#include <iocoro/detail/fd_registry.hpp>
+#include <iocoro/detail/posted_queue.hpp>
+#include <iocoro/detail/reactor_backend.hpp>
+#include <iocoro/detail/reactor_types.hpp>
+#include <iocoro/detail/timer_registry.hpp>
 #include <iocoro/detail/unique_function.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <queue>
-#include <unordered_map>
-#include <vector>
 
 namespace iocoro::detail {
 
-struct operation_base;
-
-struct timer_entry_compare {
-  auto operator()(const std::shared_ptr<timer_entry>& lhs,
-                  const std::shared_ptr<timer_entry>& rhs) const noexcept -> bool {
-    return lhs->expiry > rhs->expiry;
-  }
-};
-
 class io_context_impl {
  public:
-  enum class fd_event_kind : std::uint8_t { read, write };
-
-  struct fd_event_handle {
-    io_context_impl* impl = nullptr;
-    int fd = -1;
-    fd_event_kind kind = fd_event_kind::read;
-    std::uint64_t token = io_context_impl::invalid_fd_token;
-
-    auto valid() const noexcept -> bool {
-      return impl != nullptr && fd >= 0 && token != io_context_impl::invalid_fd_token;
-    }
-    explicit operator bool() const noexcept { return valid(); }
-
-    /// Cancel the registered event iff it is still the same registration.
-    /// If the event has been overwritten/replaced, this is a no-op.
-    ///
-    /// Thread-safe: if called off the context thread, cancellation is posted.
-    ///
-    /// Lifetime: the referenced io_context_impl must outlive this handle; calling cancel()
-    /// after destruction is undefined behavior.
-    void cancel() const noexcept;
-
-    static constexpr auto invalid_handle() { return fd_event_handle{}; }
-  };
-
-  struct timer_event_handle {
-    io_context_impl* impl = nullptr;
-    std::shared_ptr<timer_entry> entry;
-
-    auto valid() const noexcept -> bool { return impl != nullptr && entry != nullptr; }
-    explicit operator bool() const noexcept { return valid(); }
-
-    /// Cancel the timer (lazy cancellation).
-    /// The timer entry is marked as cancelled; actual cleanup happens in process_timers.
-    ///
-    /// Thread-safe: can be called from any thread.
-    void cancel() const noexcept;
-
-    static auto invalid_handle() { return timer_event_handle{}; }
-  };
+  using event_handle = detail::event_handle;
 
   io_context_impl();
+  explicit io_context_impl(std::unique_ptr<backend_interface> backend);
   ~io_context_impl();
 
   io_context_impl(io_context_impl const&) = delete;
@@ -87,16 +40,27 @@ class io_context_impl {
   void dispatch(unique_function<void()> f);
 
   template <class Rep, class Period>
-  auto schedule_timer(std::chrono::duration<Rep, Period> d, std::unique_ptr<operation_base> op)
-    -> timer_event_handle {
-    return schedule_timer(std::chrono::steady_clock::now() + d, std::move(op));
+  auto add_timer(std::chrono::duration<Rep, Period> d, reactor_op_ptr op) -> event_handle {
+    return add_timer(std::chrono::steady_clock::now() + d, std::move(op));
   }
-  auto schedule_timer(std::chrono::steady_clock::time_point expiry,
-                      std::unique_ptr<operation_base> op) -> timer_event_handle;
+  auto add_timer(std::chrono::steady_clock::time_point expiry,
+                 reactor_op_ptr op) -> event_handle;
 
-  auto register_fd_read(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
-  auto register_fd_write(int fd, std::unique_ptr<operation_base> op) -> fd_event_handle;
+  /// Cancel a timer registration.
+  ///
+  /// Thread-safe: can be called from any thread. Completion/abort callbacks
+  /// and operation destruction still occur on the reactor thread.
+  void cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept;
+  void cancel_event(event_handle h) noexcept;
+
+  auto register_fd_read(int fd, reactor_op_ptr op) -> event_handle;
+  auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   void deregister_fd(int fd);
+
+  auto arm_fd_interest(int fd) noexcept -> std::error_code;
+  void disarm_fd_interest(int fd) noexcept;
+
+  void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
 
   void add_work_guard() noexcept;
   void remove_work_guard() noexcept;
@@ -105,7 +69,6 @@ class io_context_impl {
   auto running_in_this_thread() const noexcept -> bool;
 
  private:
-  struct backend_impl;  // PImpl for the OS backend.
 
   // Opaque per-thread identity token.
   // Only valid for equality comparison within the process lifetime.
@@ -116,45 +79,23 @@ class io_context_impl {
   auto process_timers() -> std::size_t;
   auto process_posted() -> std::size_t;
 
-  auto get_timeout() -> std::optional<std::chrono::milliseconds>;
+  auto next_wait(std::optional<std::chrono::steady_clock::time_point> deadline)
+    -> std::optional<std::chrono::milliseconds>;
   void wakeup();
 
+  auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;
 
-  void reconcile_fd_interest(int fd);
+  void apply_fd_interest(int fd, fd_interest interest);
 
-  void backend_update_fd_interest(int fd, bool want_read, bool want_write);
-  void backend_remove_fd_interest(int fd) noexcept;
-
-  void cancel_fd_event(int fd, fd_event_kind kind, std::uint64_t token) noexcept;
-
-  std::unique_ptr<backend_impl> backend_;
+  std::unique_ptr<backend_interface> backend_;
 
   std::atomic<bool> stopped_{false};
 
-  struct fd_ops {
-    std::unique_ptr<operation_base> read_op;
-    std::unique_ptr<operation_base> write_op;
-    std::uint64_t read_token = 0;
-    std::uint64_t write_token = 0;
-  };
-
-  std::mutex fd_mutex_;
-  std::unordered_map<int, fd_ops> fd_operations_;
-  std::uint64_t next_fd_token_ = 1;
-  static constexpr std::uint64_t invalid_fd_token = 0;
-
-  mutable std::mutex timer_mutex_;
-  std::priority_queue<std::shared_ptr<timer_entry>, std::vector<std::shared_ptr<timer_entry>>,
-                      timer_entry_compare>
-    timers_;
-  std::uint64_t next_timer_id_ = 1;
-
-  std::mutex posted_mutex_;
-  std::queue<unique_function<void()>> posted_operations_;
-
-  std::atomic<std::size_t> work_guard_counter_{0};
-
+  fd_registry fd_registry_{};
+  timer_registry timers_{};
+  posted_queue posted_{};
+  std::vector<backend_event> backend_events_{};
   std::atomic<std::uintptr_t> thread_token_{0};
 };
 

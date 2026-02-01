@@ -38,15 +38,8 @@ class strand_executor {
     IOCORO_ENSURE(state_, "strand_executor::post: empty state");
     IOCORO_ENSURE(state_->base, "strand_executor::post: empty base executor");
 
-    bool should_schedule = false;
-    {
-      std::scoped_lock lk{state_->m};
-      state_->tasks.emplace(std::forward<F>(f));
-      if (!state_->active) {
-        state_->active = true;
-        should_schedule = true;
-      }
-    }
+    auto fn = detail::unique_function<void()>{std::forward<F>(f)};
+    bool const should_schedule = state_->enqueue(std::move(fn));
 
     if (should_schedule) {
       // Schedule a drain on the underlying executor.
@@ -62,15 +55,20 @@ class strand_executor {
     IOCORO_ENSURE(state_->base, "strand_executor::dispatch: empty base executor");
 
     auto const cur_any = detail::get_current_executor();
-    if (cur_any) {
-      auto const* cur = detail::any_executor_access::target<strand_executor>(cur_any);
-      if (cur != nullptr && (*cur == *this)) {
-        f();
-        return;
-      }
+    auto const* cur = cur_any
+      ? detail::any_executor_access::target<strand_executor>(cur_any)
+      : nullptr;
+    if (cur != nullptr && (*cur == *this)) {
+      f();
+      return;
     }
 
-    post(std::forward<F>(f));
+    auto fn = detail::unique_function<void()>{std::forward<F>(f)};
+    bool const should_schedule = state_->enqueue(std::move(fn));
+    if (should_schedule) {
+      auto st = state_;
+      state_->base.dispatch([st]() noexcept { strand_executor::drain(std::move(st)); });
+    }
   }
 
   explicit operator bool() const noexcept { return state_ != nullptr && static_cast<bool>(state_->base); }
@@ -83,6 +81,7 @@ class strand_executor {
   }
 
  private:
+  friend struct detail::executor_traits<strand_executor>;
   struct state;
 
   explicit strand_executor(std::shared_ptr<state> st) noexcept : state_(std::move(st)) {}
@@ -94,6 +93,27 @@ class strand_executor {
     std::mutex m{};
     std::queue<detail::unique_function<void()>> tasks{};
     bool active{false};  // true if a drain is scheduled or currently running
+
+    auto enqueue(detail::unique_function<void()> fn) -> bool {
+      std::scoped_lock lk{m};
+      tasks.emplace(std::move(fn));
+      if (active) {
+        return false;
+      }
+      active = true;
+      return true;
+    }
+
+    auto try_pop(detail::unique_function<void()>& out) -> bool {
+      std::scoped_lock lk{m};
+      if (tasks.empty()) {
+        active = false;
+        return false;
+      }
+      out = std::move(tasks.front());
+      tasks.pop();
+      return true;
+    }
   };
 
   static void drain(std::shared_ptr<state> st) noexcept {
@@ -104,23 +124,14 @@ class strand_executor {
     strand_executor ex{st};
     detail::executor_guard g{any_executor{ex}};
 
-    for (;;) {
-      detail::unique_function<void()> fn{};
-      {
-        std::scoped_lock lk{st->m};
-        if (st->tasks.empty()) {
-          st->active = false;
-          return;
-        }
-        fn = std::move(st->tasks.front());
-        st->tasks.pop();
-      }
-
+    detail::unique_function<void()> fn{};
+    while (st->try_pop(fn)) {
       try {
         fn();
       } catch (...) {
         // Scheduling APIs are noexcept; swallow task exceptions.
       }
+      fn = {};
     }
   }
 
@@ -137,5 +148,26 @@ inline auto make_strand(Ex ex) -> strand_executor {
 }
 
 }  // namespace iocoro
+
+namespace iocoro::detail {
+
+template <>
+struct executor_traits<strand_executor> {
+  static auto capabilities(strand_executor const& ex) noexcept -> executor_capability {
+    if (!ex.state_) {
+      return executor_capability::none;
+    }
+    return ex.state_->base.capabilities();
+  }
+
+  static auto io_context(strand_executor const& ex) noexcept -> io_context_impl* {
+    if (!ex.state_) {
+      return nullptr;
+    }
+    return any_executor_access::io_context(ex.state_->base);
+  }
+};
+
+}  // namespace iocoro::detail
 
 

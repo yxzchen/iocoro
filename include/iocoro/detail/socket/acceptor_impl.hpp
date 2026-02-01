@@ -4,17 +4,17 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/expected.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <system_error>
 
 // Native socket APIs (generic / non-domain-specific).
-#include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
@@ -34,7 +34,7 @@ namespace iocoro::detail::socket {
 class acceptor_impl {
  public:
   acceptor_impl() noexcept = delete;
-  explicit acceptor_impl(io_executor ex) noexcept : base_(ex) {}
+  explicit acceptor_impl(any_io_executor ex) noexcept : base_(ex) {}
 
   acceptor_impl(acceptor_impl const&) = delete;
   auto operator=(acceptor_impl const&) -> acceptor_impl& = delete;
@@ -86,16 +86,16 @@ class acceptor_impl {
   auto async_accept() -> awaitable<expected<int, std::error_code>>;
 
  private:
-  static auto set_nonblocking(int fd) noexcept -> bool;
-
-  static auto set_cloexec(int fd) noexcept -> bool;
-
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
   bool listening_{false};
   bool accept_active_{false};
-  std::uint64_t accept_epoch_{0};
+  std::atomic<std::uint64_t> accept_epoch_{0};
+
+  auto is_accept_epoch_current(std::uint64_t epoch) const noexcept -> bool {
+    return accept_epoch_.load(std::memory_order_acquire) == epoch;
+  }
 };
 
 }  // namespace iocoro::detail::socket

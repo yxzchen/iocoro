@@ -1,15 +1,17 @@
 #pragma once
 
 #include <iocoro/any_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/assert.hpp>
-#include <iocoro/detail/executor_guard.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/detail/executor_cast.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/this_coro.hpp>
 
 #include <cassert>
 #include <coroutine>
 #include <exception>
-#include <optional>
+#include <memory>
+#include <stop_token>
 #include <utility>
 
 namespace iocoro {
@@ -24,6 +26,8 @@ struct awaitable_promise_base {
   std::coroutine_handle<> continuation_{};
   std::exception_ptr exception_{};
   bool detached_{false};
+  std::stop_source stop_source_{};
+  std::unique_ptr<std::stop_callback<unique_function<void()>>> parent_stop_cb_{};
 
   awaitable_promise_base() noexcept = default;
 
@@ -39,7 +43,7 @@ struct awaitable_promise_base {
         // If detached, the coroutine owns its own lifetime.
         if (self->detached_) {
           // Detached coroutines must not have a continuation.
-          self->ex_.post([h, ex = self->ex_]() mutable { h.destroy(); });
+          self->ex_.post([h]() mutable { h.destroy(); });
           return;
         }
 
@@ -55,6 +59,36 @@ struct awaitable_promise_base {
   auto get_executor() noexcept { return ex_; }
   void set_executor(any_executor ex) noexcept { ex_ = std::move(ex); }
 
+  void inherit_executor(any_executor parent_ex) noexcept {
+    if (!ex_) {
+      ex_ = std::move(parent_ex);
+    }
+  }
+
+  auto get_stop_token() const noexcept -> std::stop_token {
+    return stop_source_.get_token();
+  }
+
+  void inherit_stop_token(std::stop_token parent) {
+    if (!parent.stop_possible() || parent_stop_cb_) {
+      return;
+    }
+    if (parent.stop_requested()) {
+      request_stop();
+      return;
+    }
+    parent_stop_cb_ = std::make_unique<std::stop_callback<unique_function<void()>>>(
+      parent, unique_function<void()>{[this]() { request_stop(); }});
+  }
+
+  void request_stop() noexcept {
+    stop_source_.request_stop();
+  }
+
+  auto stop_requested() const noexcept -> bool {
+    return stop_source_.stop_requested();
+  }
+
   void detach() noexcept {
     IOCORO_ENSURE(ex_, "awaitable_promise: detach() requires executor");
     detached_ = true;
@@ -62,22 +96,34 @@ struct awaitable_promise_base {
 
   void set_continuation(std::coroutine_handle<> h) noexcept {
     continuation_ = h;
-    // Child coroutines inherit the current executor by default.
-    if (!ex_) {
-      ex_ = detail::get_current_executor();
-    }
   }
 
   void resume_continuation() noexcept {
     if (!continuation_) {
       return;
     }
-    post_resume(continuation_);
+    schedule_resume(continuation_);
   }
 
-  void post_resume(std::coroutine_handle<> h) noexcept {
-    IOCORO_ENSURE(ex_, "awaitable_promise: post_resume() requires executor");
-    ex_.post([h]() mutable { h.resume(); });
+  void schedule_resume(std::coroutine_handle<> h) noexcept {
+    IOCORO_ENSURE(ex_, "awaitable_promise: schedule_resume() requires executor");
+
+    constexpr std::uint32_t max_inline_depth = 64;
+    thread_local std::uint32_t inline_depth = 0;
+
+    if (inline_depth >= max_inline_depth) {
+      ex_.post([h]() mutable { h.resume(); });
+      return;
+    }
+
+    struct inline_guard {
+      std::uint32_t& depth;
+      ~inline_guard() { --depth; }
+    };
+
+    ++inline_depth;
+    inline_guard guard{inline_depth};
+    ex_.dispatch([h]() mutable { h.resume(); });
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
@@ -103,6 +149,18 @@ struct awaitable_promise_base {
     return awaiter{ex_};
   }
 
+  auto await_transform(this_coro::io_executor_t) noexcept {
+    struct awaiter {
+      any_executor ex;
+      bool await_ready() noexcept { return true; }
+      auto await_resume() noexcept -> any_io_executor {
+        return to_io_executor(ex);
+      }
+      void await_suspend(std::coroutine_handle<>) noexcept {}
+    };
+    return awaiter{ex_};
+  }
+
   auto await_transform(this_coro::switch_to_t t) noexcept {
     struct awaiter {
       awaitable_promise_base* self;
@@ -118,7 +176,7 @@ struct awaitable_promise_base {
         IOCORO_ENSURE(target, "this_coro::switch_to: empty executor");
 
         self->ex_ = std::move(target);
-        self->post_resume(h);
+        self->schedule_resume(h);
         return true;
       }
 
@@ -160,3 +218,4 @@ struct awaitable_promise<void> final : awaitable_promise_base {
 };
 
 }  // namespace iocoro::detail
+

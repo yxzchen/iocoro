@@ -1,13 +1,12 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/cancellation_token.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
-#include <iocoro/detail/operation_async.hpp>
+#include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
-#include <iocoro/io_executor.hpp>
 #include <iocoro/socket_option.hpp>
 
 #include <atomic>
@@ -27,7 +26,7 @@ namespace iocoro::detail::socket {
 ///
 /// Responsibilities:
 /// - Own the native handle (fd) lifecycle (open/close/release).
-/// - Own io_executor binding (used to register reactor ops / post completions).
+/// - Own IO executor binding (used to register reactor ops / post completions).
 /// - Provide thread-safe cancel/close primitives.
 ///
 /// Concurrency contract (minimal; enforced by derived classes):
@@ -35,17 +34,15 @@ namespace iocoro::detail::socket {
 /// - Starting async operations (read/write/connect/...) must either be internally serialized
 ///   or return `error::busy` when conflicting ops are in-flight.
 class socket_impl_base {
- private:
-  enum class fd_wait_kind : std::uint8_t { read, write };
-
-  template <fd_wait_kind Kind>
-  struct fd_awaiter;
-
  public:
-  using fd_event_handle = io_context_impl::fd_event_handle;
+  using event_handle = io_context_impl::event_handle;
 
   socket_impl_base() noexcept = delete;
-  explicit socket_impl_base(io_executor ex) noexcept : ctx_impl_(ex.impl_) {}
+  explicit socket_impl_base(any_io_executor ex) noexcept
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()) {
+    IOCORO_ENSURE(ex_, "socket_impl_base: requires IO executor");
+    IOCORO_ENSURE(ctx_impl_, "socket_impl_base: requires IO executor");
+  }
 
   socket_impl_base(socket_impl_base const&) = delete;
   auto operator=(socket_impl_base const&) -> socket_impl_base& = delete;
@@ -55,6 +52,7 @@ class socket_impl_base {
   ~socket_impl_base() { close(); }
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return ctx_impl_; }
+  auto get_executor() const noexcept -> any_io_executor { return ex_; }
 
   /// Native handle snapshot. Returns -1 if not open.
   ///
@@ -139,7 +137,7 @@ class socket_impl_base {
   /// cancelled. The caller is responsible for managing the returned fd, including closing it.
   auto release() noexcept -> int;
 
-  /// Publish the current cancellation handle for the "read readiness" waiter.
+  /// Publish the current handle for the "read readiness" waiter.
   ///
   /// Ownership / contract:
   /// - `socket_impl_base` stores exactly ONE handle per direction (read/write).
@@ -149,40 +147,42 @@ class socket_impl_base {
   ///
   /// Therefore, higher layers MUST enforce that, per-direction, there is at most one
   /// in-flight waiter that relies on this handle for cancellation.
-  void set_read_handle(fd_event_handle h) noexcept {
+  void set_read_handle(event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     read_handle_ = h;
   }
 
-  /// Publish the current cancellation handle for the "write readiness" waiter.
+  /// Publish the current handle for the "write readiness" waiter.
   /// See `set_read_handle()` for the ownership/contract details.
-  void set_write_handle(fd_event_handle h) noexcept {
+  void set_write_handle(event_handle h) noexcept {
     std::scoped_lock lk{mtx_};
     write_handle_ = h;
   }
 
-  /// Wait until the native fd becomes readable (read readiness), observing a cancellation token.
-  auto wait_read_ready(cancellation_token tok = {}) -> awaitable<std::error_code> {
+  /// Wait until the native fd becomes readable (read readiness).
+  auto wait_read_ready() -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    auto awaiter = operation_awaiter<fd_wait_operation<fd_wait_kind::read>>{this};
-    if (!tok) {
-      co_return co_await std::move(awaiter);
-    }
-    co_return co_await cancellable(std::move(awaiter), std::move(tok));
+    co_return co_await detail::operation_awaiter{
+      [this](detail::reactor_op_ptr rop) {
+        auto h = ctx_impl_->register_fd_read(native_handle(), std::move(rop));
+        set_read_handle(h);
+        return h;
+      }};
   }
 
-  /// Wait until the native fd becomes writable (write readiness), observing a cancellation token.
-  auto wait_write_ready(cancellation_token tok = {}) -> awaitable<std::error_code> {
+  /// Wait until the native fd becomes writable (write readiness).
+  auto wait_write_ready() -> awaitable<std::error_code> {
     if (native_handle() < 0) {
       co_return error::not_open;
     }
-    auto awaiter = operation_awaiter<fd_wait_operation<fd_wait_kind::write>>{this};
-    if (!tok) {
-      co_return co_await std::move(awaiter);
-    }
-    co_return co_await cancellable(std::move(awaiter), std::move(tok));
+    co_return co_await detail::operation_awaiter{
+      [this](detail::reactor_op_ptr rop) {
+        auto h = ctx_impl_->register_fd_write(native_handle(), std::move(rop));
+        set_write_handle(h);
+        return h;
+      }};
   }
 
  private:
@@ -197,32 +197,7 @@ class socket_impl_base {
   /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
   enum class fd_state : std::uint8_t { closed, opening, open };
 
-  template <fd_wait_kind Kind>
-  class fd_wait_operation final : public async_operation {
-   public:
-    fd_wait_operation(std::shared_ptr<operation_wait_state> st, socket_impl_base* socket) noexcept
-        : async_operation(std::move(st)), socket_(socket) {}
-
-   private:
-    void do_start(std::unique_ptr<operation_base> self) override {
-      // Register and publish handle for cancellation.
-      // Note: `socket_impl_base` retains only ONE handle per direction (the latest).
-      // The surrounding `stream_socket_impl` design (in-flight flags) must maintain the
-      // "single waiter per direction" invariant for correctness.
-      if constexpr (Kind == fd_wait_kind::read) {
-        auto h = socket_->ctx_impl_->register_fd_read(socket_->native_handle(), std::move(self));
-        socket_->set_read_handle(h);
-        this->publish_cancel([h]() mutable { h.cancel(); });
-      } else {
-        auto h = socket_->ctx_impl_->register_fd_write(socket_->native_handle(), std::move(self));
-        socket_->set_write_handle(h);
-        this->publish_cancel([h]() mutable { h.cancel(); });
-      }
-    }
-
-    socket_impl_base* socket_ = nullptr;
-  };
-
+  any_io_executor ex_{};
   io_context_impl* ctx_impl_{};
 
   mutable std::mutex mtx_{};
@@ -231,8 +206,8 @@ class socket_impl_base {
   std::atomic<int> fd_{-1};
   fd_state state_{fd_state::closed};
 
-  fd_event_handle read_handle_{};
-  fd_event_handle write_handle_{};
+  event_handle read_handle_{};
+  event_handle write_handle_{};
 };
 
 }  // namespace iocoro::detail::socket

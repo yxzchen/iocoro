@@ -18,6 +18,7 @@ BUILD_TYPE="Debug"
 CLEAN=false
 INSTALL=false
 TEST=false
+BENCH=false
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 VERBOSE=false
 SANITIZER=""
@@ -34,6 +35,7 @@ Options:
     -c, --clean             Clean build directory before building
     -i, --install           Install after building
     -t, --test              Run tests after building
+    -b, --bench             Build benchmarks
     -j, --jobs NUM          Number of parallel build jobs (default: $JOBS)
     -v, --verbose           Show verbose build output
     --asan                  Enable AddressSanitizer
@@ -44,6 +46,7 @@ Options:
 Examples:
     $0                      # Build in Release mode
     $0 -d -t                # Build in Debug mode and run tests
+    $0 -b                   # Build benchmarks
     $0 -c -r -i             # Clean, build in Release, and install
     $0 --asan -d -t         # Debug with AddressSanitizer and tests
 EOF
@@ -88,6 +91,10 @@ parse_args() {
                 ;;
             -t|--test)
                 TEST=true
+                shift
+                ;;
+            -b|--bench)
+                BENCH=true
                 shift
                 ;;
             -j|--jobs)
@@ -162,6 +169,10 @@ configure_project() {
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
         -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
     )
+    
+    if [ "$BENCH" = true ]; then
+        CMAKE_ARGS+=(-DIOCORO_BUILD_BENCHMARKS=ON)
+    fi
     
     # Add sanitizer options
     if [ -n "$SANITIZER" ]; then

@@ -4,73 +4,52 @@
 
 namespace iocoro {
 
-inline auto thread_pool::get_executor() noexcept -> executor_type { return executor_type{state_}; }
+inline auto thread_pool::get_executor() noexcept -> executor_type { return executor_type{this}; }
 
-inline auto thread_pool::size() const noexcept -> std::size_t {
-  return state_ ? state_->n_threads : 0;
-}
+inline auto thread_pool::size() const noexcept -> std::size_t { return n_threads_; }
 
 inline void thread_pool::set_exception_handler(exception_handler_t handler) noexcept {
-  std::scoped_lock lock{state_->mutex};
-  state_->on_task_exception = std::move(handler);
+  if (handler) {
+    on_task_exception_.store(
+      std::make_shared<exception_handler_t>(std::move(handler)),
+      std::memory_order_release);
+  } else {
+    on_task_exception_.store(nullptr, std::memory_order_release);
+  }
 }
 
-inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
+inline void thread_pool::worker_loop(thread_pool* pool, std::size_t /*index*/) {
   while (true) {
     detail::unique_function<void()> task;
 
     {
-      std::unique_lock lock{s->mutex};
-
-      // Wait for:
-      // - task available, OR
-      // - stop requested AND no work guards remain (so we can exit)
-      s->cv.wait(lock, [&] {
-        if (!s->tasks.empty()) {
-          return true;
-        }
-
-        if (s->stopped.load(std::memory_order_acquire)) {
-          return s->work_guard_count.load(std::memory_order_acquire) == 0;
-        }
-
-        return false;
+      std::unique_lock lock{pool->cv_mutex_};
+      pool->cv_.wait(lock, [&] {
+        return pool->pending_.load(std::memory_order_acquire) > 0 ||
+               (pool->state_ == state_t::draining && pool->work_guard_.count() == 0);
       });
 
-      auto const stopped = s->stopped.load(std::memory_order_acquire);
-      auto const has_tasks = !s->tasks.empty();
-      auto const has_guards = s->work_guard_count.load(std::memory_order_acquire) > 0;
-
-      if (stopped && !has_tasks && !has_guards) {
-        return;
+      if (pool->pending_.load(std::memory_order_acquire) == 0) {
+        if (pool->state_ == state_t::draining && pool->work_guard_.count() == 0) {
+          break;
+        }
+        continue;
       }
 
-      // Get task if available
-      if (has_tasks) {
-        task = std::move(s->tasks.front());
-        s->tasks.pop();
-      }
+      task = std::move(pool->queue_.front());
+      pool->queue_.pop_front();
+      pool->pending_.fetch_sub(1, std::memory_order_acq_rel);
     }
 
-    // Execute task outside the lock
-    if (task) {
-      try {
-        task();
-      } catch (...) {
-        // Get exception handler under lock
-        exception_handler_t handler;
-        {
-          std::scoped_lock lock{s->mutex};
-          handler = s->on_task_exception;
-        }
-
-        // Call handler if set, otherwise swallow exception
-        if (handler) {
-          try {
-            handler(std::current_exception());
-          } catch (...) {
-            // Swallow exceptions from handler to prevent thread termination
-          }
+    try {
+      task();
+    } catch (...) {
+      auto handler_ptr = pool->on_task_exception_.load(std::memory_order_acquire);
+      if (handler_ptr) {
+        try {
+          (*handler_ptr)(std::current_exception());
+        } catch (...) {
+          // Swallow exceptions from handler to prevent thread termination
         }
       }
     }
@@ -80,16 +59,11 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s) {
 inline thread_pool::thread_pool(std::size_t n_threads) {
   IOCORO_ENSURE(n_threads > 0, "thread_pool: n_threads must be > 0");
 
-  // Create shared state
-  state_ = std::make_shared<state>();
-  state_->n_threads = n_threads;
-
+  n_threads_ = n_threads;
   threads_.reserve(n_threads);
 
-  // Start worker threads
   for (std::size_t i = 0; i < n_threads; ++i) {
-    auto s = state_;
-    threads_.emplace_back([s] { worker_loop(s); });
+    threads_.emplace_back([this, i] { worker_loop(this, i); });
   }
 }
 
@@ -100,18 +74,24 @@ inline thread_pool::~thread_pool() {
 
 inline void thread_pool::stop() noexcept {
   {
-    std::scoped_lock lock{state_->mutex};
-    state_->stopped.store(true, std::memory_order_release);
+    std::scoped_lock lock{cv_mutex_};
+    if (state_ == state_t::running) {
+      state_ = state_t::draining;
+    }
   }
-
-  state_->cv.notify_all();
+  cv_.notify_all();
 }
 
 inline void thread_pool::join() noexcept {
+  stop();
   for (auto& t : threads_) {
     if (t.joinable()) {
       t.join();
     }
+  }
+  {
+    std::scoped_lock lock{cv_mutex_};
+    state_ = state_t::stopped;
   }
 }
 

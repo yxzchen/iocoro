@@ -4,6 +4,8 @@
 
 #include <coroutine>
 #include <exception>
+#include <memory>
+#include <stop_token>
 #include <utility>
 
 namespace iocoro {
@@ -48,9 +50,29 @@ class awaitable {
     return coro_.promise().get_executor();
   }
 
+  auto get_stop_token() -> std::stop_token {
+    if (!coro_) {
+      return {};
+    }
+    return coro_.promise().get_stop_token();
+  }
+
+  void request_stop() noexcept {
+    if (coro_) {
+      coro_.promise().request_stop();
+    }
+  }
+
   bool await_ready() const noexcept { return false; }
-  auto await_suspend(std::coroutine_handle<> h) noexcept -> std::coroutine_handle<> {
+  template <class Promise>
+  auto await_suspend(std::coroutine_handle<Promise> h) noexcept -> std::coroutine_handle<> {
     coro_.promise().set_continuation(h);
+    if constexpr (requires { h.promise().get_executor(); }) {
+      coro_.promise().inherit_executor(h.promise().get_executor());
+    }
+    if constexpr (requires { h.promise().get_stop_token(); }) {
+      coro_.promise().inherit_stop_token(h.promise().get_stop_token());
+    }
     return coro_;
   }
   auto await_resume() -> T {

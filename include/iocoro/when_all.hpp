@@ -43,13 +43,16 @@ void when_all_start_variadic(any_executor fallback_ex,
                              [[maybe_unused]] std::shared_ptr<when_all_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
-  (co_spawn([&]() {
-              auto task_ex = std::get<Is>(tasks).get_executor();
-              return task_ex ? task_ex : fallback_ex;
-            }(),
-            when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-              st, std::move(std::get<Is>(tasks))),
-            detached),
+  (detail::spawn_task<void>(
+     detail::spawn_context{[&]() {
+       auto task_ex = std::get<Is>(tasks).get_executor();
+       return task_ex ? task_ex : fallback_ex;
+     }()},
+     [st, task = std::move(std::get<Is>(tasks))]() mutable -> awaitable<void> {
+       return when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
+         st, std::move(task));
+     },
+     detail::detached_completion<void>{}),
    ...);
 }
 
@@ -103,7 +106,8 @@ auto when_all(awaitable<Ts>... tasks) -> awaitable<std::tuple<detail::when_value
   IOCORO_ENSURE(fallback_ex, "when_all: requires a bound executor");
 
   auto st = std::make_shared<detail::when_all_variadic_state<Ts...>>();
-  detail::when_all_start_variadic<Ts...>(fallback_ex, st, std::tuple<awaitable<Ts>...>{std::move(tasks)...},
+  detail::when_all_start_variadic<Ts...>(fallback_ex, st,
+                                         std::tuple<awaitable<Ts>...>{std::move(tasks)...},
                                          std::index_sequence_for<Ts...>{});
 
   co_await detail::await_when(st);
@@ -147,7 +151,12 @@ auto when_all(std::vector<awaitable<T>> tasks)
   for (std::size_t i = 0; i < tasks.size(); ++i) {
     auto task_executor = tasks[i].get_executor();
     auto exec = task_executor ? task_executor : fallback_ex;
-    co_spawn(exec, detail::when_all_container_run_one<T>(st, i, std::move(tasks[i])), detached);
+    detail::spawn_task<void>(
+      detail::spawn_context{exec},
+      [st, i, task = std::move(tasks[i])]() mutable -> awaitable<void> {
+        return detail::when_all_container_run_one<T>(st, i, std::move(task));
+      },
+      detail::detached_completion<void>{});
   }
 
   co_await detail::await_when(st);

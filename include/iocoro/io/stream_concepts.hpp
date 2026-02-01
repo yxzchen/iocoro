@@ -1,9 +1,8 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/cancellation_token.hpp>
 #include <iocoro/expected.hpp>
-#include <iocoro/io_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -22,15 +21,15 @@ namespace iocoro::io {
 /// A type `Stream` models `async_stream` if it satisfies the following
 /// requirements:
 ///
-/// 1. It provides an asynchronous read primitive:
+/// 1. It provides an asynchronous read primitive (observing coroutine cancellation context):
 ///    ```
-///    async_read_some(std::span<std::byte>, cancellation_token)
+///    async_read_some(std::span<std::byte>)
 ///      -> awaitable<expected<std::size_t, std::error_code>>
 ///    ```
 ///
-/// 2. It provides an asynchronous write primitive:
+/// 2. It provides an asynchronous write primitive (observing coroutine cancellation context):
 ///    ```
-///    async_write_some(std::span<std::byte const>, cancellation_token)
+///    async_write_some(std::span<std::byte const>)
 ///      -> awaitable<expected<std::size_t, std::error_code>>
 ///    ```
 ///
@@ -54,21 +53,21 @@ namespace iocoro::io {
 
 template <class Stream>
 concept io_executor_stream = requires(Stream& s) {
-  { s.get_executor() } -> std::same_as<io_executor>;
+  { s.get_executor() } -> std::same_as<any_io_executor>;
 };
 
 template <class Stream>
 concept async_read_stream =
-  io_executor_stream<Stream> && requires(Stream& s, std::span<std::byte> rbuf, cancellation_token tok) {
-    requires std::same_as<decltype(s.async_read_some(rbuf, tok)),
+  io_executor_stream<Stream> && requires(Stream& s, std::span<std::byte> rbuf) {
+    requires std::same_as<decltype(s.async_read_some(rbuf)),
                           awaitable<expected<std::size_t, std::error_code>>>;
   };
 
 template <class Stream>
 concept async_write_stream =
   io_executor_stream<Stream> &&
-  requires(Stream& s, std::span<std::byte const> wbuf, cancellation_token tok) {
-    requires std::same_as<decltype(s.async_write_some(wbuf, tok)),
+  requires(Stream& s, std::span<std::byte const> wbuf) {
+    requires std::same_as<decltype(s.async_write_some(wbuf)),
                           awaitable<expected<std::size_t, std::error_code>>>;
   };
 
@@ -76,9 +75,9 @@ template <class Stream>
 concept async_stream = async_read_stream<Stream> && async_write_stream<Stream>;
 
 template <class Socket, class Endpoint>
-concept async_connect_socket = requires(Socket& s, Endpoint const& ep, ::iocoro::cancellation_token tok) {
-  { s.get_executor() } -> std::same_as<::iocoro::io_executor>;
-  { s.async_connect(ep, std::move(tok)) } -> std::same_as<::iocoro::awaitable<std::error_code>>;
+concept async_connect_socket = requires(Socket& s, Endpoint const& ep) {
+  { s.get_executor() } -> std::same_as<::iocoro::any_io_executor>;
+  { s.async_connect(ep) } -> std::same_as<::iocoro::awaitable<std::error_code>>;
 };
 
 }  // namespace iocoro::io

@@ -1,14 +1,10 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/cancellation_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io/stream_concepts.hpp>
-#include <iocoro/with_timeout.hpp>
 
-#include <chrono>
 #include <cstddef>
 #include <span>
 #include <system_error>
@@ -23,12 +19,12 @@ namespace iocoro::io {
 /// - If `async_write_some` yields 0 before the buffer is fully written, this returns
 ///   `error::broken_pipe`.
 template <async_write_stream Stream>
-auto async_write(Stream& s, std::span<std::byte const> buf, cancellation_token tok = {})
+auto async_write(Stream& s, std::span<std::byte const> buf)
   -> awaitable<expected<std::size_t, std::error_code>> {
   auto const wanted = buf.size();
 
   while (!buf.empty()) {
-    auto r = co_await s.async_write_some(buf, tok);
+    auto r = co_await s.async_write_some(buf);
     if (!r) {
       co_return r;
     }
@@ -42,34 +38,6 @@ auto async_write(Stream& s, std::span<std::byte const> buf, cancellation_token t
   }
 
   co_return wanted;
-}
-
-/// Composed operation: write exactly `buf.size()` bytes, but fail with `error::timed_out`
-/// if the overall operation does not complete within `timeout`.
-template <async_write_stream Stream, class Rep, class Period>
-auto async_write_timeout(Stream& s, std::span<std::byte const> buf,
-                         std::chrono::duration<Rep, Period> timeout)
-  -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout(
-    s.get_executor(),
-    [&](cancellation_token tok) {
-      return async_write(s, buf, std::move(tok));
-    },
-    timeout);
-}
-
-/// Write at most `buf.size()` bytes from `buf`, but fail with `error::timed_out`
-/// if the operation does not complete within `timeout`.
-template <async_write_stream Stream, class Rep, class Period>
-auto async_write_some_timeout(Stream& s, std::span<std::byte const> buf,
-                              std::chrono::duration<Rep, Period> timeout)
-  -> awaitable<expected<std::size_t, std::error_code>> {
-  co_return co_await with_timeout(
-    s.get_executor(),
-    [&](cancellation_token tok) {
-      return s.async_write_some(buf, std::move(tok));
-    },
-    timeout);
 }
 
 }  // namespace iocoro::io

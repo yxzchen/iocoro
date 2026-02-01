@@ -1,11 +1,14 @@
 #pragma once
 
-#include <iocoro/cancellation_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/io_context.hpp>
 
+#include <iocoro/detail/scope_guard.hpp>
+#include <iocoro/detail/socket/op_state.hpp>
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -38,15 +41,10 @@ namespace iocoro::detail::socket {
 /// - At most one in-flight send and one in-flight receive are allowed.
 /// - Conflicting operations return `error::busy`.
 ///
-/// Cancellation token contract (ties into `socket_impl_base`):
-/// - This type guarantees at most one in-flight readiness waiter per direction via
-///   `send_in_flight_` / `receive_in_flight_`.
-/// - It is therefore valid for `socket_impl_base` to store only the most-recent cancel handle
-///   per direction (read/write).
 class datagram_socket_impl {
  public:
   datagram_socket_impl() noexcept = delete;
-  explicit datagram_socket_impl(io_executor ex) noexcept : base_(ex) {}
+  explicit datagram_socket_impl(any_io_executor ex) noexcept : base_(ex) {}
 
   datagram_socket_impl(datagram_socket_impl const&) = delete;
   auto operator=(datagram_socket_impl const&) -> datagram_socket_impl& = delete;
@@ -58,7 +56,7 @@ class datagram_socket_impl {
   auto get_io_context_impl() const noexcept -> io_context_impl* {
     return base_.get_io_context_impl();
   }
-  auto get_executor() const noexcept -> io_executor { return io_executor{*get_io_context_impl()}; }
+  auto get_executor() const noexcept -> any_io_executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
 
   /// Open a new native socket (best-effort, non-blocking).
@@ -118,8 +116,7 @@ class datagram_socket_impl {
   auto async_send_to(
       std::span<std::byte const> buffer,
       sockaddr const* dest_addr,
-      socklen_t dest_len,
-      cancellation_token tok = {}) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>>;
 
   /// Receive a datagram and retrieve the source endpoint.
   ///
@@ -131,8 +128,7 @@ class datagram_socket_impl {
   auto async_receive_from(
       std::span<std::byte> buffer,
       sockaddr* src_addr,
-      socklen_t* src_len,
-      cancellation_token tok = {}) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>>;
 
  private:
   enum class dgram_state : std::uint8_t {
@@ -141,34 +137,18 @@ class datagram_socket_impl {
     connected   // Socket connected to a remote peer.
   };
 
-  // Minimal scope-exit helper (no exceptions thrown from body).
-  template <class F>
-  class final_action {
-   public:
-    explicit final_action(F f) noexcept : f_(std::move(f)) {}
-    ~final_action() { f_(); }
-
-   private:
-    F f_;
-  };
-  template <class F>
-  static auto finally(F f) noexcept -> final_action<F> {
-    return final_action<F>(std::move(f));
-  }
-
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
 
   dgram_state state_{dgram_state::idle};
-  std::uint64_t send_epoch_{0};
-  std::uint64_t receive_epoch_{0};
-  bool send_in_flight_{false};
-  bool receive_in_flight_{false};
+  op_state send_op_{};
+  op_state receive_op_{};
 
   // Store the connected endpoint for validation.
   sockaddr_storage connected_addr_{};
   socklen_t connected_addr_len_{0};
+
 };
 
 }  // namespace iocoro::detail::socket

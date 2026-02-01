@@ -1,12 +1,15 @@
 #pragma once
 
-#include <iocoro/cancellation_token.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/shutdown.hpp>
+#include <iocoro/io_context.hpp>
 
+#include <iocoro/detail/scope_guard.hpp>
+#include <iocoro/detail/socket/op_state.hpp>
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -28,15 +31,10 @@ namespace iocoro::detail::socket {
 /// - At most one in-flight read and one in-flight write are intended (full-duplex).
 /// - Conflicting operations should return `error::busy` (first stage: stub).
 ///
-/// Cancellation token contract (ties into `socket_impl_base`):
-/// - This type guarantees at most one in-flight readiness waiter per direction via
-///   `read_in_flight_` / `write_in_flight_`.
-/// - It is therefore valid for `socket_impl_base` to store only the most-recent cancel handle
-///   per direction (read/write).
 class stream_socket_impl {
  public:
   stream_socket_impl() noexcept = delete;
-  explicit stream_socket_impl(io_executor ex) noexcept : base_(ex) {}
+  explicit stream_socket_impl(any_io_executor ex) noexcept : base_(ex) {}
 
   stream_socket_impl(stream_socket_impl const&) = delete;
   auto operator=(stream_socket_impl const&) -> stream_socket_impl& = delete;
@@ -48,7 +46,7 @@ class stream_socket_impl {
   auto get_io_context_impl() const noexcept -> io_context_impl* {
     return base_.get_io_context_impl();
   }
-  auto get_executor() const noexcept -> io_executor { return io_executor{*get_io_context_impl()}; }
+  auto get_executor() const noexcept -> any_io_executor { return base_.get_executor(); }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
 
   /// Open a new native socket (best-effort, non-blocking).
@@ -82,7 +80,7 @@ class stream_socket_impl {
   /// - The fd is set to non-blocking mode (best-effort).
   auto assign(int fd) noexcept -> std::error_code {
     IOCORO_ASSERT(state_ == conn_state::disconnected);
-    IOCORO_ASSERT(!read_in_flight_ && !write_in_flight_ && !connect_in_flight_);
+    IOCORO_ASSERT(!read_op_.active && !write_op_.active && !connect_op_.active);
 
     auto ec = base_.assign(fd);
     if (ec) {
@@ -108,40 +106,25 @@ class stream_socket_impl {
   ///
   /// Semantics:
   /// - Aborts waiters registered with the reactor (connect/read/write readiness waits).
-  /// - Does NOT directly modify stream-level state (e.g. conn_state). The awaiting coroutines
-  ///   observe cancellation via their wait result and clean up accordingly.
-  /// - Does NOT reset in-flight flags here; the awaiting coroutines will clear them on resume.
+  /// - Does NOT directly modify stream-level state (e.g. conn_state).
   void cancel() noexcept;
 
   /// Cancel pending read-side operations (best-effort).
-  ///
-  /// Semantics:
-  /// - Aborts the currently-registered "read readiness" waiter (if any).
-  /// - Does NOT affect write-side operations.
   void cancel_read() noexcept;
 
   /// Cancel pending write-side operations (best-effort).
-  ///
-  /// Semantics:
-  /// - Aborts the currently-registered "write readiness" waiter (if any).
-  /// - Does NOT affect read-side operations.
   ///
   /// Note: connect() readiness waits are implemented via writability. Therefore, cancel_write()
   /// may also abort an in-flight async_connect() if it is currently waiting for writability.
   void cancel_write() noexcept;
 
   /// Cancel pending connect operations (best-effort).
-  ///
-  /// Notes:
-  /// - connect readiness waits are implemented via writability.
-  /// - This increments connect_epoch_ so the connect coroutine can reliably detect cancellation
-  ///   even if the reactor handle was not yet published at the time of cancellation.
   void cancel_connect() noexcept;
 
   /// Close the stream socket (best-effort, idempotent).
   ///
   /// Semantics:
-  /// - Cancels and closes the underlying fd via socket_impl_base.
+  /// - Closes the underlying fd via socket_impl_base.
   /// - Resets stream-level state so the object can be reused after a later assign/open.
   void close() noexcept;
 
@@ -159,15 +142,14 @@ class stream_socket_impl {
   auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
 
   /// Connect to a native endpoint.
-  auto async_connect(sockaddr const* addr, socklen_t len, cancellation_token tok = {})
-    -> awaitable<std::error_code>;
+  auto async_connect(sockaddr const* addr, socklen_t len) -> awaitable<std::error_code>;
 
   /// Read at most `size` bytes into `data`.
-  auto async_read_some(std::span<std::byte> buffer, cancellation_token tok = {})
+  auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
   /// Write at most `size` bytes from `data`.
-  auto async_write_some(std::span<std::byte const> buffer, cancellation_token tok = {})
+  auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<expected<std::size_t, std::error_code>>;
 
   auto shutdown(shutdown_type what) -> std::error_code;
@@ -180,33 +162,15 @@ class stream_socket_impl {
     bool write = false;
   };
 
-  // Minimal scope-exit helper (no exceptions thrown from body).
-  template <class F>
-  class final_action {
-   public:
-    explicit final_action(F f) noexcept : f_(std::move(f)) {}
-    ~final_action() { f_(); }
-
-   private:
-    F f_;
-  };
-  template <class F>
-  static auto finally(F f) noexcept -> final_action<F> {
-    return final_action<F>(std::move(f));
-  }
-
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
 
   conn_state state_{conn_state::disconnected};
-  std::uint64_t read_epoch_{0};
-  std::uint64_t write_epoch_{0};
-  std::uint64_t connect_epoch_{0};
+  op_state read_op_{};
+  op_state write_op_{};
+  op_state connect_op_{};
   shutdown_state shutdown_{};
-  bool read_in_flight_{false};
-  bool write_in_flight_{false};
-  bool connect_in_flight_{false};
 };
 
 }  // namespace iocoro::detail::socket

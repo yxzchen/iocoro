@@ -6,8 +6,9 @@ include(CMakePackageConfigHelpers)
 
 option(IOCORO_BUILD_TESTS "Build tests" ${PROJECT_IS_TOP_LEVEL})
 option(IOCORO_ENABLE_WARNINGS "Enable warning flags for iocoro tests/examples" ${PROJECT_IS_TOP_LEVEL})
-option(IOCORO_ENABLE_URING "Enable io_uring backend if liburing is available" ON)
+option(IOCORO_ENABLE_URING "Enable io_uring backend if liburing is available" OFF)
 option(IOCORO_ENABLE_ASAN "Enable AddressSanitizer" OFF)
+option(IOCORO_BUILD_BENCHMARKS "Build benchmarks" OFF)
 
 add_library(iocoro INTERFACE)
 add_library(iocoro::iocoro ALIAS iocoro)
@@ -20,13 +21,7 @@ target_compile_features(iocoro INTERFACE cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(iocoro INTERFACE Threads::Threads)
 
-set(IOCORO_BUILT_WITH_URING 0)
 if(IOCORO_ENABLE_URING)
-    # Optional liburing for io_uring support.
-    #
-    # We intentionally link against our own imported target (liburing::liburing)
-    # so that installed/exported targets don't depend on pkg-config generated
-    # target names.
     find_package(PkgConfig QUIET)
     if(PkgConfig_FOUND)
         pkg_check_modules(LIBURING QUIET liburing)
@@ -50,9 +45,8 @@ if(IOCORO_ENABLE_URING)
 
         target_link_libraries(iocoro INTERFACE liburing::liburing)
         target_compile_definitions(iocoro INTERFACE IOCORO_USE_URING)
-        set(IOCORO_BUILT_WITH_URING 1)
     else()
-        message(STATUS "liburing not found - using epoll only")
+        message(STATUS "liburing not found - using epoll")
     endif()
 else()
     message(STATUS "IOCORO_ENABLE_URING=OFF - forcing epoll backend")
@@ -80,6 +74,10 @@ endif()
 if(IOCORO_BUILD_TESTS)
     enable_testing()
     add_subdirectory(test)
+endif()
+
+if(IOCORO_BUILD_BENCHMARKS)
+    add_subdirectory(benchmark)
 endif()
 
 install(TARGETS iocoro EXPORT iocoroTargets)

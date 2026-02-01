@@ -7,39 +7,30 @@
 namespace iocoro::detail::socket {
 
 inline void datagram_socket_impl::cancel() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++send_epoch_;
-    ++receive_epoch_;
-  }
+  send_op_.cancel();
+  receive_op_.cancel();
   base_.cancel();
 }
 
 inline void datagram_socket_impl::cancel_read() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++receive_epoch_;
-  }
+  receive_op_.cancel();
   base_.cancel_read();
 }
 
 inline void datagram_socket_impl::cancel_write() noexcept {
-  {
-    std::scoped_lock lk{mtx_};
-    ++send_epoch_;
-  }
+  send_op_.cancel();
   base_.cancel_write();
 }
 
 inline void datagram_socket_impl::close() noexcept {
   {
     std::scoped_lock lk{mtx_};
-    ++send_epoch_;
-    ++receive_epoch_;
+    send_op_.cancel();
+    receive_op_.cancel();
     state_ = dgram_state::idle;
     connected_addr_len_ = 0;
     std::memset(&connected_addr_, 0, sizeof(connected_addr_));
-    // NOTE: do not touch send_in_flight_/receive_in_flight_ here; their owner is the coroutine.
+    // NOTE: do not touch active flags here; their owner is the coroutine.
   }
   base_.close();
 }
@@ -93,8 +84,7 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
 inline auto datagram_socket_impl::async_send_to(
     std::span<std::byte const> buffer,
     sockaddr const* dest_addr,
-    socklen_t dest_len,
-    cancellation_token tok) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -105,22 +95,15 @@ inline auto datagram_socket_impl::async_send_to(
 
   {
     std::scoped_lock lk{mtx_};
-    if (send_in_flight_) {
+    if (send_op_.active) {
       co_return unexpected(error::busy);
     }
-    send_in_flight_ = true;
-    my_epoch = send_epoch_;
+    send_op_.active = true;
+    my_epoch = send_op_.epoch.load(std::memory_order_acquire);
     is_connected = (state_ == dgram_state::connected);
   }
 
-  auto guard = finally([this] {
-    std::scoped_lock lk{mtx_};
-    send_in_flight_ = false;
-  });
-
-  if (tok.stop_requested()) {
-    co_return unexpected(error::operation_aborted);
-  }
+  auto guard = detail::make_scope_exit([this] { send_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -153,17 +136,12 @@ inline auto datagram_socket_impl::async_send_to(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for write readiness.
-      auto ec = co_await base_.wait_write_ready(tok);
+      auto ec = co_await base_.wait_write_ready();
       if (ec) {
         co_return unexpected(ec);
       }
-
-      // Check for cancellation.
-      {
-        std::scoped_lock lk{mtx_};
-        if (send_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!send_op_.is_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }
@@ -180,8 +158,7 @@ inline auto datagram_socket_impl::async_send_to(
 inline auto datagram_socket_impl::async_receive_from(
     std::span<std::byte> buffer,
     sockaddr* src_addr,
-    socklen_t* src_len,
-    cancellation_token tok) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -207,21 +184,14 @@ inline auto datagram_socket_impl::async_receive_from(
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (receive_in_flight_) {
+    if (receive_op_.active) {
       co_return unexpected(error::busy);
     }
-    receive_in_flight_ = true;
-    my_epoch = receive_epoch_;
+    receive_op_.active = true;
+    my_epoch = receive_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = finally([this] {
-    std::scoped_lock lk{mtx_};
-    receive_in_flight_ = false;
-  });
-
-  if (tok.stop_requested()) {
-    co_return unexpected(error::operation_aborted);
-  }
+  auto guard = detail::make_scope_exit([this] { receive_op_.finish(mtx_); });
 
   if (buffer.empty()) {
     co_return unexpected(error::invalid_argument);
@@ -259,17 +229,12 @@ inline auto datagram_socket_impl::async_receive_from(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for read readiness.
-      auto ec = co_await base_.wait_read_ready(tok);
+      auto ec = co_await base_.wait_read_ready();
       if (ec) {
         co_return unexpected(ec);
       }
-
-      // Check for cancellation.
-      {
-        std::scoped_lock lk{mtx_};
-        if (receive_epoch_ != my_epoch) {
-          co_return unexpected(error::operation_aborted);
-        }
+      if (!receive_op_.is_epoch_current(my_epoch)) {
+        co_return unexpected(error::operation_aborted);
       }
       continue;
     }

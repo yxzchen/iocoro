@@ -1,40 +1,16 @@
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 #include <iocoro/any_executor.hpp>
 
-#include <fcntl.h>
 #include <unistd.h>
 
 namespace iocoro::detail::socket {
 
-namespace {
-
-inline auto set_nonblocking(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFL, 0);
-  if (flags < 0) {
-    return false;
-  }
-  if ((flags & O_NONBLOCK) != 0) {
-    return true;
-  }
-  return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-}
-
-inline auto set_cloexec(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFD, 0);
-  if (flags < 0) {
-    return false;
-  }
-  if ((flags & FD_CLOEXEC) != 0) {
-    return true;
-  }
-  return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
-}
-
-}  // namespace
-
 inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> std::error_code {
+  int fd = -1;
+  bool opened = false;
   {
     std::scoped_lock lk{mtx_};
     if (state_ != fd_state::closed || native_handle() >= 0) {
@@ -43,7 +19,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     state_ = fd_state::opening;
   }
 
-  int fd = ::socket(domain, type, protocol);
+  fd = ::socket(domain, type, protocol);
   if (fd < 0) {
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::opening) {
@@ -61,12 +37,21 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
       state_ = fd_state::open;
-      return {};
+      opened = true;
     }
-    // Aborted by close()/assign() while opening.
-    // We intentionally do not adopt the fd.
   }
 
+  if (opened) {
+    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
+    if (reg_ec) {
+      close();
+      return reg_ec;
+    }
+    return {};
+  }
+
+  // Aborted by close()/assign() while opening.
+  // We intentionally do not adopt the fd.
   (void)::close(fd);
   return error::busy;
 }
@@ -77,8 +62,9 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
   }
 
   int old_fd = -1;
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  bool assigned = false;
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     // Mark as opening to block concurrent open/assign.
@@ -95,6 +81,7 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
   rh.cancel();
   wh.cancel();
   if (old_fd >= 0) {
+    ctx_impl_->disarm_fd_interest(old_fd);
     (void)::close(old_fd);
   }
 
@@ -107,8 +94,17 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
     if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
       state_ = fd_state::open;
-      return {};
+      assigned = true;
     }
+  }
+
+  if (assigned) {
+    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
+    if (reg_ec) {
+      close();
+      return reg_ec;
+    }
+    return {};
   }
 
   // Aborted by close() while assigning.
@@ -117,8 +113,8 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
 }
 
 inline void socket_impl_base::cancel() noexcept {
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     rh = std::exchange(read_handle_, {});
@@ -127,13 +123,10 @@ inline void socket_impl_base::cancel() noexcept {
 
   rh.cancel();
   wh.cancel();
-
-  /// The fd_event_handle::cancel() method will handle deregistration from the IO loop
-  /// if no other operations remain, so explicit deregistration here is unnecessary.
 }
 
 inline void socket_impl_base::cancel_read() noexcept {
-  fd_event_handle rh{};
+  detail::event_handle rh{};
   {
     std::scoped_lock lk{mtx_};
     rh = std::exchange(read_handle_, {});
@@ -142,7 +135,7 @@ inline void socket_impl_base::cancel_read() noexcept {
 }
 
 inline void socket_impl_base::cancel_write() noexcept {
-  fd_event_handle wh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     wh = std::exchange(write_handle_, {});
@@ -152,8 +145,8 @@ inline void socket_impl_base::cancel_write() noexcept {
 
 inline void socket_impl_base::close() noexcept {
   int fd = -1;
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::closed) {
@@ -179,14 +172,15 @@ inline void socket_impl_base::close() noexcept {
   rh.cancel();
   wh.cancel();
   if (fd >= 0) {
+    ctx_impl_->disarm_fd_interest(fd);
     (void)::close(fd);
   }
 }
 
 inline auto socket_impl_base::release() noexcept -> int {
   int fd = -1;
-  fd_event_handle rh{};
-  fd_event_handle wh{};
+  detail::event_handle rh{};
+  detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     fd = fd_.exchange(-1, std::memory_order_acq_rel);
@@ -198,6 +192,9 @@ inline auto socket_impl_base::release() noexcept -> int {
   // Cancel any in-flight ops and deregister interest, but do NOT close the fd.
   rh.cancel();
   wh.cancel();
+  if (fd >= 0) {
+    ctx_impl_->disarm_fd_interest(fd);
+  }
   return fd;
 }
 
