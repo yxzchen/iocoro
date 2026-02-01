@@ -75,7 +75,7 @@ class thread_pool {
     std::deque<detail::unique_function<void()>> queue;
     std::atomic<std::size_t> pending{0};
 
-    std::atomic<pool_state> lifecycle{pool_state::running};
+    pool_state lifecycle{pool_state::running};
     detail::work_guard_counter work_guard{};
 
     std::size_t n_threads{};
@@ -83,20 +83,22 @@ class thread_pool {
     std::atomic<std::shared_ptr<exception_handler_t>> on_task_exception{};
 
     auto can_accept_work() const noexcept -> bool {
-      auto const lc = lifecycle.load(std::memory_order_acquire);
-      if (lc == pool_state::running) {
+      if (lifecycle == pool_state::running) {
         return true;
       }
-      if (lc == pool_state::draining) {
+      if (lifecycle == pool_state::draining) {
         return work_guard.has_work();
       }
       return false;
     }
 
     auto request_stop() noexcept -> bool {
-      auto expected = pool_state::running;
-      return lifecycle.compare_exchange_strong(
-        expected, pool_state::draining, std::memory_order_acq_rel);
+      std::scoped_lock lock{cv_mutex};
+      if (lifecycle == pool_state::running) {
+        lifecycle = pool_state::draining;
+        return true;
+      }
+      return false;
     }
   };
 
@@ -127,16 +129,15 @@ class thread_pool::executor_type {
       return;
     }
 
-    if (!state_->can_accept_work()) {
-      return;
-    }
-
     auto task = detail::unique_function<void()>{[ex = *this, fn = std::forward<F>(f)]() mutable {
       detail::executor_guard g{any_executor{ex}};
       fn();
     }};
     {
       std::scoped_lock lock{state_->cv_mutex};
+      if (!state_->can_accept_work()) {
+        return;
+      }
       state_->queue.emplace_back(std::move(task));
       state_->pending.fetch_add(1, std::memory_order_release);
     }
@@ -163,8 +164,11 @@ class thread_pool::executor_type {
   }
 
   auto stopped() const noexcept -> bool {
-    return !state_ ||
-           state_->lifecycle.load(std::memory_order_acquire) != pool_state::running;
+    if (!state_) {
+      return true;
+    }
+    std::scoped_lock lock{state_->cv_mutex};
+    return state_->lifecycle != pool_state::running;
   }
 
   explicit operator bool() const noexcept { return state_ != nullptr; }

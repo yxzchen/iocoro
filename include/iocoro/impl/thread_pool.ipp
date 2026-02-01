@@ -31,13 +31,11 @@ inline void thread_pool::worker_loop(std::shared_ptr<state> s, std::size_t /*ind
       std::unique_lock lock{s->cv_mutex};
       s->cv.wait(lock, [&] {
         return s->pending.load(std::memory_order_acquire) > 0 ||
-               (s->lifecycle.load(std::memory_order_acquire) == pool_state::draining &&
-                s->work_guard.count() == 0);
+               (s->lifecycle == pool_state::draining && s->work_guard.count() == 0);
       });
 
       if (s->pending.load(std::memory_order_acquire) == 0) {
-        if (s->lifecycle.load(std::memory_order_acquire) == pool_state::draining &&
-            s->work_guard.count() == 0) {
+        if (s->lifecycle == pool_state::draining && s->work_guard.count() == 0) {
           break;
         }
         continue;
@@ -100,7 +98,8 @@ inline void thread_pool::join() noexcept {
     }
   }
   if (state_) {
-    state_->lifecycle.store(pool_state::stopped, std::memory_order_release);
+    std::scoped_lock lock{state_->cv_mutex};
+    state_->lifecycle = pool_state::stopped;
   }
 }
 
