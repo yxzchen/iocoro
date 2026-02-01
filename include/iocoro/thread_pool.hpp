@@ -4,7 +4,6 @@
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_cast.hpp>
 #include <iocoro/detail/executor_guard.hpp>
-#include <iocoro/detail/lockfree_mpmc_queue.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/detail/work_guard_counter.hpp>
 #include <iocoro/work_guard.hpp>
@@ -23,15 +22,6 @@
 #include <vector>
 
 namespace iocoro {
-
-namespace detail {
-struct thread_pool_worker_context {
-  void const* current_state{};
-  std::size_t worker_index{};
-};
-
-inline thread_local thread_pool_worker_context* thread_pool_ctx = nullptr;
-}  // namespace detail
 
 /// A simple thread pool with a shared task queue.
 ///
@@ -77,23 +67,13 @@ class thread_pool {
 
  private:
   // Shared state that outlives the pool object
-  enum class pool_state : std::uint8_t { running, stopping, stopped };
+  enum class pool_state : std::uint8_t { running, draining, stopped };
 
   struct state {
-    struct worker_state {
-      std::mutex mutex;
-      std::deque<detail::unique_function<void()>> local;
-      std::atomic<bool> has_local{false};
-    };
-
-    static constexpr std::size_t global_capacity = 1u << 16;
-
     mutable std::mutex cv_mutex;
     std::condition_variable cv;
-    detail::lockfree_mpmc_queue<detail::unique_function<void()>, global_capacity> global{};
-    std::atomic<std::size_t> global_pending{0};
-
-    std::vector<std::unique_ptr<worker_state>> workers;
+    std::deque<detail::unique_function<void()>> queue;
+    std::atomic<std::size_t> pending{0};
 
     std::atomic<pool_state> lifecycle{pool_state::running};
     detail::work_guard_counter work_guard{};
@@ -107,13 +87,16 @@ class thread_pool {
       if (lc == pool_state::running) {
         return true;
       }
-      return work_guard.has_work();
+      if (lc == pool_state::draining) {
+        return work_guard.has_work();
+      }
+      return false;
     }
 
     auto request_stop() noexcept -> bool {
       auto expected = pool_state::running;
       return lifecycle.compare_exchange_strong(
-        expected, pool_state::stopping, std::memory_order_acq_rel);
+        expected, pool_state::draining, std::memory_order_acq_rel);
     }
   };
 
@@ -144,41 +127,19 @@ class thread_pool::executor_type {
       return;
     }
 
-    auto weak = std::weak_ptr<state>{state_};
-    auto make_task = [weak, fn = std::forward<F>(f)]() mutable {
-      auto locked = weak.lock();
-      if (!locked) {
-        return;
-      }
-      detail::executor_guard g{any_executor{executor_type{std::move(locked)}}};
-      fn();
-    };
-
-    // If we're already running on this pool, defer until the current task
-    // returns to the worker loop. This prevents destroying coroutine frames
-    // while `final_suspend().await_suspend()` is still executing on-stack.
-    auto* ctx = detail::thread_pool_ctx;
-    if (ctx != nullptr && ctx->current_state == state_.get()) {
-      auto& local = *state_->workers[ctx->worker_index];
-      std::scoped_lock lock{local.mutex};
-      local.local.emplace_back(std::move(make_task));
-      local.has_local.store(true, std::memory_order_release);
-      return;
-    }
-
     if (!state_->can_accept_work()) {
       return;
     }
 
-    auto task = detail::unique_function<void()>{std::move(make_task)};
-    while (!state_->global.try_enqueue(task)) {
-      if (!state_->can_accept_work()) {
-        return;
-      }
-      std::this_thread::yield();
+    auto task = detail::unique_function<void()>{[ex = *this, fn = std::forward<F>(f)]() mutable {
+      detail::executor_guard g{any_executor{ex}};
+      fn();
+    }};
+    {
+      std::scoped_lock lock{state_->cv_mutex};
+      state_->queue.emplace_back(std::move(task));
+      state_->pending.fetch_add(1, std::memory_order_release);
     }
-    state_->global_pending.fetch_add(1, std::memory_order_acq_rel);
-
     state_->cv.notify_one();
   }
 
