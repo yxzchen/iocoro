@@ -10,6 +10,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 #include <variant>
 
@@ -110,7 +111,11 @@ TEST(timeout_examples, resolve_timeout_microseconds) {
   auto timeout_ec = make_error_code(error::timed_out);
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
-    ip::tcp::resolver resolver(ex);
+    thread_pool pool{1};
+    pool.get_executor().post([] {
+      std::this_thread::sleep_for(5ms);
+    });
+    ip::tcp::resolver resolver(pool.get_executor());
 
     auto r = co_await resolve_with_timeout(resolver, "example.com", "80", 1us);
     timed_out = (!r && r.error() == timeout_ec);
