@@ -13,6 +13,8 @@ class error_category_impl : public std::error_category {
       // Cancellation / internal / implementation status
       case error::operation_aborted:
         return "operation aborted";
+      case error::timed_out:
+        return "timed out";
       case error::not_implemented:
         return "not implemented";
       case error::internal_error:

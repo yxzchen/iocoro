@@ -9,6 +9,9 @@ enum class error {
   /// Operation cancelled.
   operation_aborted = 1,
 
+  /// Operation timed out.
+  timed_out,
+
   /// Feature exists in API but is not implemented yet (stubs / WIP).
   not_implemented,
 
