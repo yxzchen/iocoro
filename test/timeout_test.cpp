@@ -31,7 +31,7 @@ auto read_some_with_timeout(ip::tcp::socket& socket,
     co_await (socket.async_read_some(buf) || timer.async_wait(use_awaitable));
 
   if (index == 0U) {
-    auto r = std::get<expected<std::size_t, std::error_code>>(result);
+    auto r = std::get<0>(result);
     if (!r) {
       throw std::system_error(r.error());
     }
@@ -52,7 +52,7 @@ auto write_with_timeout(ip::tcp::socket& socket,
   auto [index, result] = co_await (io::async_write(socket, buf) || timer.async_wait(use_awaitable));
 
   if (index == 0U) {
-    auto r = std::get<expected<std::size_t, std::error_code>>(result);
+    auto r = std::get<0>(result);
     if (!r) {
       throw std::system_error(r.error());
     }
@@ -103,7 +103,7 @@ auto resolve_with_timeout(ip::tcp::resolver& resolver,
               timer.async_wait(use_awaitable));
 
   if (index == 0U) {
-    auto r = std::get<expected<ip::tcp::resolver::results_type, std::error_code>>(result);
+    auto r = std::get<0>(result);
     if (!r) {
       throw std::system_error(r.error());
     }
