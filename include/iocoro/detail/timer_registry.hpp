@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -20,6 +19,8 @@ enum class timer_state : std::uint8_t {
   cancelled,
 };
 
+// NOTE: timer_registry is reactor-thread-only.
+// All accesses must be serialized by io_context_impl (reactor thread ownership).
 class timer_registry {
  public:
   struct timer_token {
@@ -51,7 +52,6 @@ class timer_registry {
   auto top_index() const -> std::uint32_t;
   auto recycle_node(std::uint32_t index) -> void;
 
-  mutable std::mutex mtx_{};
   std::vector<timer_node> nodes_{};
   std::vector<std::uint32_t> heap_{};
   std::vector<std::uint32_t> free_{};
@@ -60,8 +60,6 @@ class timer_registry {
 
 inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expiry,
                                       reactor_op_ptr op) -> timer_token {
-  std::scoped_lock lk{mtx_};
-
   std::uint32_t index = 0;
   if (!free_.empty()) {
     index = free_.back();
@@ -86,7 +84,6 @@ inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expi
 }
 
 inline auto timer_registry::cancel(timer_token tok) noexcept -> cancel_result {
-  std::scoped_lock lk{mtx_};
   if (tok.generation == 0 || tok.index >= nodes_.size()) {
     return {};
   }
@@ -104,8 +101,6 @@ inline auto timer_registry::cancel(timer_token tok) noexcept -> cancel_result {
 }
 
 inline auto timer_registry::next_timeout() -> std::optional<std::chrono::milliseconds> {
-  std::scoped_lock lk{mtx_};
-
   if (heap_.empty()) {
     return std::nullopt;
   }
@@ -138,7 +133,6 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
   };
 
   for (;;) {
-    std::unique_lock lk{mtx_};
     if (stopped || heap_.empty()) {
       break;
     }
@@ -150,7 +144,6 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
       (void)pop_heap();
       auto op = std::move(node.op);
       recycle_node(idx);
-      lk.unlock();
       push_ready(std::move(op), false);
       continue;
     }
@@ -169,7 +162,6 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
     node.state = timer_state::fired;
     auto op = std::move(node.op);
     recycle_node(idx);
-    lk.unlock();
     push_ready(std::move(op), true);
   }
 
@@ -186,7 +178,6 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
 }
 
 inline auto timer_registry::empty() const -> bool {
-  std::scoped_lock lk{mtx_};
   return active_count_ == 0;
 }
 
