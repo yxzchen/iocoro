@@ -5,14 +5,14 @@
 
 namespace iocoro {
 
-/// Binds an executor to an awaitable, ensuring it executes on the specified executor.
+/// Bind an executor to an `awaitable`.
 ///
-/// This takes ownership of the awaitable's coroutine handle, sets the executor on its
-/// promise, and returns a new awaitable wrapping the same coroutine.
+/// Semantics:
+/// - Transfers ownership of `task`'s coroutine handle.
+/// - Sets the executor in the coroutine promise.
+/// - Returns a new `awaitable` that resumes on `executor` when scheduled.
 ///
-/// @param executor The executor to bind to the awaitable
-/// @param task The awaitable to bind
-/// @return A new awaitable bound to the specified executor
+/// IMPORTANT: This does not start execution; it only changes where the coroutine is scheduled.
 template <typename T>
 auto bind_executor(any_executor executor, awaitable<T> task) -> awaitable<T> {
   auto handle = task.release();

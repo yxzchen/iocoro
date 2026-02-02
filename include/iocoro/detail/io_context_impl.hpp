@@ -91,11 +91,16 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;
 
-  // Execute a function on the reactor thread (registry/backend ownership thread).
+  // Execute `f` on the reactor thread (registry/backend ownership thread).
   //
+  // INVARIANT: registry/backend mutations and reactor op callbacks happen only on the reactor
+  // thread; this is the sole serialization mechanism for reactor state.
+  //
+  // Semantics:
   // - If already on the reactor thread, executes inline (even if stopped).
-  // - Otherwise, enqueues via post() and executes on the next event-loop iteration.
-  // - In shared-owned mode, pins lifetime during execution via weak_from_this().
+  // - Otherwise, enqueues via `post()` and executes on the next event-loop iteration.
+  // SAFETY: uses `weak_from_this()` to avoid self-owning cycles while still pinning lifetime
+  // during callback execution.
   void dispatch_reactor(unique_function<void(io_context_impl&)> f) noexcept;
 
   // Abort a reactor op. Must only be called on the reactor thread.

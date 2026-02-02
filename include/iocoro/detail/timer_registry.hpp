@@ -28,6 +28,10 @@ class timer_registry {
     std::uint64_t generation = 0;
   };
 
+  // Token model (ABA defense):
+  // - Each timer slot has a `generation` that increments on recycle.
+  // - A `timer_token` matches only if both (index, generation) match the current slot.
+  // This ensures a stale cancellation cannot cancel a different timer that reused the slot.
   struct cancel_result {
     reactor_op_ptr op{};
     bool cancelled = false;
@@ -108,6 +112,9 @@ inline auto timer_registry::next_timeout() -> std::optional<std::chrono::millise
   auto const idx = top_index();
   auto const& node = nodes_[idx];
   if (node.state == timer_state::cancelled) {
+    // NOTE: Cancelled nodes are cleaned up by `process_expired()`. Returning 0 ensures the
+    // reactor wakes up promptly to drain cancelled entries instead of sleeping until the next
+    // expiry.
     return std::chrono::milliseconds(0);
   }
 
@@ -165,6 +172,8 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
     push_ready(std::move(op), true);
   }
 
+  // SAFETY: callbacks may re-enter the reactor (posting/cancelling timers).
+  // We therefore collect ready operations first and only invoke callbacks after registry mutation.
   for (auto& entry : ready) {
     if (entry.completed) {
       entry.op->vt->on_complete(entry.op->block);

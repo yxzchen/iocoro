@@ -197,8 +197,8 @@ inline auto datagram_socket_impl::async_receive_from(
     co_return unexpected(error::invalid_argument);
   }
 
-  // CRITICAL: src_len must be initialized by the caller to the size of src_addr buffer.
-  // After recvfrom, it will be updated to the actual address length.
+  // IMPORTANT: `recvfrom()` expects `*src_len` to be initialized to the size of the `src_addr`
+  // buffer; it is updated on success to the actual address length.
 
   // Retry loop for EINTR and EAGAIN.
   for (;;) {

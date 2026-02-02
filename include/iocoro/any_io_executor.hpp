@@ -32,17 +32,22 @@ class any_io_executor {
   template <executor Ex>
   explicit any_io_executor(Ex ex) noexcept : any_io_executor(any_executor{std::move(ex)}) {}
 
+  /// Schedule work for later execution.
   void post(detail::unique_function<void()> f) const noexcept { storage_.post(std::move(f)); }
+
+  /// Execute inline when permitted; otherwise schedule like `post()`.
   void dispatch(detail::unique_function<void()> f) const noexcept { storage_.dispatch(std::move(f)); }
 
   auto capabilities() const noexcept -> executor_capability { return storage_.capabilities(); }
 
+  /// True if the underlying `io_context` has been stopped (or this executor is empty).
   auto stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
 
   explicit operator bool() const noexcept { return static_cast<bool>(storage_); }
 
   auto as_any_executor() const noexcept -> any_executor { return any_executor{*this}; }
 
+  /// Access the underlying `io_context` implementation (for internal integrations).
   auto io_context_ptr() const noexcept -> detail::io_context_impl* { return impl_; }
 
   friend auto operator==(any_io_executor const& a, any_io_executor const& b) noexcept -> bool {

@@ -145,7 +145,7 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
 }
 
 inline void io_context_impl::dispatch_reactor(unique_function<void(io_context_impl&)> f) noexcept {
-  // Reactor invariant: registry/backend mutations and op callbacks must occur on the reactor thread.
+  // INVARIANT: registry/backend mutations and op callbacks occur on the reactor thread.
   // If the loop is not running yet, we still enqueue so that the next run()/run_one()
   // establishes the reactor thread and drains the callback there.
   if (running_in_this_thread()) {
@@ -155,8 +155,8 @@ inline void io_context_impl::dispatch_reactor(unique_function<void(io_context_im
     return;
   }
 
-  // Avoid a self-owning cycle: do NOT capture shared_ptr in posted tasks.
-  // Instead capture weak_ptr and lock at execution time to pin lifetime during the callback.
+  // SAFETY: avoid self-owning cycles (posted task -> shared_ptr -> impl -> posted queue).
+  // Capture `weak_ptr` and lock at execution time to pin lifetime only during the callback.
   auto weak = weak_from_this();
   IOCORO_ENSURE(!weak.expired(),
                "io_context_impl::dispatch_reactor(): io_context_impl must be shared-owned "
@@ -181,8 +181,8 @@ inline void io_context_impl::abort_op(reactor_op_ptr op, std::error_code ec) noe
 
 inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point expiry,
                                        reactor_op_ptr op) -> event_handle {
-  // When the event loop is active, registry/backend ownership is the reactor thread.
-  // Before the loop starts, we allow single-threaded setup on the caller thread.
+  // IMPORTANT: Once the loop is running, registry/backend is owned by the reactor thread.
+  // Before the loop starts, we allow single-threaded setup by the caller.
   if (running_.load(std::memory_order_acquire)) {
     IOCORO_ENSURE(running_in_this_thread(),
                  "io_context_impl::add_timer(): must run on io_context thread");

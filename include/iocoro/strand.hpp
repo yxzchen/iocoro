@@ -109,8 +109,8 @@ class strand_executor {
       return true;
     }
 
-    // If the queue is empty, clear active and return false.
-    // If not empty, keep active=true and return true.
+    // INVARIANT: `active == true` means there is a drain running or scheduled.
+    // Keep it set while work remains to avoid double-scheduling drains.
     auto keep_active_for_more() noexcept -> bool {
       std::scoped_lock lk{m};
       if (tasks.empty()) {

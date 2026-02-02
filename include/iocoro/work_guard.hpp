@@ -6,33 +6,32 @@
 
 namespace iocoro {
 
-/// RAII guard that keeps an executor's context alive
+/// RAII work token for an executor.
 ///
-/// This class holds an executor and prevents its associated io_context
-/// from running out of work while the guard is alive. This is useful
-/// when you want to ensure the context keeps running even when there
-/// are no pending operations.
+/// Semantics:
+/// - Increments the executor's internal "outstanding work" count on construction.
+/// - Decrements it on destruction (or `reset()`).
+///
+/// This is typically used to keep an event loop from exiting due to "no work" while some
+/// external condition still requires the loop to stay alive.
 template <typename Executor>
 class work_guard {
  public:
   using executor_type = Executor;
 
-  /// Construct a work guard for the given executor
+  /// Acquire a unit of work for `ex`.
   explicit work_guard(executor_type const& ex) : executor_(ex), owns_(true) {
     IOCORO_ENSURE(executor_, "work_guard: requires a non-empty executor");
     executor_.add_work_guard();
   }
 
-  /// Construct a work guard by acquiring ownership from another executor
   work_guard(work_guard const& other) = delete;
   auto operator=(work_guard const& other) -> work_guard& = delete;
 
-  /// Move constructor
   work_guard(work_guard&& other) noexcept : executor_(other.executor_), owns_(other.owns_) {
     other.owns_ = false;
   }
 
-  /// Move assignment
   auto operator=(work_guard&& other) noexcept -> work_guard& {
     if (this != &other) {
       reset();
@@ -43,16 +42,14 @@ class work_guard {
     return *this;
   }
 
-  /// Destructor releases the work guard
+  /// Releases the work token (if owned).
   ~work_guard() { reset(); }
 
-  /// Get the associated executor
   auto get_executor() const noexcept -> executor_type { return executor_; }
 
-  /// Check if this guard owns the work
   auto owns_work() const noexcept -> bool { return owns_; }
 
-  /// Reset the work guard, releasing the work count
+  /// Idempotently release the work token early.
   void reset() noexcept {
     if (owns_) {
       executor_.remove_work_guard();
@@ -65,13 +62,13 @@ class work_guard {
   bool owns_ = false;
 };
 
-/// Helper function to create a work guard for an IO executor
+/// Convenience helper.
 template <typename Executor>
 auto make_work_guard(Executor const& ex) -> work_guard<Executor> {
   return work_guard<Executor>(ex);
 }
 
-/// Helper function to create a work guard for an io_context
+/// Convenience helper.
 inline auto make_work_guard(io_context& ctx) -> work_guard<any_io_executor> {
   return work_guard<any_io_executor>(ctx.get_executor());
 }

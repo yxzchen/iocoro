@@ -90,6 +90,14 @@ auto when_or_run_one(std::shared_ptr<when_or_state<A, B>> st) -> awaitable<void>
 
 }  // namespace detail
 
+/// Wait for either awaitable to complete (binary when_any).
+///
+/// Semantics:
+/// - Starts both awaitables concurrently on their bound executors (or the caller's executor if
+///   none is bound).
+/// - Completes with `(index, value)` of the first completion.
+/// - Requests stop on the non-winning awaitable (best-effort).
+/// - If the first completion throws, rethrows the exception.
 template <class A, class B>
 auto operator||(awaitable<A> a, awaitable<B> b)
   -> awaitable<std::pair<std::size_t, std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {

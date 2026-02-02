@@ -18,7 +18,16 @@ namespace iocoro {
 template <typename Executor>
 class work_guard;
 
-/// The execution context for asynchronous I/O operations
+/// Event loop / execution context for asynchronous I/O.
+///
+/// Semantics:
+/// - `run*()` drives completion of posted tasks, timers, and I/O readiness callbacks.
+/// - At most one thread may execute `run()`, `run_one()`, or `run_for()` at a time for a given
+///   `io_context` instance (single reactor thread ownership).
+///
+/// Threading:
+/// - `post()` (via the executor) and `stop()` are safe to call from any thread.
+/// - Completion callbacks run on the thread currently driving `run*()` for that `io_context`.
 class io_context {
  public:
   /// Internal executor type bound to this io_context.
@@ -46,6 +55,7 @@ class io_context {
       });
     }
 
+    /// True if the underlying context has been stopped (or this executor is empty).
     auto stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
 
     explicit operator bool() const noexcept { return impl_ != nullptr; }
@@ -93,15 +103,33 @@ class io_context {
   io_context(io_context&&) = delete;
   auto operator=(io_context&&) -> io_context& = delete;
 
+  /// Run the event loop until `stop()` is requested or there is no work.
+  /// Returns the number of completed callbacks executed.
   auto run() -> std::size_t { return impl_->run(); }
+
+  /// Run at most one completion and return.
+  /// Returns 0 if no completion was ready.
   auto run_one() -> std::size_t { return impl_->run_one(); }
+
+  /// Run the event loop for at most `timeout`, or until stopped / out of work.
+  /// Returns the number of completed callbacks executed.
   auto run_for(std::chrono::milliseconds timeout) -> std::size_t { return impl_->run_for(timeout); }
 
+  /// Request the event loop to stop (idempotent).
+  ///
+  /// IMPORTANT: `stop()` does not destroy pending operations. It prevents `run*()` from
+  /// making further progress until `restart()` is called.
   void stop() { impl_->stop(); }
+
+  /// Clear the stopped state so the loop can run again.
   void restart() { impl_->restart(); }
+
+  /// True if `stop()` has been requested.
   auto stopped() const noexcept -> bool { return impl_->stopped(); }
 
-  /// Get an IO-capable executor associated with this io_context
+  /// Return an IO-capable executor associated with this context.
+  ///
+  /// Posting or dispatching through this executor schedules work onto this `io_context`.
   auto get_executor() noexcept -> any_io_executor {
     return any_io_executor{executor_type{impl_}};
   }

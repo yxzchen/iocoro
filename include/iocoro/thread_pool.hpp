@@ -23,22 +23,19 @@
 
 namespace iocoro {
 
-/// A simple thread pool with a shared task queue.
+/// Minimal thread pool with a shared FIFO task queue.
 ///
-/// Design:
-/// - Maintains a single shared task queue protected by a mutex.
-/// - Starts N worker threads that all pull tasks from the shared queue.
-/// - Provides automatic load balancing across available threads.
-/// - Executors hold shared ownership of pool state for lifetime safety.
+/// Semantics:
+/// - `post()` schedules work onto one of the worker threads.
+/// - `dispatch()` runs inline only when already executing on the same pool executor;
+///   otherwise it falls back to `post()`.
 ///
-/// Notes:
-/// - This is intentionally minimal and does not attempt to provide advanced scheduling
-///   policies. It is primarily a building block for higher-level executors.
+/// This is intentionally small and acts as a building block for higher-level executors.
 class thread_pool {
  public:
   class executor_type;
 
-  /// Type for exception handler callback
+  /// Handler invoked when a task throws on a worker thread.
   using exception_handler_t = std::function<void(std::exception_ptr)>;
 
   explicit thread_pool(std::size_t n_threads);
@@ -52,17 +49,19 @@ class thread_pool {
 
   auto get_executor() noexcept -> executor_type;
 
-  /// Stop all worker threads (best-effort, idempotent).
+  /// Stop accepting new tasks and wake workers (idempotent).
+  ///
+  /// IMPORTANT: already-queued tasks are not guaranteed to run after `stop()`.
   void stop() noexcept;
 
-  /// Join all worker threads (best-effort, idempotent).
+  /// Join all worker threads (idempotent).
   void join() noexcept;
 
   auto size() const noexcept -> std::size_t;
 
-  /// Set exception handler for tasks that throw exceptions.
-  /// If not set, exceptions are silently swallowed.
-  /// The handler is called on the worker thread where the exception occurred.
+  /// Set the handler for task exceptions (called on the worker thread).
+  ///
+  /// If unset, task exceptions are swallowed (detached semantics).
   void set_exception_handler(exception_handler_t handler) noexcept;
 
  private:
@@ -132,6 +131,7 @@ class thread_pool::executor_type {
     post(std::move(f));
   }
 
+  /// True if the pool has been stopped (or this executor is empty).
   auto stopped() const noexcept -> bool {
     if (!pool_) {
       return true;

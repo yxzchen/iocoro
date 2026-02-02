@@ -16,10 +16,10 @@ namespace iocoro {
 
 /// A single-use timer for awaiting a time point.
 ///
-/// Model:
-/// - Each async_wait() creates a new timer operation.
-/// - cancel() cancels the current pending timer.
-/// - Updating expiry affects subsequent waits.
+/// Semantics:
+/// - Each `async_wait()` creates a new timer registration in the underlying `io_context`.
+/// - `cancel()` cancels the current pending registration (if any).
+/// - Updating expiry affects subsequent waits; it does not mutate an already-started wait.
 class steady_timer {
  public:
   using clock = std::chrono::steady_clock;
@@ -62,9 +62,9 @@ class steady_timer {
   /// - `ok()` on successful timer expiry.
   auto async_wait(use_awaitable_t) -> awaitable<result<void>> {
     auto* timer = this;
-    // Ensure timer registration runs on the reactor thread.
-    // If we're already on the reactor thread, avoid an extra scheduling hop
-    // (important for run_one()-driven tests and deterministic cancel()).
+    // IMPORTANT: timer registration mutates reactor-owned state; do it on the reactor thread.
+    // NOTE: If we are already on that thread, avoid an extra hop (keeps run_one()-style
+    // loops deterministic w.r.t. register/cancel ordering).
     auto orig_ex = co_await this_coro::executor;
     co_await this_coro::switch_to(ex_);
     auto r = co_await detail::operation_awaiter{
@@ -87,17 +87,13 @@ class steady_timer {
 
  private:
   auto register_timer(detail::reactor_op_ptr rop) noexcept -> detail::io_context_impl::event_handle {
-    // CRITICAL: Hold the mutex during the entire registration process to prevent
-    // race conditions with cancel(). Without this, cancel() could be called after
-    // add_timer() but before setting handle, resulting in a handle leak.
+    // SAFETY: `handle_` is the only cancellation hook we have. Hold `mtx_` across both
+    // "cancel old handle" and "store new handle" so that `cancel()` cannot observe a
+    // partially-registered operation (window between add_timer() and handle_ assignment).
     std::scoped_lock lk{mtx_};
-    
-    // Cancel any existing timer first
     if (handle_) {
       handle_.cancel();
     }
-    
-    // Register new timer and store the handle atomically
     auto h = ctx_impl_->add_timer(expiry(), std::move(rop));
     handle_ = h;
     return h;

@@ -2,6 +2,9 @@
 
 namespace iocoro {
 
+/// Completion tokens used to select async API style.
+///
+/// These are intentionally lightweight tag types to avoid overload ambiguities.
 /// Completion token that selects detached (fire-and-forget) execution.
 struct detached_t {};
 inline constexpr detached_t detached{};

@@ -10,6 +10,12 @@
 
 namespace iocoro::detail {
 
+// Cross-thread queue for tasks posted into an `io_context_impl`.
+//
+// Design constraints:
+// - `post()` may be called from any thread.
+// - Draining (`process()`) happens on the reactor thread.
+// - Fairness: draining is bounded per tick to avoid starving timers/IO.
 class posted_queue {
  public:
   static constexpr std::size_t max_drain_per_tick = 256;
@@ -33,6 +39,8 @@ class posted_queue {
     std::size_t n = 0;
     while (!local.empty()) {
       if (stopped) {
+        // IMPORTANT: When the event loop is stopped we do not execute user callbacks.
+        // Preserve posted tasks so that `restart()` can resume from a consistent state.
         std::scoped_lock lk{mtx_};
         while (!local.empty()) {
           queue_.push(std::move(local.front()));
