@@ -7,7 +7,7 @@ namespace iocoro::detail {
 
 namespace {
 
-[[noreturn]] void fail(char const* kind, char const* expr, char const* msg, char const* file,
+[[noreturn]] void fail_impl(char const* kind, char const* expr, char const* msg, char const* file,
                        int line, char const* func) noexcept {
   if (msg) {
     std::fprintf(stderr,
@@ -34,27 +34,27 @@ namespace {
 // -------------------- ASSERT --------------------
 
 void assert_fail(char const* expr, char const* file, int line, char const* func) noexcept {
-  fail("ASSERT", expr, nullptr, file, line, func);
+  fail_impl("ASSERT", expr, nullptr, file, line, func);
 }
 
 void assert_fail(char const* expr, char const* msg, char const* file, int line,
                  char const* func) noexcept {
-  fail("ASSERT", expr, msg, file, line, func);
+  fail_impl("ASSERT", expr, msg, file, line, func);
 }
 
 // -------------------- ENSURE --------------------
 
 void ensure_fail(char const* expr, char const* file, int line, char const* func) noexcept {
-  fail("ENSURE", expr, nullptr, file, line, func);
+  fail_impl("ENSURE", expr, nullptr, file, line, func);
 }
 
 void ensure_fail(char const* expr, char const* msg, char const* file, int line,
                  char const* func) noexcept {
-  fail("ENSURE", expr, msg, file, line, func);
+  fail_impl("ENSURE", expr, msg, file, line, func);
 }
 
 void unreachable_fail(char const* file, int line, char const* func) noexcept {
-  fail("UNREACHABLE", nullptr, nullptr, file, line, func);
+  fail_impl("UNREACHABLE", nullptr, nullptr, file, line, func);
 }
 
 }  // namespace iocoro::detail

@@ -235,12 +235,12 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
 
 inline auto io_context_impl::arm_fd_interest(int fd) noexcept -> result<void> {
   if (fd < 0) {
-    return unexpected(error::invalid_argument);
+    return fail(error::invalid_argument);
   }
   try {
     apply_fd_interest(fd, fd_interest{true, true});
   } catch (...) {
-    return unexpected(error::internal_error);
+    return fail(error::internal_error);
   }
   wakeup();
   return ok();

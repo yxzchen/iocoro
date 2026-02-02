@@ -13,7 +13,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
   {
     std::scoped_lock lk{mtx_};
     if (state_ != fd_state::closed || native_handle() >= 0) {
-      return unexpected(error::busy);
+      return fail(error::busy);
     }
     state_ = fd_state::opening;
   }
@@ -24,7 +24,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     if (state_ == fd_state::opening) {
       state_ = fd_state::closed;
     }
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return fail(std::error_code(errno, std::generic_category()));
   }
 
   // Best-effort: set CLOEXEC + non-blocking.
@@ -45,7 +45,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     auto const reg = ctx_impl_->arm_fd_interest(fd);
     if (!reg) {
       (void)close();
-      return unexpected(reg.error());
+      return reg;
     }
     return ok();
   }
@@ -53,12 +53,12 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
   // Aborted by close()/assign() while opening.
   // We intentionally do not adopt the fd.
   (void)::close(fd);
-  return unexpected(error::busy);
+  return fail(error::busy);
 }
 
 inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
   if (fd < 0) {
-    return unexpected(error::invalid_argument);
+    return fail(error::invalid_argument);
   }
 
   int old_fd = -1;
@@ -104,14 +104,14 @@ inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
     auto const reg = ctx_impl_->arm_fd_interest(fd);
     if (!reg) {
       (void)close();
-      return unexpected(reg.error());
+      return reg;
     }
     return ok();
   }
 
   // Aborted by close() while assigning.
   (void)::close(fd);
-  return unexpected(error::busy);
+  return fail(error::busy);
 }
 
 inline void socket_impl_base::cancel() noexcept {
@@ -185,7 +185,7 @@ inline auto socket_impl_base::close() noexcept -> result<void> {
         // close() may be interrupted but the fd is no longer usable; treat as success.
         break;
       }
-      return unexpected(std::error_code(errno, std::generic_category()));
+      return fail(std::error_code(errno, std::generic_category()));
     }
   }
   return ok();

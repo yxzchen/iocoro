@@ -56,11 +56,8 @@ class endpoint {
   ///
   /// Returns invalid_argument on parse failure.
   static auto from_string(std::string const& s) -> result<endpoint> {
-    auto r = detail::endpoint_storage::from_string(s);
-    if (!r) {
-      return unexpected(r.error());
-    }
-    return endpoint{std::move(*r)};
+    return detail::endpoint_storage::from_string(s).transform(
+        [](detail::endpoint_storage st) noexcept { return endpoint{std::move(st)}; });
   }
 
   /// Construct an endpoint from a native sockaddr.
@@ -70,11 +67,8 @@ class endpoint {
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
   static auto from_native(sockaddr const* addr, socklen_t len)
     -> result<endpoint> {
-    auto r = detail::endpoint_storage::from_native(addr, len);
-    if (!r) {
-      return unexpected(r.error());
-    }
-    return endpoint{std::move(*r)};
+    return detail::endpoint_storage::from_native(addr, len).transform(
+        [](detail::endpoint_storage st) noexcept { return endpoint{std::move(st)}; });
   }
 
   /// Copy the native sockaddr representation into the user-provided buffer.

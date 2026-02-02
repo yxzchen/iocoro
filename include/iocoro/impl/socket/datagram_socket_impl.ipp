@@ -39,11 +39,11 @@ inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len)
     -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return unexpected(error::not_open);
+    return fail(error::not_open);
   }
 
   if (::bind(fd, addr, len) != 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return fail(std::error_code(errno, std::generic_category()));
   }
 
   {
@@ -61,12 +61,12 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
     -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return unexpected(error::not_open);
+    return fail(error::not_open);
   }
 
   // For datagram sockets, connect() is synchronous (just sets the default peer).
   if (::connect(fd, addr, len) != 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return fail(std::error_code(errno, std::generic_category()));
   }
 
   {

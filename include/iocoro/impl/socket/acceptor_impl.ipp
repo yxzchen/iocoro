@@ -21,7 +21,7 @@ inline auto acceptor_impl::close() noexcept -> result<void> {
 inline auto acceptor_impl::open(int domain, int type, int protocol) -> result<void> {
   auto r = base_.open(domain, type, protocol);
   if (!r) {
-    return unexpected(r.error());
+    return r;
   }
   std::scoped_lock lk{mtx_};
   listening_ = false;
@@ -31,10 +31,10 @@ inline auto acceptor_impl::open(int domain, int type, int protocol) -> result<vo
 inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return unexpected(error::not_open);
+    return fail(error::not_open);
   }
   if (::bind(fd, addr, len) != 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return fail(std::error_code(errno, std::generic_category()));
   }
   return ok();
 }
@@ -42,13 +42,13 @@ inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> result<v
 inline auto acceptor_impl::listen(int backlog) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return unexpected(error::not_open);
+    return fail(error::not_open);
   }
   if (backlog <= 0) {
     backlog = SOMAXCONN;
   }
   if (::listen(fd, backlog) != 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return fail(std::error_code(errno, std::generic_category()));
   }
   {
     std::scoped_lock lk{mtx_};

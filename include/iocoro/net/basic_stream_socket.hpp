@@ -55,7 +55,7 @@ class basic_stream_socket {
     if (!handle_.impl().is_open()) {
       auto r = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
       if (!r) {
-        co_return unexpected(r.error());
+        co_return r;
       }
     }
     co_return co_await handle_.impl().async_connect(ep.data(), ep.size());

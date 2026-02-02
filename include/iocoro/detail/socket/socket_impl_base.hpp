@@ -100,11 +100,11 @@ class socket_impl_base {
   auto set_option(Option const& opt) -> result<void> {
     auto const fd = native_handle();
     if (fd < 0) {
-      return unexpected(error::not_open);
+      return fail(error::not_open);
     }
 
     if (::setsockopt(fd, opt.level(), opt.name(), opt.data(), opt.size()) != 0) {
-      return unexpected(std::error_code(errno, std::generic_category()));
+      return fail(std::error_code(errno, std::generic_category()));
     }
     return ok();
   }
@@ -113,12 +113,12 @@ class socket_impl_base {
   auto get_option(Option& opt) -> result<void> {
     auto const fd = native_handle();
     if (fd < 0) {
-      return unexpected(error::not_open);
+      return fail(error::not_open);
     }
 
     socklen_t len = opt.size();
     if (::getsockopt(fd, opt.level(), opt.name(), opt.data(), &len) != 0) {
-      return unexpected(std::error_code(errno, std::generic_category()));
+      return fail(std::error_code(errno, std::generic_category()));
     }
     return ok();
   }

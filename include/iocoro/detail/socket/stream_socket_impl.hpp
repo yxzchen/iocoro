@@ -84,7 +84,7 @@ class stream_socket_impl {
 
     auto r = base_.assign(fd);
     if (!r) {
-      return unexpected(r.error());
+      return r;
     }
     // An fd returned by accept() represents an already-established connection.
     // Mark the logical stream state as connected so read/write/remote_endpoint work.
