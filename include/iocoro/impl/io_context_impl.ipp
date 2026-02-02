@@ -5,7 +5,23 @@
 #include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/error.hpp>
 
-#ifdef IOCORO_USE_URING
+// Backend selection for header-only builds.
+//
+// Default: epoll (no extra dependencies).
+//
+// To force io_uring backend (requires liburing headers + linking `-luring`):
+// - Define `IOCORO_BACKEND_URING`.
+//
+// To force epoll explicitly:
+// - Define `IOCORO_BACKEND_EPOLL`.
+//
+// IMPORTANT: Include only the selected backend implementation.
+// Both backends define internal helpers in anonymous namespaces; including both in the same TU
+// would cause redefinition errors.
+
+#if defined(IOCORO_BACKEND_EPOLL)
+#include <iocoro/impl/backends/epoll.ipp>
+#elif defined(IOCORO_BACKEND_URING)
 #include <iocoro/impl/backends/uring.ipp>
 #else
 #include <iocoro/impl/backends/epoll.ipp>

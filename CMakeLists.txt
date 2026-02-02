@@ -44,12 +44,13 @@ if(IOCORO_ENABLE_URING)
         endif()
 
         target_link_libraries(iocoro INTERFACE liburing::liburing)
-        target_compile_definitions(iocoro INTERFACE IOCORO_USE_URING)
+        # Backend selection is controlled by preprocessor macros (header-only friendly).
+        target_compile_definitions(iocoro INTERFACE IOCORO_BACKEND_URING)
     else()
         message(STATUS "liburing not found - using epoll")
     endif()
 else()
-    message(STATUS "IOCORO_ENABLE_URING=OFF - forcing epoll backend")
+    message(STATUS "IOCORO_ENABLE_URING=OFF - using default backend selection (epoll)")
 endif()
 
 if(IOCORO_ENABLE_WARNINGS)

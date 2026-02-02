@@ -35,6 +35,11 @@ class backend_interface {
   virtual void wakeup() noexcept = 0;
 };
 
+// Backend selection:
+// - Default is epoll (no additional dependencies).
+// - Define `IOCORO_BACKEND_URING` to use io_uring. This requires liburing headers and linking
+//   against liburing.
+// - Define `IOCORO_BACKEND_EPOLL` to force epoll explicitly.
 auto make_backend() -> std::unique_ptr<backend_interface>;
 
 }  // namespace iocoro::detail
