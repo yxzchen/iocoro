@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 #include <array>
 #include <compare>
@@ -44,7 +44,7 @@ class address_v6 {
   ///
   /// Supports an optional numeric scope_id suffix: "fe80::1%2".
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string const& s) -> expected<address_v6, std::error_code>;
+  static auto from_string(std::string const& s) -> result<address_v6>;
 
  private:
   bytes_type bytes_{};

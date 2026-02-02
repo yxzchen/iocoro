@@ -3,12 +3,12 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/datagram_socket_impl.hpp>
-#include <iocoro/detail/socket_endpoint_utils.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 
 #include <cstddef>
 #include <span>
@@ -57,36 +57,30 @@ class basic_datagram_socket {
   /// Bind the socket to a local endpoint.
   /// This opens the socket if not already open.
   /// Must be called before receiving data.
-  auto bind(endpoint_type const& local_ep) -> std::error_code {
-    // Open if not already open.
+  auto bind(endpoint_type const& local_ep) -> result<void> {
+    auto open_r = ok();
     if (!handle_.impl().is_open()) {
-      auto ec = handle_.impl().open(local_ep.family(), Protocol::type(), Protocol::protocol());
-      if (ec) {
-        return ec;
-      }
+      open_r = handle_.impl().open(local_ep.family(), Protocol::type(), Protocol::protocol());
     }
-    return handle_.impl().bind(local_ep.data(), local_ep.size());
+    return open_r.and_then([&] { return handle_.impl().bind(local_ep.data(), local_ep.size()); });
   }
 
   /// Connect the socket to a remote endpoint.
   /// This opens the socket if not already open and fixes the remote peer.
   /// After connecting, only send_to() to the connected endpoint is allowed.
-  auto connect(endpoint_type const& remote_ep) -> std::error_code {
-    // Open if not already open.
+  auto connect(endpoint_type const& remote_ep) -> result<void> {
+    auto open_r = ok();
     if (!handle_.impl().is_open()) {
-      auto ec = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
-      if (ec) {
-        return ec;
-      }
+      open_r = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
     }
-    return handle_.impl().connect(remote_ep.data(), remote_ep.size());
+    return open_r.and_then([&] { return handle_.impl().connect(remote_ep.data(), remote_ep.size()); });
   }
 
   /// Send a datagram to the specified destination.
   ///
   /// The entire buffer is sent as a single datagram (message boundary preserved).
   auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
-      -> awaitable<expected<std::size_t, std::error_code>> {
+      -> awaitable<result<std::size_t>> {
     co_return co_await handle_.impl().async_send_to(buffer, destination.data(), destination.size());
   }
 
@@ -96,7 +90,7 @@ class basic_datagram_socket {
   /// The entire message is received in one operation (message boundary preserved).
   /// If the buffer is too small, an error is returned (message_size).
   auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source)
-      -> awaitable<expected<std::size_t, std::error_code>> {
+      -> awaitable<result<std::size_t>> {
     sockaddr_storage ss{};
     socklen_t len = sizeof(ss);
 
@@ -117,12 +111,12 @@ class basic_datagram_socket {
   }
 
   /// Get the local endpoint.
-  auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
+  auto local_endpoint() const -> result<endpoint_type> {
     return ::iocoro::detail::socket::get_local_endpoint<endpoint_type>(handle_.native_handle());
   }
 
   /// Get the remote endpoint (only valid if connected).
-  auto remote_endpoint() const -> expected<endpoint_type, std::error_code> {
+  auto remote_endpoint() const -> result<endpoint_type> {
     auto const fd = handle_.native_handle();
     if (fd < 0) {
       return unexpected(error::not_open);
@@ -140,7 +134,9 @@ class basic_datagram_socket {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  void close() noexcept { handle_.close(); }
+  auto close() noexcept -> result<void> {
+    return handle_.close();
+  }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }
@@ -148,12 +144,12 @@ class basic_datagram_socket {
   void cancel_write() noexcept { handle_.cancel_write(); }
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     return handle_.set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     return handle_.get_option(opt);
   }
 

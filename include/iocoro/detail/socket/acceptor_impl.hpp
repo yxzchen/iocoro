@@ -5,9 +5,10 @@
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
+#include <iocoro/detail/socket/op_state.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -53,26 +54,26 @@ class acceptor_impl {
 
   void cancel_write() noexcept { IOCORO_UNREACHABLE(); }
 
-  void close() noexcept;
+  auto close() noexcept -> result<void>;
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     return base_.set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     return base_.get_option(opt);
   }
 
   /// Open a new native socket.
-  auto open(int domain, int type, int protocol) -> std::error_code;
+  auto open(int domain, int type, int protocol) -> result<void>;
 
   /// Bind to a native endpoint.
-  auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
+  auto bind(sockaddr const* addr, socklen_t len) -> result<void>;
 
   /// Start listening for connections.
-  auto listen(int backlog) -> std::error_code;
+  auto listen(int backlog) -> result<void>;
 
   /// Accept a new connection.
   ///
@@ -83,19 +84,14 @@ class acceptor_impl {
   /// Returns:
   /// - a native connected fd on success (to be adopted by a stream socket)
   /// - error_code on failure
-  auto async_accept() -> awaitable<expected<int, std::error_code>>;
+  auto async_accept() -> awaitable<result<int>>;
 
  private:
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
   bool listening_{false};
-  bool accept_active_{false};
-  std::atomic<std::uint64_t> accept_epoch_{0};
-
-  auto is_accept_epoch_current(std::uint64_t epoch) const noexcept -> bool {
-    return accept_epoch_.load(std::memory_order_acquire) == epoch;
-  }
+  op_state accept_op_;
 };
 
 }  // namespace iocoro::detail::socket

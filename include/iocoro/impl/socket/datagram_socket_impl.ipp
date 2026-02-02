@@ -22,7 +22,7 @@ inline void datagram_socket_impl::cancel_write() noexcept {
   base_.cancel_write();
 }
 
-inline void datagram_socket_impl::close() noexcept {
+inline auto datagram_socket_impl::close() noexcept -> result<void> {
   {
     std::scoped_lock lk{mtx_};
     send_op_.cancel();
@@ -32,18 +32,18 @@ inline void datagram_socket_impl::close() noexcept {
     std::memset(&connected_addr_, 0, sizeof(connected_addr_));
     // NOTE: do not touch active flags here; their owner is the coroutine.
   }
-  base_.close();
+  return base_.close();
 }
 
 inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len)
-    -> std::error_code {
+    -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return fail(error::not_open);
   }
 
   if (::bind(fd, addr, len) != 0) {
-    return std::error_code(errno, std::generic_category());
+    return fail(std::error_code(errno, std::generic_category()));
   }
 
   {
@@ -54,19 +54,19 @@ inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len)
     }
   }
 
-  return {};
+  return ok();
 }
 
 inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
-    -> std::error_code {
+    -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return fail(error::not_open);
   }
 
   // For datagram sockets, connect() is synchronous (just sets the default peer).
   if (::connect(fd, addr, len) != 0) {
-    return std::error_code(errno, std::generic_category());
+    return fail(std::error_code(errno, std::generic_category()));
   }
 
   {
@@ -78,13 +78,13 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
     std::memcpy(&connected_addr_, addr, len);
   }
 
-  return {};
+  return ok();
 }
 
 inline auto datagram_socket_impl::async_send_to(
     std::span<std::byte const> buffer,
     sockaddr const* dest_addr,
-    socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t dest_len) -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -136,9 +136,9 @@ inline auto datagram_socket_impl::async_send_to(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for write readiness.
-      auto ec = co_await base_.wait_write_ready();
-      if (ec) {
-        co_return unexpected(ec);
+      auto r = co_await base_.wait_write_ready();
+      if (!r) {
+        co_return unexpected(r.error());
       }
       if (!send_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
@@ -158,7 +158,7 @@ inline auto datagram_socket_impl::async_send_to(
 inline auto datagram_socket_impl::async_receive_from(
     std::span<std::byte> buffer,
     sockaddr* src_addr,
-    socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t* src_len) -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -229,9 +229,9 @@ inline auto datagram_socket_impl::async_receive_from(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Wait for read readiness.
-      auto ec = co_await base_.wait_read_ready();
-      if (ec) {
-        co_return unexpected(ec);
+      auto r = co_await base_.wait_read_ready();
+      if (!r) {
+        co_return unexpected(r.error());
       }
       if (!receive_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);

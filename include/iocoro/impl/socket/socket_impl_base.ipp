@@ -1,6 +1,5 @@
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/socket_utils.hpp>
 #include <iocoro/any_executor.hpp>
 
@@ -8,13 +7,13 @@
 
 namespace iocoro::detail::socket {
 
-inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> std::error_code {
+inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> result<void> {
   int fd = -1;
   bool opened = false;
   {
     std::scoped_lock lk{mtx_};
     if (state_ != fd_state::closed || native_handle() >= 0) {
-      return error::busy;
+      return fail(error::busy);
     }
     state_ = fd_state::opening;
   }
@@ -25,7 +24,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     if (state_ == fd_state::opening) {
       state_ = fd_state::closed;
     }
-    return std::error_code(errno, std::generic_category());
+    return fail(std::error_code(errno, std::generic_category()));
   }
 
   // Best-effort: set CLOEXEC + non-blocking.
@@ -36,29 +35,30 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
+      (void)fd_gen_.fetch_add(1, std::memory_order_release);
       state_ = fd_state::open;
       opened = true;
     }
   }
 
   if (opened) {
-    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
-    if (reg_ec) {
-      close();
-      return reg_ec;
+    auto const reg = ctx_impl_->arm_fd_interest(fd);
+    if (!reg) {
+      (void)close();
+      return reg;
     }
-    return {};
+    return ok();
   }
 
   // Aborted by close()/assign() while opening.
   // We intentionally do not adopt the fd.
   (void)::close(fd);
-  return error::busy;
+  return fail(error::busy);
 }
 
-inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
+inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
   if (fd < 0) {
-    return error::invalid_argument;
+    return fail(error::invalid_argument);
   }
 
   int old_fd = -1;
@@ -71,6 +71,7 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
     // Clear current resources (if any); close happens outside the lock.
     if (state_ == fd_state::open) {
       old_fd = fd_.exchange(-1, std::memory_order_acq_rel);
+      (void)fd_gen_.fetch_add(1, std::memory_order_release);
       rh = std::exchange(read_handle_, {});
       wh = std::exchange(write_handle_, {});
     }
@@ -93,23 +94,24 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::opening) {
       fd_.store(fd, std::memory_order_release);
+      (void)fd_gen_.fetch_add(1, std::memory_order_release);
       state_ = fd_state::open;
       assigned = true;
     }
   }
 
   if (assigned) {
-    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
-    if (reg_ec) {
-      close();
-      return reg_ec;
+    auto const reg = ctx_impl_->arm_fd_interest(fd);
+    if (!reg) {
+      (void)close();
+      return reg;
     }
-    return {};
+    return ok();
   }
 
   // Aborted by close() while assigning.
   (void)::close(fd);
-  return error::busy;
+  return fail(error::busy);
 }
 
 inline void socket_impl_base::cancel() noexcept {
@@ -143,14 +145,14 @@ inline void socket_impl_base::cancel_write() noexcept {
   wh.cancel();
 }
 
-inline void socket_impl_base::close() noexcept {
+inline auto socket_impl_base::close() noexcept -> result<void> {
   int fd = -1;
   detail::event_handle rh{};
   detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::closed) {
-      return;
+      return ok();
     }
 
     // If opening, we only mark closed; the opener will close the fd it created.
@@ -159,12 +161,14 @@ inline void socket_impl_base::close() noexcept {
       read_handle_ = {};
       write_handle_ = {};
       fd_.store(-1, std::memory_order_release);
-      return;
+      (void)fd_gen_.fetch_add(1, std::memory_order_release);
+      return ok();
     }
 
     // open -> closed
     state_ = fd_state::closed;
     fd = fd_.exchange(-1, std::memory_order_acq_rel);
+    (void)fd_gen_.fetch_add(1, std::memory_order_release);
     rh = std::exchange(read_handle_, {});
     wh = std::exchange(write_handle_, {});
   }
@@ -173,8 +177,18 @@ inline void socket_impl_base::close() noexcept {
   wh.cancel();
   if (fd >= 0) {
     ctx_impl_->disarm_fd_interest(fd);
-    (void)::close(fd);
+    for (;;) {
+      if (::close(fd) == 0) {
+        break;
+      }
+      if (errno == EINTR) {
+        // close() may be interrupted but the fd is no longer usable; treat as success.
+        break;
+      }
+      return fail(std::error_code(errno, std::generic_category()));
+    }
   }
+  return ok();
 }
 
 inline auto socket_impl_base::release() noexcept -> int {
@@ -184,6 +198,7 @@ inline auto socket_impl_base::release() noexcept -> int {
   {
     std::scoped_lock lk{mtx_};
     fd = fd_.exchange(-1, std::memory_order_acq_rel);
+    (void)fd_gen_.fetch_add(1, std::memory_order_release);
     state_ = fd_state::closed;
     rh = std::exchange(read_handle_, {});
     wh = std::exchange(write_handle_, {});

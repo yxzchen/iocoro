@@ -15,15 +15,16 @@ using namespace std::chrono_literals;
 auto wait_timer_value(iocoro::steady_timer& timer,
                       std::shared_ptr<std::optional<std::error_code>> out,
                       int value) -> iocoro::awaitable<int> {
-  auto ec = co_await timer.async_wait(iocoro::use_awaitable);
-  *out = ec;
+  auto r = co_await timer.async_wait(iocoro::use_awaitable);
+  *out = r ? std::error_code{} : r.error();
   co_return value;
 }
 
 auto wait_timer_ec(iocoro::steady_timer& timer,
                    std::shared_ptr<std::optional<std::error_code>> out)
   -> iocoro::awaitable<std::error_code> {
-  auto ec = co_await timer.async_wait(iocoro::use_awaitable);
+  auto r = co_await timer.async_wait(iocoro::use_awaitable);
+  auto ec = r ? std::error_code{} : r.error();
   *out = ec;
   co_return ec;
 }
@@ -47,7 +48,7 @@ TEST(awaitable_operators, timer_race_cancels_loser) {
       co_await (wait_timer_value(fast_timer, fast_ec, 7) || wait_timer_ec(slow_timer, slow_ec));
 
     EXPECT_EQ(index, 0U);
-    EXPECT_EQ(std::get<int>(result), 7);
+    EXPECT_EQ(std::get<0>(result), 7);
   };
 
   auto r = iocoro::test::sync_wait(ctx, task());

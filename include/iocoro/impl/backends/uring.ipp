@@ -102,9 +102,6 @@ class backend_uring final : public backend_interface {
     }
     mask |= (POLLERR | POLLHUP | POLLRDHUP);
 
-    std::optional<std::uint64_t> cancel_user_data{};
-    std::optional<std::uint64_t> arm_user_data{};
-    int arm_mask = 0;
     {
       std::scoped_lock lk{poll_mtx_};
       auto& st = polls_[fd];
@@ -116,7 +113,7 @@ class backend_uring final : public backend_interface {
         }
         if (!st.cancel_requested) {
           st.cancel_requested = true;
-          cancel_user_data = st.active_user_data;
+          pending_removes_.push_back(pending_remove{fd, st.active_user_data});
         }
       } else if (mask != 0) {
         st.armed = true;
@@ -124,70 +121,53 @@ class backend_uring final : public backend_interface {
         st.active_mask = mask;
         st.active_gen = st.next_gen++;
         st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
-        arm_user_data = st.active_user_data;
-        arm_mask = mask;
+        pending_adds_.push_back(pending_add{fd, mask, st.active_user_data});
       }
     }
-
-    if (cancel_user_data.has_value()) {
-      submit_poll_remove(fd, *cancel_user_data);
-      return;
-    }
-
-    if (arm_user_data.has_value()) {
-      try {
-        submit_poll_add(fd, arm_mask, *arm_user_data);
-      } catch (...) {
-        std::scoped_lock lk{poll_mtx_};
-        auto it = polls_.find(fd);
-        if (it != polls_.end() && it->second.active_user_data == *arm_user_data) {
-          it->second.armed = false;
-          it->second.cancel_requested = false;
-          it->second.active_user_data = 0;
-          it->second.active_gen = 0;
-          it->second.active_mask = 0;
-        }
-        throw;
-      }
-    }
+    wakeup();
   }
 
   void remove_fd_interest(int fd) noexcept override {
-    std::optional<std::uint64_t> cancel_user_data{};
     {
       std::scoped_lock lk{poll_mtx_};
       auto it = polls_.find(fd);
-    if (it == polls_.end()) {
-      return;
-    }
+      if (it == polls_.end()) {
+        return;
+      }
 
-    auto& st = it->second;
-    st.desired_mask = 0;
-    if (!st.armed) {
-      polls_.erase(it);
-      return;
-    }
+      auto& st = it->second;
+      st.desired_mask = 0;
+      if (!st.armed) {
+        polls_.erase(it);
+        return;
+      }
 
       if (!st.cancel_requested) {
         st.cancel_requested = true;
-        cancel_user_data = st.active_user_data;
+        pending_removes_.push_back(pending_remove{fd, st.active_user_data});
       }
     }
-
-    if (cancel_user_data.has_value()) {
-      submit_poll_remove(fd, *cancel_user_data);
-    }
+    wakeup();
   }
 
   auto wait(std::optional<std::chrono::milliseconds> timeout,
             std::vector<backend_event>& out) -> void override {
     out.clear();
+
+    // Drain any interest updates recorded by other threads.
+    // These are submitted by the reactor thread to avoid concurrent ring access.
+    std::vector<pending_add> pending_adds{};
+    std::vector<pending_remove> pending_removes{};
     {
-      std::scoped_lock lk{ring_mtx_};
-      int const submitted = ::io_uring_submit(&ring_);
-    if (submitted < 0) {
-      throw std::system_error(-submitted, std::generic_category(), "io_uring_submit failed");
+      std::scoped_lock lk{poll_mtx_};
+      pending_adds.swap(pending_adds_);
+      pending_removes.swap(pending_removes_);
     }
+    for (auto const& r : pending_removes) {
+      submit_poll_remove(r.fd, r.user_data);
+    }
+    for (auto const& a : pending_adds) {
+      submit_poll_add(a.fd, a.mask, a.user_data);
     }
 
     io_uring_cqe* first = nullptr;
@@ -207,7 +187,7 @@ class backend_uring final : public backend_interface {
       throw std::system_error(-wait_ret, std::generic_category(), "io_uring_wait_cqe failed");
     }
 
-    std::vector<std::pair<int, std::uint64_t>> pending_arms{};
+    std::vector<pending_add> local_arms{};
     auto handle_one = [&](io_uring_cqe* cqe) {
       std::uint64_t const data = ::io_uring_cqe_get_data64(cqe);
       std::uint64_t const tag = unpack_tag(data);
@@ -246,7 +226,7 @@ class backend_uring final : public backend_interface {
             st.active_mask = st.desired_mask;
             st.active_gen = st.next_gen++;
             st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
-            pending_arms.emplace_back(fd, st.active_user_data);
+            local_arms.push_back(pending_add{fd, st.active_mask, st.active_user_data});
           }
           if (!st.armed && st.desired_mask == 0) {
             polls_.erase(it);
@@ -308,25 +288,23 @@ class backend_uring final : public backend_interface {
       }
     }
 
-    if (!pending_arms.empty()) {
-      std::scoped_lock plk{poll_mtx_};
-      for (auto const& arm : pending_arms) {
-        auto it = polls_.find(arm.first);
-        if (it != polls_.end() && it->second.armed) {
-          try {
-            submit_poll_add(arm.first, it->second.active_mask, arm.second);
-          } catch (...) {
-            if (it->second.active_user_data == arm.second) {
-              it->second.armed = false;
-              it->second.cancel_requested = false;
-              it->second.active_user_data = 0;
-              it->second.active_gen = 0;
-              it->second.active_mask = 0;
-            }
-            throw;
-          }
-        }
-      }
+    for (auto const& arm : local_arms) {
+      submit_poll_add(arm.fd, arm.mask, arm.user_data);
+    }
+
+    // Apply any interest updates that arrived while we were handling CQEs.
+    pending_adds.clear();
+    pending_removes.clear();
+    {
+      std::scoped_lock lk{poll_mtx_};
+      pending_adds.swap(pending_adds_);
+      pending_removes.swap(pending_removes_);
+    }
+    for (auto const& r : pending_removes) {
+      submit_poll_remove(r.fd, r.user_data);
+    }
+    for (auto const& a : pending_adds) {
+      submit_poll_add(a.fd, a.mask, a.user_data);
     }
 
     return;
@@ -354,6 +332,16 @@ class backend_uring final : public backend_interface {
   }
 
  private:
+  struct pending_add {
+    int fd = -1;
+    int mask = 0;
+    std::uint64_t user_data = 0;
+  };
+  struct pending_remove {
+    int fd = -1;
+    std::uint64_t user_data = 0;
+  };
+
   struct uring_poll_state {
     bool armed = false;
     bool cancel_requested = false;
@@ -430,6 +418,8 @@ class backend_uring final : public backend_interface {
   std::mutex poll_mtx_{};
   std::mutex ring_mtx_{};
   std::atomic<bool> wakeup_pending_{false};
+  std::vector<pending_add> pending_adds_{};
+  std::vector<pending_remove> pending_removes_{};
 };
 
 inline auto make_backend() -> std::unique_ptr<backend_interface> {

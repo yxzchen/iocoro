@@ -71,7 +71,6 @@ class thread_pool {
   mutable std::mutex cv_mutex_;
   std::condition_variable cv_;
   std::deque<detail::unique_function<void()>> queue_;
-  std::atomic<std::size_t> pending_{0};
 
   state_t state_{state_t::running};
   detail::work_guard_counter work_guard_;
@@ -97,14 +96,12 @@ class thread_pool::executor_type {
   executor_type(executor_type&&) noexcept = default;
   auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void post(F&& f) const noexcept {
+  void post(detail::unique_function<void()> f) const noexcept {
     if (!pool_) {
       return;
     }
 
-    auto task = detail::unique_function<void()>{[ex = *this, fn = std::forward<F>(f)]() mutable {
+    auto task = detail::unique_function<void()>{[ex = *this, fn = std::move(f)]() mutable {
       detail::executor_guard g{any_executor{ex}};
       fn();
     }};
@@ -114,14 +111,11 @@ class thread_pool::executor_type {
         return;
       }
       pool_->queue_.emplace_back(std::move(task));
-      pool_->pending_.fetch_add(1, std::memory_order_release);
     }
     pool_->cv_.notify_one();
   }
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void dispatch(F&& f) const noexcept {
+  void dispatch(detail::unique_function<void()> f) const noexcept {
     if (!pool_) {
       return;
     }
@@ -135,7 +129,7 @@ class thread_pool::executor_type {
       }
     }
 
-    post(std::forward<F>(f));
+    post(std::move(f));
   }
 
   auto stopped() const noexcept -> bool {

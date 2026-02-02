@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 #include <array>
 #include <compare>
@@ -36,7 +36,7 @@ class address_v4 {
   /// Parse a textual IPv4 address.
   ///
   /// Returns invalid_argument on parse failure.
-  static auto from_string(std::string const& s) -> expected<address_v4, std::error_code>;
+  static auto from_string(std::string const& s) -> result<address_v4>;
 
  private:
   bytes_type bytes_{};

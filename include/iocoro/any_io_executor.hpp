@@ -20,10 +20,11 @@ class any_io_executor {
  public:
   any_io_executor() noexcept = default;
 
-  explicit any_io_executor(any_executor ex) noexcept : ex_(std::move(ex)) {
-    if (ex_) {
-      IOCORO_ENSURE(ex_.supports_io(), "any_io_executor: requires IO-capable executor");
-      impl_ = ex_.io_context_ptr();
+  explicit any_io_executor(any_executor ex) noexcept : storage_(ex.storage_) {
+    if (storage_) {
+      IOCORO_ENSURE(has_capability(storage_.capabilities(), executor_capability::io),
+                   "any_io_executor: requires IO-capable executor");
+      impl_ = storage_.io_context_ptr();
       IOCORO_ENSURE(impl_ != nullptr, "any_io_executor: missing io_context_impl");
     }
   }
@@ -31,34 +32,21 @@ class any_io_executor {
   template <executor Ex>
   explicit any_io_executor(Ex ex) noexcept : any_io_executor(any_executor{std::move(ex)}) {}
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void post(F&& f) const noexcept {
-    if (!ex_) {
-      return;
-    }
-    ex_.post(std::forward<F>(f));
-  }
+  void post(detail::unique_function<void()> f) const noexcept { storage_.post(std::move(f)); }
+  void dispatch(detail::unique_function<void()> f) const noexcept { storage_.dispatch(std::move(f)); }
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void dispatch(F&& f) const noexcept {
-    if (!ex_) {
-      return;
-    }
-    ex_.dispatch(std::forward<F>(f));
-  }
+  auto capabilities() const noexcept -> executor_capability { return storage_.capabilities(); }
 
   auto stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
 
-  explicit operator bool() const noexcept { return static_cast<bool>(ex_); }
+  explicit operator bool() const noexcept { return static_cast<bool>(storage_); }
 
-  auto as_any_executor() const noexcept -> any_executor const& { return ex_; }
+  auto as_any_executor() const noexcept -> any_executor { return any_executor{*this}; }
 
   auto io_context_ptr() const noexcept -> detail::io_context_impl* { return impl_; }
 
   friend auto operator==(any_io_executor const& a, any_io_executor const& b) noexcept -> bool {
-    return a.ex_ == b.ex_;
+    return a.storage_ == b.storage_;
   }
 
   friend auto operator!=(any_io_executor const& a, any_io_executor const& b) noexcept -> bool {
@@ -69,6 +57,7 @@ class any_io_executor {
   template <typename>
   friend class work_guard;
   friend class io_context;
+  friend class any_executor;
 
   void add_work_guard() const noexcept {
     if (impl_ != nullptr) {
@@ -82,9 +71,12 @@ class any_io_executor {
     }
   }
 
-  any_executor ex_{};
+  detail::any_executor_storage storage_{};
   detail::io_context_impl* impl_ = nullptr;
 };
+
+inline any_executor::any_executor(any_io_executor const& ex) noexcept
+    : any_executor(storage_tag{}, ex.storage_) {}
 
 }  // namespace iocoro
 
@@ -93,7 +85,10 @@ namespace iocoro::detail {
 template <>
 struct executor_traits<any_io_executor> {
   static auto capabilities(any_io_executor const& ex) noexcept -> executor_capability {
-    return ex ? executor_capability::io : executor_capability::none;
+    if (!ex) {
+      return executor_capability::none;
+    }
+    return ex.capabilities();
   }
 
   static auto io_context(any_io_executor const& ex) noexcept -> io_context_impl* {

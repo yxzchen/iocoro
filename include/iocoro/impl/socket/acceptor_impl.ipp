@@ -1,63 +1,63 @@
 #include <iocoro/detail/socket/acceptor_impl.hpp>
 #include <iocoro/detail/socket_utils.hpp>
+#include <iocoro/detail/scope_guard.hpp>
 
 namespace iocoro::detail::socket {
 
 inline void acceptor_impl::cancel_read() noexcept {
-  accept_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  accept_op_.cancel();
   base_.cancel_read();
 }
 
-inline void acceptor_impl::close() noexcept {
+inline auto acceptor_impl::close() noexcept -> result<void> {
   {
     std::scoped_lock lk{mtx_};
-    accept_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    accept_op_.cancel();
     listening_ = false;
-    accept_active_ = false;
   }
-  base_.close();
+  return base_.close();
 }
 
-inline auto acceptor_impl::open(int domain, int type, int protocol) -> std::error_code {
-  auto ec = base_.open(domain, type, protocol);
-  if (ec) {
-    return ec;
+inline auto acceptor_impl::open(int domain, int type, int protocol) -> result<void> {
+  auto r = base_.open(domain, type, protocol);
+  if (!r) {
+    return r;
   }
   std::scoped_lock lk{mtx_};
   listening_ = false;
-  return {};
+  return ok();
 }
 
-inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> std::error_code {
+inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return fail(error::not_open);
   }
   if (::bind(fd, addr, len) != 0) {
-    return std::error_code(errno, std::generic_category());
+    return fail(std::error_code(errno, std::generic_category()));
   }
-  return {};
+  return ok();
 }
 
-inline auto acceptor_impl::listen(int backlog) -> std::error_code {
+inline auto acceptor_impl::listen(int backlog) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return fail(error::not_open);
   }
   if (backlog <= 0) {
     backlog = SOMAXCONN;
   }
   if (::listen(fd, backlog) != 0) {
-    return std::error_code(errno, std::generic_category());
+    return fail(std::error_code(errno, std::generic_category()));
   }
   {
     std::scoped_lock lk{mtx_};
     listening_ = true;
   }
-  return {};
+  return ok();
 }
 
-inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_code>> {
+inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
   auto const listen_fd = base_.native_handle();
   if (listen_fd < 0) {
     co_return unexpected(error::not_open);
@@ -70,26 +70,19 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
     if (!listening_) {
       co_return unexpected(error::not_listening);
     }
-    if (accept_active_) {
+    if (accept_op_.active) {
       co_return unexpected(error::busy);
     }
-    accept_active_ = true;
-    my_epoch = accept_epoch_.load(std::memory_order_acquire);
+    accept_op_.active = true;
+    my_epoch = accept_op_.epoch.load(std::memory_order_acquire);
   }
 
-  // RAII guard to ensure accept_active_ is cleared on all exit paths.
-  struct accept_guard {
-    acceptor_impl* self;
-    ~accept_guard() {
-      std::scoped_lock lk{self->mtx_};
-      self->accept_active_ = false;
-    }
-  };
-  accept_guard guard{this};
+  // RAII guard to ensure accept operation is marked finished on all exit paths.
+  auto guard = detail::make_scope_exit([this] { accept_op_.finish(mtx_); });
 
   for (;;) {
     // Cancellation check to close the "cancel between accept() and wait_read_ready()" race.
-    if (!is_accept_epoch_current(my_epoch)) {
+    if (!accept_op_.is_epoch_current(my_epoch)) {
       co_return unexpected(error::operation_aborted);
     }
 
@@ -107,7 +100,7 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
 #endif
 
     if (fd >= 0) {
-      if (!is_accept_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch)) {
         (void)::close(fd);
         co_return unexpected(error::operation_aborted);
       }
@@ -119,14 +112,14 @@ inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      if (!is_accept_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
-      auto ec = co_await base_.wait_read_ready();
-      if (ec) {
-        co_return unexpected(ec);
+      auto r = co_await base_.wait_read_ready();
+      if (!r) {
+        co_return unexpected(r.error());
       }
-      if (!is_accept_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
       continue;

@@ -43,10 +43,10 @@ TEST(tcp_socket_test, connect_and_exchange_data) {
   iocoro::ip::tcp::endpoint ep{iocoro::ip::address_v4::loopback(), port};
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
-      auto ec = co_await sock.async_connect(ep);
-      if (ec) {
-        co_return iocoro::unexpected(ec);
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+      auto cr = co_await sock.async_connect(ep);
+      if (!cr) {
+        co_return iocoro::unexpected(cr.error());
       }
 
       std::array<std::byte, 4> out{};
@@ -83,8 +83,8 @@ TEST(tcp_socket_test, connect_to_closed_port_returns_error) {
   iocoro::ip::tcp::endpoint ep{iocoro::ip::address_v4::loopback(), port};
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<std::error_code> { co_return co_await sock.async_connect(ep); }());
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> { co_return co_await sock.async_connect(ep); }());
 
   ASSERT_TRUE(r);
-  EXPECT_TRUE(*r);
+  EXPECT_FALSE(static_cast<bool>(*r));
 }

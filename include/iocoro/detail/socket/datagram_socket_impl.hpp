@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/io_context.hpp>
 
 #include <iocoro/detail/scope_guard.hpp>
@@ -63,7 +63,7 @@ class datagram_socket_impl {
   ///
   /// NOTE: This is called internally by bind() or connect().
   /// End users should NOT call this directly; use bind() or connect() instead.
-  auto open(int domain, int type, int protocol) noexcept -> std::error_code {
+  auto open(int domain, int type, int protocol) noexcept -> result<void> {
     return base_.open(domain, type, protocol);
   }
 
@@ -89,23 +89,23 @@ class datagram_socket_impl {
   void cancel_write() noexcept;
 
   /// Close the datagram socket (best-effort, idempotent).
-  void close() noexcept;
+  auto close() noexcept -> result<void>;
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     return base_.set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     return base_.get_option(opt);
   }
 
   /// Bind to a local endpoint.
-  auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
+  auto bind(sockaddr const* addr, socklen_t len) -> result<void>;
 
   /// Connect to a remote endpoint (fixes the peer for this socket).
-  auto connect(sockaddr const* addr, socklen_t len) -> std::error_code;
+  auto connect(sockaddr const* addr, socklen_t len) -> result<void>;
 
   /// Send a datagram to the specified destination.
   ///
@@ -116,7 +116,7 @@ class datagram_socket_impl {
   auto async_send_to(
       std::span<std::byte const> buffer,
       sockaddr const* dest_addr,
-      socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t dest_len) -> awaitable<result<std::size_t>>;
 
   /// Receive a datagram and retrieve the source endpoint.
   ///
@@ -128,7 +128,7 @@ class datagram_socket_impl {
   auto async_receive_from(
       std::span<std::byte> buffer,
       sockaddr* src_addr,
-      socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t* src_len) -> awaitable<result<std::size_t>>;
 
  private:
   enum class dgram_state : std::uint8_t {

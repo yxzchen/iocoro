@@ -3,7 +3,6 @@
 #include <iocoro/detail/reactor_types.hpp>
 
 #include <cstdint>
-#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -42,6 +41,8 @@ class fd_registry {
     bool had_any = false;
   };
 
+  // NOTE: fd_registry is reactor-thread-only.
+  // All accesses must be serialized by io_context_impl (reactor thread ownership).
   auto register_read(int fd, reactor_op_ptr op) -> register_result;
   auto register_write(int fd, reactor_op_ptr op) -> register_result;
   auto cancel(int fd, fd_event_kind kind, std::uint64_t token) noexcept -> cancel_result;
@@ -78,7 +79,6 @@ class fd_registry {
   auto register_impl(int fd, reactor_op_ptr op, fd_event_kind kind) -> register_result;
   void trim_tail(std::size_t fd_index);
 
-  mutable std::mutex mtx_{};
   std::vector<fd_ops> operations_{};
   std::uint64_t next_token_ = 1;
   std::size_t active_count_ = 0;
@@ -99,36 +99,33 @@ inline auto fd_registry::register_impl(int fd, reactor_op_ptr op, fd_event_kind 
   fd_interest interest{};
   std::uint64_t token = 0;
 
-  {
-    std::scoped_lock lk{mtx_};
-    if (fd < 0) {
-      return register_result{};
-    }
-    if (static_cast<std::size_t>(fd) >= operations_.size() && !op) {
-      return register_result{};
-    }
-    if (static_cast<std::size_t>(fd) >= operations_.size()) {
-      operations_.resize(static_cast<std::size_t>(fd) + 1);
-    }
-
-    auto& ops = operations_[static_cast<std::size_t>(fd)];
-    auto slot = slot_for(ops, kind);
-    bool const had_op = static_cast<bool>(*slot.op);
-    if (op) {
-      token = *slot.token = next_token_++;
-    }
-    if (!had_op && op) {
-      ++active_count_;
-      if (static_cast<std::size_t>(fd) > max_active_fd_) {
-        max_active_fd_ = static_cast<std::size_t>(fd);
-      }
-    }
-    if (had_op && !op) {
-      --active_count_;
-    }
-    old = std::exchange(*slot.op, std::move(op));
-    interest = interest_for(ops);
+  if (fd < 0) {
+    return register_result{};
   }
+  if (static_cast<std::size_t>(fd) >= operations_.size() && !op) {
+    return register_result{};
+  }
+  if (static_cast<std::size_t>(fd) >= operations_.size()) {
+    operations_.resize(static_cast<std::size_t>(fd) + 1);
+  }
+
+  auto& ops = operations_[static_cast<std::size_t>(fd)];
+  auto slot = slot_for(ops, kind);
+  bool const had_op = static_cast<bool>(*slot.op);
+  if (op) {
+    token = *slot.token = next_token_++;
+  }
+  if (!had_op && op) {
+    ++active_count_;
+    if (static_cast<std::size_t>(fd) > max_active_fd_) {
+      max_active_fd_ = static_cast<std::size_t>(fd);
+    }
+  }
+  if (had_op && !op) {
+    --active_count_;
+  }
+  old = std::exchange(*slot.op, std::move(op));
+  interest = interest_for(ops);
 
   return register_result{token, std::move(old), interest};
 }
@@ -139,29 +136,26 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
   fd_interest interest{};
   bool matched = false;
 
-  {
-    std::scoped_lock lk{mtx_};
-    if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
-      return cancel_result{};
-    }
+  if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
+    return cancel_result{};
+  }
 
-    auto& ops = operations_[static_cast<std::size_t>(fd)];
-    auto slot = slot_for(ops, kind);
-    if (*slot.op && *slot.token == token) {
-      removed = std::move(*slot.op);
-      *slot.token = 0;
-      matched = true;
-      --active_count_;
-    }
+  auto& ops = operations_[static_cast<std::size_t>(fd)];
+  auto slot = slot_for(ops, kind);
+  if (*slot.op && *slot.token == token) {
+    removed = std::move(*slot.op);
+    *slot.token = 0;
+    matched = true;
+    --active_count_;
+  }
 
-    if (!matched) {
-      return cancel_result{};
-    }
+  if (!matched) {
+    return cancel_result{};
+  }
 
-    interest = interest_for(ops);
-    if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
-      trim_tail(static_cast<std::size_t>(fd));
-    }
+  interest = interest_for(ops);
+  if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+    trim_tail(static_cast<std::size_t>(fd));
   }
 
   return cancel_result{std::move(removed), interest, matched};
@@ -172,24 +166,21 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
   reactor_op_ptr write{};
   bool had_any = false;
 
-  {
-    std::scoped_lock lk{mtx_};
-    if (fd >= 0 && static_cast<std::size_t>(fd) < operations_.size()) {
-      auto& ops = operations_[static_cast<std::size_t>(fd)];
-      read = std::move(ops.read_op);
-      write = std::move(ops.write_op);
-      had_any = static_cast<bool>(read) || static_cast<bool>(write);
-      ops.read_token = 0;
-      ops.write_token = 0;
-      if (read) {
-        --active_count_;
-      }
-      if (write) {
-        --active_count_;
-      }
-      if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
-        trim_tail(static_cast<std::size_t>(fd));
-      }
+  if (fd >= 0 && static_cast<std::size_t>(fd) < operations_.size()) {
+    auto& ops = operations_[static_cast<std::size_t>(fd)];
+    read = std::move(ops.read_op);
+    write = std::move(ops.write_op);
+    had_any = static_cast<bool>(read) || static_cast<bool>(write);
+    ops.read_token = 0;
+    ops.write_token = 0;
+    if (read) {
+      --active_count_;
+    }
+    if (write) {
+      --active_count_;
+    }
+    if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+      trim_tail(static_cast<std::size_t>(fd));
     }
   }
 
@@ -201,39 +192,35 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
   reactor_op_ptr write{};
   fd_interest interest{};
 
-  {
-    std::scoped_lock lk{mtx_};
-    if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
-      return ready_result{};
-    }
+  if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
+    return ready_result{};
+  }
 
-    auto& ops = operations_[static_cast<std::size_t>(fd)];
-    if (can_read) {
-      read = std::move(ops.read_op);
-      ops.read_token = 0;
-      if (read) {
-        --active_count_;
-      }
+  auto& ops = operations_[static_cast<std::size_t>(fd)];
+  if (can_read) {
+    read = std::move(ops.read_op);
+    ops.read_token = 0;
+    if (read) {
+      --active_count_;
     }
-    if (can_write) {
-      write = std::move(ops.write_op);
-      ops.write_token = 0;
-      if (write) {
-        --active_count_;
-      }
+  }
+  if (can_write) {
+    write = std::move(ops.write_op);
+    ops.write_token = 0;
+    if (write) {
+      --active_count_;
     }
+  }
 
-    interest = interest_for(ops);
-    if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
-      trim_tail(static_cast<std::size_t>(fd));
-    }
+  interest = interest_for(ops);
+  if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+    trim_tail(static_cast<std::size_t>(fd));
   }
 
   return ready_result{std::move(read), std::move(write), interest};
 }
 
 inline auto fd_registry::empty() const -> bool {
-  std::scoped_lock lk{mtx_};
   return active_count_ == 0;
 }
 

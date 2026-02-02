@@ -4,6 +4,7 @@
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/work_guard.hpp>
 
 #include <atomic>
 #include <exception>
@@ -95,9 +96,15 @@ auto sync_wait(iocoro::io_context& ctx, iocoro::awaitable<T> a)
   -> iocoro::expected<T, std::exception_ptr> {
   std::optional<iocoro::expected<T, std::exception_ptr>> result;
 
+  // Keep the io_context alive until the completion handler runs.
+  // Without this, ctx.run() may return early (no pending work), and we would
+  // hit UB by dereferencing `result` before it's set.
+  iocoro::work_guard<iocoro::any_io_executor> wg{ctx.get_executor()};
+
   iocoro::co_spawn(ctx.get_executor(), std::move(a),
                    [&](iocoro::expected<T, std::exception_ptr> r) {
                      result = std::move(r);
+                     wg.reset();
                    });
 
   ctx.run();

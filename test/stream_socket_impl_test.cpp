@@ -20,7 +20,7 @@ TEST(stream_socket_impl_test, read_without_open_returns_not_open) {
 
   std::array<std::byte, 4> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_read_some(std::span{buf});
     }());
 
@@ -34,11 +34,11 @@ TEST(stream_socket_impl_test, read_without_connect_returns_not_connected) {
   iocoro::detail::socket::stream_socket_impl impl{ctx.get_executor()};
 
   auto ec = impl.open(AF_INET, SOCK_STREAM, 0);
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
   std::array<std::byte, 4> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_read_some(std::span{buf});
     }());
 
@@ -57,7 +57,7 @@ TEST(stream_socket_impl_test, concurrent_reads_return_busy_and_cancel_aborts) {
   ASSERT_GE(fds[1], 0);
 
   auto ec = impl.assign(fds[0]);
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
   int peer = fds[1];
 
   std::array<std::byte, 4> buf1{};
@@ -65,11 +65,11 @@ TEST(stream_socket_impl_test, concurrent_reads_return_busy_and_cancel_aborts) {
   std::mutex m;
   std::condition_variable cv;
   std::atomic<int> done{0};
-  std::optional<iocoro::expected<iocoro::expected<std::size_t, std::error_code>, std::exception_ptr>> r1;
-  std::optional<iocoro::expected<iocoro::expected<std::size_t, std::error_code>, std::exception_ptr>> r2;
+  std::optional<iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr>> r1;
+  std::optional<iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr>> r2;
 
-  auto on_done = [&](auto& slot,
-                     iocoro::expected<iocoro::expected<std::size_t, std::error_code>, std::exception_ptr> r) {
+  auto on_done =
+    [&](auto& slot, iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr> r) {
     slot = std::move(r);
     if (done.fetch_add(1) + 1 == 2) {
       std::scoped_lock lk{m};
@@ -80,19 +80,19 @@ TEST(stream_socket_impl_test, concurrent_reads_return_busy_and_cancel_aborts) {
   auto ex = ctx.get_executor();
   iocoro::co_spawn(
     ex,
-    [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_read_some(std::span{buf1});
     },
-    [&](iocoro::expected<iocoro::expected<std::size_t, std::error_code>, std::exception_ptr> r) {
+    [&](iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr> r) {
       on_done(r1, std::move(r));
     });
 
   iocoro::co_spawn(
     ex,
-    [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_read_some(std::span{buf2});
     },
-    [&](iocoro::expected<iocoro::expected<std::size_t, std::error_code>, std::exception_ptr> r) {
+    [&](iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr> r) {
       on_done(r2, std::move(r));
     });
 

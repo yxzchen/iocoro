@@ -3,13 +3,13 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/shutdown.hpp>
 #include <iocoro/error.hpp>
 
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
-#include <iocoro/detail/socket_endpoint_utils.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 
 #include <cstddef>
 #include <span>
@@ -50,32 +50,32 @@ class basic_stream_socket {
   basic_stream_socket(basic_stream_socket&&) = default;
   auto operator=(basic_stream_socket&&) -> basic_stream_socket& = default;
 
-  auto async_connect(endpoint const& ep) -> awaitable<std::error_code> {
+  auto async_connect(endpoint const& ep) -> awaitable<result<void>> {
     // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
     if (!handle_.impl().is_open()) {
-      auto ec = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
-      if (ec) {
-        co_return ec;
+      auto r = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
+      if (!r) {
+        co_return r;
       }
     }
     co_return co_await handle_.impl().async_connect(ep.data(), ep.size());
   }
 
   auto async_read_some(std::span<std::byte> buffer)
-    -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return co_await handle_.impl().async_read_some(buffer);
+    -> awaitable<result<std::size_t>> {
+    return handle_.impl().async_read_some(buffer);
   }
 
   auto async_write_some(std::span<std::byte const> buffer)
-    -> awaitable<expected<std::size_t, std::error_code>> {
-    co_return co_await handle_.impl().async_write_some(buffer);
+    -> awaitable<result<std::size_t>> {
+    return handle_.impl().async_write_some(buffer);
   }
 
-  auto local_endpoint() const -> expected<endpoint, std::error_code> {
+  auto local_endpoint() const -> result<endpoint> {
     return ::iocoro::detail::socket::get_local_endpoint<endpoint>(handle_.native_handle());
   }
 
-  auto remote_endpoint() const -> expected<endpoint, std::error_code> {
+  auto remote_endpoint() const -> result<endpoint> {
     auto const fd = handle_.native_handle();
     if (fd < 0) {
       return unexpected(error::not_open);
@@ -86,7 +86,9 @@ class basic_stream_socket {
     return ::iocoro::detail::socket::get_remote_endpoint<endpoint>(fd);
   }
 
-  auto shutdown(shutdown_type what) -> std::error_code { return handle_.impl().shutdown(what); }
+  auto shutdown(shutdown_type what) -> result<void> {
+    return handle_.impl().shutdown(what);
+  }
 
   auto is_connected() const noexcept -> bool { return handle_.impl().is_connected(); }
 
@@ -94,7 +96,9 @@ class basic_stream_socket {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  void close() noexcept { handle_.close(); }
+  auto close() noexcept -> result<void> {
+    return handle_.close();
+  }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }
@@ -102,12 +106,12 @@ class basic_stream_socket {
   void cancel_write() noexcept { handle_.cancel_write(); }
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     return handle_.set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     return handle_.get_option(opt);
   }
 
@@ -116,7 +120,9 @@ class basic_stream_socket {
   friend class basic_acceptor;
 
   // Internal hook for acceptors: adopt a connected fd from accept().
-  auto assign(int fd) -> std::error_code { return handle_.impl().assign(fd); }
+  auto assign(int fd) -> result<void> {
+    return handle_.impl().assign(fd);
+  }
 
   handle_type handle_;
 };

@@ -30,7 +30,7 @@ inline auto address_v6::to_string() const -> std::string {
   return out;
 }
 
-inline auto address_v6::from_string(std::string const& s) -> expected<address_v6, std::error_code> {
+inline auto address_v6::from_string(std::string const& s) -> result<address_v6> {
   std::uint32_t scope = 0;
   std::string ip_part;
 

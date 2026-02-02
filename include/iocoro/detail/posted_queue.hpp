@@ -12,6 +12,8 @@ namespace iocoro::detail {
 
 class posted_queue {
  public:
+  static constexpr std::size_t max_drain_per_tick = 256;
+
   void post(unique_function<void()> f) {
     std::scoped_lock lk{mtx_};
     queue_.push(std::move(f));
@@ -45,6 +47,19 @@ class posted_queue {
         f();
       }
       ++n;
+
+      // Fairness: do not drain indefinitely; allow timers/IO to run.
+      if (n >= max_drain_per_tick) {
+        break;
+      }
+    }
+
+    if (!stopped && !local.empty()) {
+      std::scoped_lock lk{mtx_};
+      while (!local.empty()) {
+        queue_.push(std::move(local.front()));
+        local.pop();
+      }
     }
     return n;
   }
@@ -63,6 +78,12 @@ class posted_queue {
     if (work_guard_.has_work()) {
       return true;
     }
+    std::scoped_lock lk{mtx_};
+    return !queue_.empty();
+  }
+
+  // True iff there are queued posted tasks (does NOT consider work_guard).
+  auto has_pending_tasks() const -> bool {
     std::scoped_lock lk{mtx_};
     return !queue_.empty();
   }

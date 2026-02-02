@@ -6,6 +6,7 @@
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/timer_registry.hpp>
 #include <iocoro/detail/unique_function.hpp>
+#include <iocoro/result.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -15,9 +16,13 @@
 
 namespace iocoro::detail {
 
-class io_context_impl {
+class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
  public:
   using event_handle = detail::event_handle;
+
+  // NOTE: io_context_impl must be heap-allocated and shared-owned.
+  // Users must construct it with std::make_shared<io_context_impl>().
+  // Constructing on stack is not supported.
 
   io_context_impl();
   explicit io_context_impl(std::unique_ptr<backend_interface> backend);
@@ -50,14 +55,14 @@ class io_context_impl {
   ///
   /// Thread-safe: can be called from any thread. Completion/abort callbacks
   /// and operation destruction still occur on the reactor thread.
-  void cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept;
+  void cancel_timer(std::uint32_t index, std::uint64_t generation) noexcept;
   void cancel_event(event_handle h) noexcept;
 
   auto register_fd_read(int fd, reactor_op_ptr op) -> event_handle;
   auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   void deregister_fd(int fd);
 
-  auto arm_fd_interest(int fd) noexcept -> std::error_code;
+  auto arm_fd_interest(int fd) noexcept -> result<void>;
   void disarm_fd_interest(int fd) noexcept;
 
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
@@ -86,11 +91,24 @@ class io_context_impl {
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;
 
+  // Execute a function on the reactor thread (registry/backend ownership thread).
+  //
+  // - If already on the reactor thread, executes inline (even if stopped).
+  // - Otherwise, enqueues via post() and executes on the next event-loop iteration.
+  // - In shared-owned mode, pins lifetime during execution via weak_from_this().
+  void dispatch_reactor(unique_function<void(io_context_impl&)> f) noexcept;
+
+  // Abort a reactor op. Must only be called on the reactor thread.
+  static void abort_op(reactor_op_ptr op, std::error_code ec) noexcept;
+
   void apply_fd_interest(int fd, fd_interest interest);
 
   std::unique_ptr<backend_interface> backend_;
 
   std::atomic<bool> stopped_{false};
+  // True while a thread is inside run/run_one/run_for. This is used to reject
+  // concurrent event-loop execution for the same io_context_impl instance.
+  std::atomic<bool> running_{false};
 
   fd_registry fd_registry_{};
   timer_registry timers_{};

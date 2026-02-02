@@ -41,7 +41,7 @@ class address {
   /// Selection:
   /// - If the string contains ':', it is treated as IPv6.
   /// - Otherwise, IPv4.
-  static auto from_string(std::string const& s) -> expected<address, std::error_code> {
+  static auto from_string(std::string const& s) -> result<address> {
     if (s.find(':') != std::string::npos) {
       return address_v6::from_string(s).transform([](address_v6 a) { return address{a}; });
     }

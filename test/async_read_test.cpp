@@ -28,7 +28,7 @@ struct mock_read_stream {
   auto get_executor() const noexcept -> iocoro::any_io_executor { return ex; }
 
   auto async_read_some(std::span<std::byte> buf)
-    -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    -> iocoro::awaitable<iocoro::result<std::size_t>> {
     if (next_error) {
       auto ec = next_error;
       next_error = {};
@@ -42,14 +42,14 @@ struct mock_read_stream {
     }
 
     if (pos >= data.size()) {
-      co_return iocoro::expected<std::size_t, std::error_code>(0);
+      co_return iocoro::result<std::size_t>(0);
     }
 
     auto const remaining = data.size() - pos;
     auto const n = std::min({buf.size(), max_chunk, remaining});
     std::memcpy(buf.data(), data.data() + pos, n);
     pos += n;
-    co_return iocoro::expected<std::size_t, std::error_code>(n);
+    co_return iocoro::result<std::size_t>(n);
   }
 };
 
@@ -61,7 +61,7 @@ TEST(async_read_test, reads_exactly_full_buffer) {
 
   std::array<std::byte, 6> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await iocoro::io::async_read(s, std::span{buf});
     }());
 
@@ -78,7 +78,7 @@ TEST(async_read_test, returns_eof_if_stream_ends_before_full) {
 
   std::array<std::byte, 6> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await iocoro::io::async_read(s, std::span{buf});
     }());
 
@@ -94,7 +94,7 @@ TEST(async_read_test, propagates_errors_from_read_some) {
 
   std::array<std::byte, 4> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await iocoro::io::async_read(s, std::span{buf});
     }());
 
@@ -109,7 +109,7 @@ TEST(async_read_test, empty_buffer_returns_zero_without_reading) {
 
   std::array<std::byte, 1> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       return iocoro::io::async_read(s, std::span<std::byte>{buf}.first(0));
     }());
 
@@ -127,7 +127,7 @@ TEST(async_read_test, error_after_partial_progress_is_propagated) {
 
   std::array<std::byte, 4> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       return iocoro::io::async_read(s, std::span{buf});
     }());
 
