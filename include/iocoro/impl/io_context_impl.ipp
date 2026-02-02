@@ -155,25 +155,19 @@ inline void io_context_impl::dispatch_reactor(unique_function<void(io_context_im
     return;
   }
 
-  // Avoid a self-owning cycle and pin lifetime during execution when shared-owned.
+  // Avoid a self-owning cycle: do NOT capture shared_ptr in posted tasks.
+  // Instead capture weak_ptr and lock at execution time to pin lifetime during the callback.
   auto weak = weak_from_this();
-  if (weak.lock()) {
-    post([weak = std::move(weak), f = std::move(f)]() mutable noexcept {
-      auto self = weak.lock();
-      if (!self) {
-        return;
-      }
-      if (f) {
-        f(*self);
-      }
-    });
-    return;
-  }
-
-  // Stack-allocated io_context_impl (tests): no shared ownership available.
-  post([this, f = std::move(f)]() mutable noexcept {
+  IOCORO_ENSURE(!weak.expired(),
+               "io_context_impl::dispatch_reactor(): io_context_impl must be shared-owned "
+               "(construct with std::make_shared<io_context_impl>())");
+  post([weak = std::move(weak), f = std::move(f)]() mutable noexcept {
+    auto self = weak.lock();
+    if (!self) {
+      return;
+    }
     if (f) {
-      f(*this);
+      f(*self);
     }
   });
 }

@@ -45,7 +45,7 @@ TEST(stress_io_context_cancel_thread, cancel_timer_from_foreign_thread_does_not_
   // Current implementation may execute abort inline when the loop is not running.
   // The plan requires hardening this behavior; this test should pass after that refactor.
 
-  iocoro::detail::io_context_impl impl;
+  auto impl = std::make_shared<iocoro::detail::io_context_impl>();
 
   std::atomic<std::size_t> abort_tid{0};
   std::atomic<int> abort_calls{0};
@@ -55,13 +55,13 @@ TEST(stress_io_context_cancel_thread, cancel_timer_from_foreign_thread_does_not_
     record_abort_thread_state{&abort_tid, &abort_calls, &complete_calls});
 
   auto h =
-    impl.add_timer(std::chrono::steady_clock::now() + std::chrono::seconds{10}, std::move(op));
+    impl->add_timer(std::chrono::steady_clock::now() + std::chrono::seconds{10}, std::move(op));
   ASSERT_EQ(abort_calls.load(std::memory_order_relaxed), 0);
   ASSERT_EQ(complete_calls.load(std::memory_order_relaxed), 0);
 
   std::thread canceller([&] {
     // Cancel before the loop starts.
-    impl.cancel_timer(h.timer_index, h.timer_generation);
+    impl->cancel_timer(h.timer_index, h.timer_generation);
   });
   canceller.join();
 
@@ -70,7 +70,7 @@ TEST(stress_io_context_cancel_thread, cancel_timer_from_foreign_thread_does_not_
   EXPECT_EQ(abort_calls.load(std::memory_order_relaxed), 0);
 
   auto const run_tid = thread_hash();
-  impl.run_one();
+  impl->run_one();
 
   ASSERT_EQ(abort_calls.load(std::memory_order_relaxed), 1);
   EXPECT_EQ(abort_tid.load(std::memory_order_relaxed), run_tid);

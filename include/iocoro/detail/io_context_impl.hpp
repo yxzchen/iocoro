@@ -19,6 +19,10 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
  public:
   using event_handle = detail::event_handle;
 
+  // NOTE: io_context_impl must be heap-allocated and shared-owned.
+  // Users must construct it with std::make_shared<io_context_impl>().
+  // Constructing on stack is not supported.
+
   io_context_impl();
   explicit io_context_impl(std::unique_ptr<backend_interface> backend);
   ~io_context_impl();
