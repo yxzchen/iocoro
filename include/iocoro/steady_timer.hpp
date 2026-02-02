@@ -57,7 +57,7 @@ class steady_timer {
   ///
   /// Returns:
   /// - `ok()` on successful timer expiry.
-  auto async_wait(use_awaitable_t) -> awaitable<void_result> {
+  auto async_wait(use_awaitable_t) -> awaitable<result<void>> {
     auto* timer = this;
     auto ec = co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) {

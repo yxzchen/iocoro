@@ -83,7 +83,7 @@ TEST(tcp_socket_test, connect_to_closed_port_returns_error) {
   iocoro::ip::tcp::endpoint ep{iocoro::ip::address_v4::loopback(), port};
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::void_result> { co_return co_await sock.async_connect(ep); }());
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> { co_return co_await sock.async_connect(ep); }());
 
   ASSERT_TRUE(r);
   EXPECT_FALSE(static_cast<bool>(*r));

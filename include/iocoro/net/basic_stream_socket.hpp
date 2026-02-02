@@ -50,7 +50,7 @@ class basic_stream_socket {
   basic_stream_socket(basic_stream_socket&&) = default;
   auto operator=(basic_stream_socket&&) -> basic_stream_socket& = default;
 
-  auto async_connect(endpoint const& ep) -> awaitable<void_result> {
+  auto async_connect(endpoint const& ep) -> awaitable<result<void>> {
     // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
     if (!handle_.impl().is_open()) {
       auto ec = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());

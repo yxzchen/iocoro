@@ -77,7 +77,7 @@ concept async_stream = async_read_stream<Stream> && async_write_stream<Stream>;
 template <class Socket, class Endpoint>
 concept async_connect_socket = requires(Socket& s, Endpoint const& ep) {
   { s.get_executor() } -> std::same_as<::iocoro::any_io_executor>;
-  { s.async_connect(ep) } -> std::same_as<::iocoro::awaitable<void_result>>;
+  { s.async_connect(ep) } -> std::same_as<::iocoro::awaitable<result<void>>>;
 };
 
 }  // namespace iocoro::io

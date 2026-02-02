@@ -10,11 +10,8 @@ namespace iocoro {
 template <class T>
 using result = expected<T, std::error_code>;
 
-/// Result type for void-returning operations.
-using void_result = expected<void, std::error_code>;
-
-[[nodiscard]] inline auto ok() noexcept -> void_result { return {}; }
-[[nodiscard]] inline auto fail(std::error_code ec) noexcept -> void_result { return unexpected(ec); }
+[[nodiscard]] inline auto ok() noexcept -> result<void> { return {}; }
+[[nodiscard]] inline auto fail(std::error_code ec) noexcept -> result<void> { return unexpected(ec); }
 
 }  // namespace iocoro
 

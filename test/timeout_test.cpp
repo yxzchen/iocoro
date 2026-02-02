@@ -56,14 +56,14 @@ auto write_with_timeout(ip::tcp::socket& socket,
 }
 
 auto connect_expected(ip::tcp::socket& socket, ip::tcp::endpoint const& ep)
-  -> awaitable<void_result> {
+  -> awaitable<result<void>> {
   co_return co_await socket.async_connect(ep);
 }
 
 auto connect_with_timeout(ip::tcp::socket& socket,
                           ip::tcp::endpoint const& ep,
                           std::chrono::steady_clock::duration timeout)
-  -> awaitable<void_result> {
+  -> awaitable<result<void>> {
   auto ex = co_await this_coro::io_executor;
 
   steady_timer timer(ex);
