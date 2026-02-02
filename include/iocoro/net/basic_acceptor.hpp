@@ -3,9 +3,9 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/acceptor_impl.hpp>
 #include <iocoro/detail/socket_endpoint_utils.hpp>
@@ -77,7 +77,7 @@ class basic_acceptor {
     return handle_.impl().listen(backlog);
   }
 
-  auto local_endpoint() const -> expected<endpoint, std::error_code> {
+  auto local_endpoint() const -> result<endpoint> {
     return ::iocoro::detail::socket::get_local_endpoint<endpoint>(handle_.native_handle());
   }
 
@@ -86,7 +86,7 @@ class basic_acceptor {
   /// Notes:
   /// - The returned socket is bound to the same io_context as this acceptor.
   /// - The accepted native fd is adopted atomically; no fd leaks occur on failure.
-  auto async_accept() -> awaitable<expected<socket, std::error_code>> {
+  auto async_accept() -> awaitable<result<socket>> {
     auto r = co_await async_accept_fd();
     if (!r) {
       co_return unexpected(r.error());
@@ -120,7 +120,7 @@ class basic_acceptor {
 
  private:
   /// Accept and return the connected native fd (low-level building block).
-  auto async_accept_fd() -> awaitable<expected<int, std::error_code>> {
+  auto async_accept_fd() -> awaitable<result<int>> {
     co_return co_await handle_.impl().async_accept();
   }
 

@@ -46,7 +46,7 @@ TEST(local_stream_test, accept_and_exchange_data) {
   });
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       auto accepted = co_await acc.async_accept();
       if (!accepted) {
         co_return iocoro::unexpected(accepted.error());

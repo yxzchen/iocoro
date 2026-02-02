@@ -38,7 +38,7 @@ TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   });
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       auto accepted = co_await acc.async_accept();
       if (!accepted) {
         co_return iocoro::unexpected(accepted.error());
@@ -86,7 +86,7 @@ TEST(tcp_acceptor_test, accepts_multiple_connections_sequentially) {
   });
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       for (int i = 0; i < 2; ++i) {
         auto accepted = co_await acc.async_accept();
         if (!accepted) {

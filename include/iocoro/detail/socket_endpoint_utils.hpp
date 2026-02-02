@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 #include <cerrno>
 #include <system_error>
@@ -12,7 +12,7 @@
 namespace iocoro::detail::socket {
 
 template <class Endpoint>
-auto get_local_endpoint(int fd) -> expected<Endpoint, std::error_code> {
+auto get_local_endpoint(int fd) -> result<Endpoint> {
   if (fd < 0) {
     return unexpected(error::not_open);
   }
@@ -26,7 +26,7 @@ auto get_local_endpoint(int fd) -> expected<Endpoint, std::error_code> {
 }
 
 template <class Endpoint>
-auto get_remote_endpoint(int fd) -> expected<Endpoint, std::error_code> {
+auto get_remote_endpoint(int fd) -> result<Endpoint> {
   if (fd < 0) {
     return unexpected(error::not_open);
   }

@@ -21,7 +21,7 @@ TEST(udp_socket_test, basic_send_receive) {
   ASSERT_TRUE(ep2);
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       std::array<std::byte, 4> out{};
       std::memcpy(out.data(), "ping", out.size());
       std::array<std::byte, 4> in{};
@@ -59,7 +59,7 @@ TEST(udp_socket_test, send_empty_buffer_returns_zero) {
   ASSERT_TRUE(ep2);
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       std::array<std::byte, 1> empty{};
       co_return co_await s1.async_send_to(std::span<std::byte const>{empty}.first(0), *ep2);
     }());
@@ -77,7 +77,7 @@ TEST(udp_socket_test, receive_empty_buffer_returns_invalid_argument) {
   ASSERT_FALSE(ec) << ec.message();
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       std::array<std::byte, 1> empty{};
       iocoro::ip::udp::endpoint src{};
       co_return co_await s1.async_receive_from(std::span{empty}.first(0), src);

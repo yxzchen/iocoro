@@ -10,10 +10,6 @@ namespace iocoro {
 template <class T>
 using result = expected<T, std::error_code>;
 
-/// Backward-compatible alias (kept for clarity in IO-heavy APIs).
-template <class T>
-using io_result = result<T>;
-
 /// Result type for void-returning operations.
 using void_result = expected<void, std::error_code>;
 

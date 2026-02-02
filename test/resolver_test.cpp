@@ -12,7 +12,7 @@ TEST(resolver_test, resolve_with_custom_thread_pool) {
   iocoro::ip::tcp::resolver resolver{pool.get_executor()};
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<iocoro::ip::tcp::resolver::results_type, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<iocoro::ip::tcp::resolver::results_type>> {
       co_return co_await resolver.async_resolve("127.0.0.1", "80");
     }());
 

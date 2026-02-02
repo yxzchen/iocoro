@@ -17,7 +17,7 @@ TEST(acceptor_impl_test, async_accept_without_open_returns_not_open) {
   iocoro::detail::socket::acceptor_impl acc{ctx.get_executor()};
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
       co_return co_await acc.async_accept();
     }());
 
@@ -34,7 +34,7 @@ TEST(acceptor_impl_test, async_accept_without_listen_returns_not_listening) {
   ASSERT_FALSE(ec) << ec.message();
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
       co_return co_await acc.async_accept();
     }());
 
@@ -63,14 +63,14 @@ TEST(acceptor_impl_test, cancel_read_aborts_pending_accept) {
   std::mutex m;
   std::condition_variable cv;
   std::atomic<bool> done{false};
-  std::optional<iocoro::expected<iocoro::expected<int, std::error_code>, std::exception_ptr>> result;
+  std::optional<iocoro::expected<iocoro::result<int>, std::exception_ptr>> result;
 
   iocoro::co_spawn(
     ctx.get_executor(),
-    [&]() -> iocoro::awaitable<iocoro::expected<int, std::error_code>> {
+    [&]() -> iocoro::awaitable<iocoro::result<int>> {
       co_return co_await acc.async_accept();
     },
-    [&](iocoro::expected<iocoro::expected<int, std::error_code>, std::exception_ptr> r) {
+    [&](iocoro::expected<iocoro::result<int>, std::exception_ptr> r) {
       result = std::move(r);
       std::scoped_lock lk{m};
       done.store(true);

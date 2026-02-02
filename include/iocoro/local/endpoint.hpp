@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 #include <cstddef>
 #include <cstring>
@@ -28,7 +28,7 @@ class endpoint {
   /// Create a pathname endpoint (e.g. "/tmp/app.sock").
   ///
   /// Returns invalid_argument if the path is empty or doesn't fit.
-  static auto from_path(std::string_view path) noexcept -> expected<endpoint, std::error_code> {
+  static auto from_path(std::string_view path) noexcept -> result<endpoint> {
     if (path.empty()) {
       return unexpected(error::invalid_argument);
     }
@@ -52,7 +52,7 @@ class endpoint {
   ///
   /// `name` is the bytes after the leading NUL.
   /// Returns invalid_argument if name is empty or doesn't fit.
-  static auto from_abstract(std::string_view name) noexcept -> expected<endpoint, std::error_code> {
+  static auto from_abstract(std::string_view name) noexcept -> result<endpoint> {
     if (name.empty()) {
       return unexpected(error::invalid_argument);
     }
@@ -79,7 +79,7 @@ class endpoint {
   /// - unsupported_address_family if family != AF_UNIX
   /// - invalid_endpoint if len is not a valid sockaddr_un length
   static auto from_native(sockaddr const* addr, socklen_t len) noexcept
-    -> expected<endpoint, std::error_code> {
+    -> result<endpoint> {
     if (addr == nullptr || len == 0) {
       return unexpected(error::invalid_argument);
     }
@@ -118,7 +118,7 @@ class endpoint {
   /// - invalid_argument if `addr` is null or `len == 0`
   /// - invalid_endpoint if `len < size()`
   auto to_native(sockaddr* addr, socklen_t len) const noexcept
-    -> expected<socklen_t, std::error_code> {
+    -> result<socklen_t> {
     if (addr == nullptr || len == 0) {
       return unexpected(error::invalid_argument);
     }

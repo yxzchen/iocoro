@@ -57,7 +57,7 @@ inline auto acceptor_impl::listen(int backlog) -> std::error_code {
   return {};
 }
 
-inline auto acceptor_impl::async_accept() -> awaitable<expected<int, std::error_code>> {
+inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
   auto const listen_fd = base_.native_handle();
   if (listen_fd < 0) {
     co_return unexpected(error::not_open);

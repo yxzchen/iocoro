@@ -2,7 +2,7 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/io/stream_concepts.hpp>
 
 #include <cstddef>
@@ -20,7 +20,7 @@ namespace iocoro::io {
 ///   `error::broken_pipe`.
 template <async_write_stream Stream>
 auto async_write(Stream& s, std::span<std::byte const> buf)
-  -> awaitable<expected<std::size_t, std::error_code>> {
+  -> awaitable<result<std::size_t>> {
   auto const wanted = buf.size();
 
   while (!buf.empty()) {

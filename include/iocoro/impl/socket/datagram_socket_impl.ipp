@@ -84,7 +84,7 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
 inline auto datagram_socket_impl::async_send_to(
     std::span<std::byte const> buffer,
     sockaddr const* dest_addr,
-    socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t dest_len) -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -158,7 +158,7 @@ inline auto datagram_socket_impl::async_send_to(
 inline auto datagram_socket_impl::async_receive_from(
     std::span<std::byte> buffer,
     sockaddr* src_addr,
-    socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>> {
+    socklen_t* src_len) -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);

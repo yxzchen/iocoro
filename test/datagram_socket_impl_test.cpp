@@ -17,7 +17,7 @@ TEST(datagram_socket_impl_test, receive_without_open_returns_not_open) {
   sockaddr_storage src{};
   socklen_t len = sizeof(src);
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_receive_from(std::span{buf},
                                                  reinterpret_cast<sockaddr*>(&src), &len);
     }());
@@ -38,7 +38,7 @@ TEST(datagram_socket_impl_test, receive_without_bind_returns_not_bound) {
   sockaddr_storage src{};
   socklen_t len = sizeof(src);
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_receive_from(std::span{buf},
                                                  reinterpret_cast<sockaddr*>(&src), &len);
     }());
@@ -62,7 +62,7 @@ TEST(datagram_socket_impl_test, send_empty_buffer_returns_zero) {
 
   std::array<std::byte, 1> empty{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_send_to(std::span<std::byte const>{empty}.first(0),
                                             reinterpret_cast<sockaddr const*>(&dest),
                                             sizeof(dest));
@@ -91,7 +91,7 @@ TEST(datagram_socket_impl_test, receive_empty_buffer_returns_invalid_argument) {
   sockaddr_storage src{};
   socklen_t len = sizeof(src);
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await impl.async_receive_from(std::span{empty}.first(0),
                                                  reinterpret_cast<sockaddr*>(&src), &len);
     }());

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/io_context.hpp>
 
 #include <iocoro/detail/scope_guard.hpp>
@@ -116,7 +116,7 @@ class datagram_socket_impl {
   auto async_send_to(
       std::span<std::byte const> buffer,
       sockaddr const* dest_addr,
-      socklen_t dest_len) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t dest_len) -> awaitable<result<std::size_t>>;
 
   /// Receive a datagram and retrieve the source endpoint.
   ///
@@ -128,7 +128,7 @@ class datagram_socket_impl {
   auto async_receive_from(
       std::span<std::byte> buffer,
       sockaddr* src_addr,
-      socklen_t* src_len) -> awaitable<expected<std::size_t, std::error_code>>;
+      socklen_t* src_len) -> awaitable<result<std::size_t>>;
 
  private:
   enum class dgram_state : std::uint8_t {

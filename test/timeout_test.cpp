@@ -21,7 +21,7 @@ using namespace std::chrono_literals;
 auto read_some_with_timeout(ip::tcp::socket& socket,
                             std::span<std::byte> buf,
                             std::chrono::steady_clock::duration timeout)
-  -> awaitable<expected<std::size_t, std::error_code>> {
+  -> awaitable<result<std::size_t>> {
   auto ex = co_await this_coro::io_executor;
 
   steady_timer timer(ex);
@@ -40,7 +40,7 @@ auto read_some_with_timeout(ip::tcp::socket& socket,
 auto write_with_timeout(ip::tcp::socket& socket,
                         std::span<std::byte const> buf,
                         std::chrono::steady_clock::duration timeout)
-  -> awaitable<expected<std::size_t, std::error_code>> {
+  -> awaitable<result<std::size_t>> {
   auto ex = co_await this_coro::io_executor;
 
   steady_timer timer(ex);
@@ -83,7 +83,7 @@ auto resolve_with_timeout(ip::tcp::resolver& resolver,
                           std::string host,
                           std::string service,
                           std::chrono::steady_clock::duration timeout)
-  -> awaitable<expected<ip::tcp::resolver::results_type, std::error_code>> {
+  -> awaitable<result<ip::tcp::resolver::results_type>> {
   auto ex = co_await this_coro::io_executor;
 
   steady_timer timer(ex);

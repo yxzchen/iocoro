@@ -24,7 +24,7 @@ inline auto address_v4::to_string() const -> std::string {
   return std::string(buf);
 }
 
-inline auto address_v4::from_string(std::string const& s) -> expected<address_v4, std::error_code> {
+inline auto address_v4::from_string(std::string const& s) -> result<address_v4> {
   auto addr = in_addr{};
   if (::inet_pton(AF_INET, s.c_str(), &addr) != 1) {
     return unexpected(error::invalid_argument);

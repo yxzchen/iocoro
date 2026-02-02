@@ -5,7 +5,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
@@ -83,7 +83,7 @@ class acceptor_impl {
   /// Returns:
   /// - a native connected fd on success (to be adopted by a stream socket)
   /// - error_code on failure
-  auto async_accept() -> awaitable<expected<int, std::error_code>>;
+  auto async_accept() -> awaitable<result<int>>;
 
  private:
   socket_impl_base base_;

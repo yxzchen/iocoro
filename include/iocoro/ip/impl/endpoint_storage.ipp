@@ -17,7 +17,7 @@ namespace iocoro::ip::detail {
 
 namespace {
 
-inline auto parse_port(std::string const& p) -> expected<std::uint16_t, std::error_code> {
+inline auto parse_port(std::string const& p) -> result<std::uint16_t> {
   if (p.empty()) {
     return unexpected(error::invalid_argument);
   }
@@ -100,7 +100,7 @@ inline auto endpoint_storage::family() const noexcept -> int {
 }
 
 inline auto endpoint_storage::to_native(sockaddr* addr, socklen_t len) const noexcept
-  -> expected<socklen_t, std::error_code> {
+  -> result<socklen_t> {
   if (addr == nullptr || len == 0) {
     return unexpected(error::invalid_argument);
   }
@@ -120,7 +120,7 @@ inline auto endpoint_storage::to_string() const -> std::string {
 }
 
 inline auto endpoint_storage::from_string(std::string const& s)
-  -> expected<endpoint_storage, std::error_code> {
+  -> result<endpoint_storage> {
   if (s.empty()) {
     return unexpected(error::invalid_argument);
   }
@@ -173,7 +173,7 @@ inline auto endpoint_storage::from_string(std::string const& s)
 }
 
 inline auto endpoint_storage::from_native(sockaddr const* addr, socklen_t len)
-  -> expected<endpoint_storage, std::error_code> {
+  -> result<endpoint_storage> {
   if (addr == nullptr || len <= 0) {
     return unexpected(error::invalid_argument);
   }

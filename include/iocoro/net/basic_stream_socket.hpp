@@ -3,7 +3,6 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/result.hpp>
 #include <iocoro/shutdown.hpp>
@@ -67,20 +66,20 @@ class basic_stream_socket {
   }
 
   auto async_read_some(std::span<std::byte> buffer)
-    -> awaitable<expected<std::size_t, std::error_code>> {
+    -> awaitable<result<std::size_t>> {
     co_return co_await handle_.impl().async_read_some(buffer);
   }
 
   auto async_write_some(std::span<std::byte const> buffer)
-    -> awaitable<expected<std::size_t, std::error_code>> {
+    -> awaitable<result<std::size_t>> {
     co_return co_await handle_.impl().async_write_some(buffer);
   }
 
-  auto local_endpoint() const -> expected<endpoint, std::error_code> {
+  auto local_endpoint() const -> result<endpoint> {
     return ::iocoro::detail::socket::get_local_endpoint<endpoint>(handle_.native_handle());
   }
 
-  auto remote_endpoint() const -> expected<endpoint, std::error_code> {
+  auto remote_endpoint() const -> result<endpoint> {
     auto const fd = handle_.native_handle();
     if (fd < 0) {
       return unexpected(error::not_open);

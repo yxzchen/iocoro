@@ -3,9 +3,9 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/datagram_socket_impl.hpp>
 #include <iocoro/detail/socket_endpoint_utils.hpp>
@@ -86,7 +86,7 @@ class basic_datagram_socket {
   ///
   /// The entire buffer is sent as a single datagram (message boundary preserved).
   auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
-      -> awaitable<expected<std::size_t, std::error_code>> {
+      -> awaitable<result<std::size_t>> {
     co_return co_await handle_.impl().async_send_to(buffer, destination.data(), destination.size());
   }
 
@@ -96,7 +96,7 @@ class basic_datagram_socket {
   /// The entire message is received in one operation (message boundary preserved).
   /// If the buffer is too small, an error is returned (message_size).
   auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source)
-      -> awaitable<expected<std::size_t, std::error_code>> {
+      -> awaitable<result<std::size_t>> {
     sockaddr_storage ss{};
     socklen_t len = sizeof(ss);
 
@@ -117,12 +117,12 @@ class basic_datagram_socket {
   }
 
   /// Get the local endpoint.
-  auto local_endpoint() const -> expected<endpoint_type, std::error_code> {
+  auto local_endpoint() const -> result<endpoint_type> {
     return ::iocoro::detail::socket::get_local_endpoint<endpoint_type>(handle_.native_handle());
   }
 
   /// Get the remote endpoint (only valid if connected).
-  auto remote_endpoint() const -> expected<endpoint_type, std::error_code> {
+  auto remote_endpoint() const -> result<endpoint_type> {
     auto const fd = handle_.native_handle();
     if (fd < 0) {
       return unexpected(error::not_open);

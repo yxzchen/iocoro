@@ -29,7 +29,7 @@ TEST(local_dgram_test, send_and_receive_between_endpoints) {
   ASSERT_FALSE(ec) << ec.message();
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       std::array<std::byte, 4> out{};
       std::memcpy(out.data(), "ping", out.size());
       std::array<std::byte, 4> in{};

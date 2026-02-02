@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 #include <concepts>
 #include <system_error>
@@ -24,8 +24,8 @@ concept endpoint_like =
     { ep.family() } -> std::convertible_to<int>;
 
     // Native conversions (symmetry with failure allowed).
-    { E::from_native(in, in_len) } -> std::same_as<expected<E, std::error_code>>;
-    { ep.to_native(out, out_len) } -> std::same_as<expected<socklen_t, std::error_code>>;
+    { E::from_native(in, in_len) } -> std::same_as<result<E>>;
+    { ep.to_native(out, out_len) } -> std::same_as<result<socklen_t>>;
   };
 
 /// Minimal protocol tag concept for sockaddr-based networking facades.

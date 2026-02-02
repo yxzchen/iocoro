@@ -28,7 +28,7 @@ struct mock_write_stream {
   auto get_executor() const noexcept -> iocoro::any_io_executor { return ex; }
 
   auto async_write_some(std::span<std::byte const> buf)
-    -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    -> iocoro::awaitable<iocoro::result<std::size_t>> {
     if (next_error) {
       auto ec = next_error;
       next_error = {};
@@ -41,11 +41,11 @@ struct mock_write_stream {
       co_return iocoro::unexpected(ec);
     }
     if (return_zero) {
-      co_return iocoro::expected<std::size_t, std::error_code>(0);
+      co_return iocoro::result<std::size_t>(0);
     }
     auto const n = std::min(buf.size(), max_chunk);
     data.append(reinterpret_cast<char const*>(buf.data()), n);
-    co_return iocoro::expected<std::size_t, std::error_code>(n);
+    co_return iocoro::result<std::size_t>(n);
   }
 };
 
@@ -59,7 +59,7 @@ TEST(async_write_test, writes_entire_buffer) {
   std::memcpy(buf.data(), "abcdef", buf.size());
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await iocoro::io::async_write(s, std::span<std::byte const>{buf});
     }());
 
@@ -77,7 +77,7 @@ TEST(async_write_test, returns_broken_pipe_on_zero_progress) {
   std::memcpy(buf.data(), "ab", buf.size());
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await iocoro::io::async_write(s, std::span<std::byte const>{buf});
     }());
 
@@ -95,7 +95,7 @@ TEST(async_write_test, propagates_errors_from_write_some) {
   std::memcpy(buf.data(), "ab", buf.size());
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       co_return co_await iocoro::io::async_write(s, std::span<std::byte const>{buf});
     }());
 
@@ -110,7 +110,7 @@ TEST(async_write_test, empty_buffer_returns_zero_without_writing) {
 
   std::array<std::byte, 1> buf{};
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       return iocoro::io::async_write(s, std::span<std::byte const>{buf}.first(0));
     }());
 
@@ -130,7 +130,7 @@ TEST(async_write_test, error_after_partial_progress_is_propagated) {
   std::memcpy(buf.data(), "abcd", buf.size());
 
   auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::expected<std::size_t, std::error_code>> {
+    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
       return iocoro::io::async_write(s, std::span<std::byte const>{buf});
     }());
 

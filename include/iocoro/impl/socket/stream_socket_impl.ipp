@@ -144,7 +144,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 }
 
 inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
-  -> awaitable<expected<std::size_t, std::error_code>> {
+  -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -210,7 +210,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
 }
 
 inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer)
-  -> awaitable<expected<std::size_t, std::error_code>> {
+  -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);

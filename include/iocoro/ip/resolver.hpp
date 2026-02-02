@@ -8,7 +8,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/thread_pool.hpp>
 
@@ -89,7 +89,7 @@ class resolver {
   /// the io_context thread, the call is executed on the thread_pool provided at construction
   /// (or the internal default thread_pool if none was provided).
   auto async_resolve(std::string host, std::string service)
-    -> awaitable<expected<results_type, std::error_code>> {
+    -> awaitable<result<results_type>> {
     // Get the pool executor (custom or default static pool).
     auto pool_ex = pool_ex_ ? *pool_ex_ : get_default_executor();
 
@@ -137,7 +137,7 @@ struct resolver<Protocol>::resolve_awaiter {
   struct result_state {
     std::coroutine_handle<> continuation;
     any_executor ex;
-    expected<results_type, std::error_code> result{};
+    result<results_type> res{};
     std::atomic<bool> done{false};
     std::unique_ptr<std::stop_callback<::iocoro::detail::unique_function<void()>>> stop_cb{};
   };
@@ -170,7 +170,7 @@ struct resolver<Protocol>::resolve_awaiter {
       auto token = h.promise().get_stop_token();
       if (token.stop_requested()) {
         if (!st->done.exchange(true)) {
-          st->result = unexpected(error::operation_aborted);
+          st->res = unexpected(error::operation_aborted);
           st->ex.post([st]() { st->continuation.resume(); });
         }
       } else {
@@ -184,7 +184,7 @@ struct resolver<Protocol>::resolve_awaiter {
               if (st->done.exchange(true)) {
                 return;
               }
-              st->result = unexpected(error::operation_aborted);
+              st->res = unexpected(error::operation_aborted);
               st->ex.post([st]() { st->continuation.resume(); });
             }});
       }
@@ -192,7 +192,7 @@ struct resolver<Protocol>::resolve_awaiter {
 
     pool_ex.post(
       [st, host_copy = std::move(host_copy), service_copy = std::move(service_copy)]() {
-        expected<results_type, std::error_code> result{};
+        result<results_type> res{};
         try {
           // Build hints for getaddrinfo based on Protocol.
           addrinfo hints;
@@ -210,7 +210,7 @@ struct resolver<Protocol>::resolve_awaiter {
           if (ret != 0) {
             // getaddrinfo error.
             // Map EAI_* error codes to addrinfo_error and create a proper error_code.
-            result = unexpected(std::error_code(ret, addrinfo_error_category()));
+            res = unexpected(std::error_code(ret, addrinfo_error_category()));
           } else {
             // Success: convert addrinfo list to Protocol::endpoint list.
             results_type endpoints;
@@ -222,25 +222,25 @@ struct resolver<Protocol>::resolve_awaiter {
               // Silently skip addresses that cannot be converted (e.g., unsupported family).
             }
             ::freeaddrinfo(result_list);
-            result = std::move(endpoints);
+            res = std::move(endpoints);
           }
         } catch (...) {
-          result = unexpected(error::internal_error);
+          res = unexpected(error::internal_error);
         }
 
         if (st->done.exchange(true)) {
           return;
         }
 
-        st->result = std::move(result);
+        st->res = std::move(res);
         st->stop_cb.reset();
         // Post coroutine resumption back to the captured IO executor.
         st->ex.post([st]() { st->continuation.resume(); });
       });
   }
 
-  auto await_resume() -> expected<results_type, std::error_code> {
-    return std::move(state->result);
+  auto await_resume() -> result<results_type> {
+    return std::move(state->res);
   }
 };
 

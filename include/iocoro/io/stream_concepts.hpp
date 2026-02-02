@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/awaitable.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/any_io_executor.hpp>
 
 #include <concepts>
@@ -24,13 +24,13 @@ namespace iocoro::io {
 /// 1. It provides an asynchronous read primitive (observing coroutine cancellation context):
 ///    ```
 ///    async_read_some(std::span<std::byte>)
-///      -> awaitable<expected<std::size_t, std::error_code>>
+///      -> awaitable<result<std::size_t>>
 ///    ```
 ///
 /// 2. It provides an asynchronous write primitive (observing coroutine cancellation context):
 ///    ```
 ///    async_write_some(std::span<std::byte const>)
-///      -> awaitable<expected<std::size_t, std::error_code>>
+///      -> awaitable<result<std::size_t>>
 ///    ```
 ///
 /// Semantics and conventions:
@@ -41,7 +41,7 @@ namespace iocoro::io {
 ///   - For writes, it indicates that no further progress can be made
 ///     (e.g. peer closed, broken pipe).
 ///
-/// - Errors are reported via `expected<..., std::error_code>`.
+/// - Errors are reported via `result<...>` (i.e., error_code-based expected).
 ///   Transport-level failures (I/O errors, connection reset, etc.)
 ///   must be represented as a non-empty `std::error_code`.
 ///
@@ -60,7 +60,7 @@ template <class Stream>
 concept async_read_stream =
   io_executor_stream<Stream> && requires(Stream& s, std::span<std::byte> rbuf) {
     requires std::same_as<decltype(s.async_read_some(rbuf)),
-                          awaitable<expected<std::size_t, std::error_code>>>;
+                          awaitable<result<std::size_t>>>;
   };
 
 template <class Stream>
@@ -68,7 +68,7 @@ concept async_write_stream =
   io_executor_stream<Stream> &&
   requires(Stream& s, std::span<std::byte const> wbuf) {
     requires std::same_as<decltype(s.async_write_some(wbuf)),
-                          awaitable<expected<std::size_t, std::error_code>>>;
+                          awaitable<result<std::size_t>>>;
   };
 
 template <class Stream>
@@ -77,7 +77,7 @@ concept async_stream = async_read_stream<Stream> && async_write_stream<Stream>;
 template <class Socket, class Endpoint>
 concept async_connect_socket = requires(Socket& s, Endpoint const& ep) {
   { s.get_executor() } -> std::same_as<::iocoro::any_io_executor>;
-  { s.async_connect(ep) } -> std::same_as<::iocoro::awaitable<std::error_code>>;
+  { s.async_connect(ep) } -> std::same_as<::iocoro::awaitable<void_result>>;
 };
 
 }  // namespace iocoro::io

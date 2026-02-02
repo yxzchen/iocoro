@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/shutdown.hpp>
 #include <iocoro/io_context.hpp>
 
@@ -146,11 +146,11 @@ class stream_socket_impl {
 
   /// Read at most `size` bytes into `data`.
   auto async_read_some(std::span<std::byte> buffer)
-    -> awaitable<expected<std::size_t, std::error_code>>;
+    -> awaitable<result<std::size_t>>;
 
   /// Write at most `size` bytes from `data`.
   auto async_write_some(std::span<std::byte const> buffer)
-    -> awaitable<expected<std::size_t, std::error_code>>;
+    -> awaitable<result<std::size_t>>;
 
   auto shutdown(shutdown_type what) -> std::error_code;
 
