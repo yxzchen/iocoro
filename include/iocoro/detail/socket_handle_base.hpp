@@ -3,6 +3,7 @@
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/socket_option.hpp>
+#include <iocoro/result.hpp>
 
 #include <memory>
 #include <system_error>
@@ -48,15 +49,15 @@ class socket_handle_base {
   void cancel_read() noexcept { impl_->cancel_read(); }
   void cancel_write() noexcept { impl_->cancel_write(); }
 
-  auto close() noexcept -> std::error_code { return impl_->close(); }
+  auto close() noexcept -> result<void> { return impl_->close(); }
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     return impl_->set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     return impl_->get_option(opt);
   }
 

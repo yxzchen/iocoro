@@ -9,7 +9,7 @@ inline void acceptor_impl::cancel_read() noexcept {
   base_.cancel_read();
 }
 
-inline auto acceptor_impl::close() noexcept -> std::error_code {
+inline auto acceptor_impl::close() noexcept -> result<void> {
   {
     std::scoped_lock lk{mtx_};
     accept_op_.cancel();
@@ -18,43 +18,43 @@ inline auto acceptor_impl::close() noexcept -> std::error_code {
   return base_.close();
 }
 
-inline auto acceptor_impl::open(int domain, int type, int protocol) -> std::error_code {
-  auto ec = base_.open(domain, type, protocol);
-  if (ec) {
-    return ec;
+inline auto acceptor_impl::open(int domain, int type, int protocol) -> result<void> {
+  auto r = base_.open(domain, type, protocol);
+  if (!r) {
+    return unexpected(r.error());
   }
   std::scoped_lock lk{mtx_};
   listening_ = false;
-  return {};
+  return ok();
 }
 
-inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> std::error_code {
+inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return unexpected(error::not_open);
   }
   if (::bind(fd, addr, len) != 0) {
-    return std::error_code(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
-  return {};
+  return ok();
 }
 
-inline auto acceptor_impl::listen(int backlog) -> std::error_code {
+inline auto acceptor_impl::listen(int backlog) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return unexpected(error::not_open);
   }
   if (backlog <= 0) {
     backlog = SOMAXCONN;
   }
   if (::listen(fd, backlog) != 0) {
-    return std::error_code(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
   {
     std::scoped_lock lk{mtx_};
     listening_ = true;
   }
-  return {};
+  return ok();
 }
 
 inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
@@ -115,9 +115,9 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
       if (!accept_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
-      auto ec = co_await base_.wait_read_ready();
-      if (ec) {
-        co_return unexpected(ec);
+      auto r = co_await base_.wait_read_ready();
+      if (!r) {
+        co_return unexpected(r.error());
       }
       if (!accept_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);

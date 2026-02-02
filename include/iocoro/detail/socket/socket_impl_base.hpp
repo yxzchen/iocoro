@@ -8,6 +8,7 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/this_coro.hpp>
 #include <iocoro/socket_option.hpp>
+#include <iocoro/result.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -55,7 +56,7 @@ class socket_impl_base {
   socket_impl_base(socket_impl_base&&) = delete;
   auto operator=(socket_impl_base&&) -> socket_impl_base& = delete;
 
-  ~socket_impl_base() { close(); }
+  ~socket_impl_base() { (void)close(); }
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return ctx_impl_; }
   auto get_executor() const noexcept -> any_io_executor { return ex_; }
@@ -88,38 +89,38 @@ class socket_impl_base {
   /// - {} on success
   /// - error::busy if already open
   /// - std::error_code(errno, generic_category()) for sys failures
-  auto open(int domain, int type, int protocol) noexcept -> std::error_code;
+  auto open(int domain, int type, int protocol) noexcept -> result<void>;
 
   /// Adopt an existing native handle (e.g. accept()).
   ///
   /// Note: cancels/clears any pending registrations currently stored in this object.
-  auto assign(int fd) noexcept -> std::error_code;
+  auto assign(int fd) noexcept -> result<void>;
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     auto const fd = native_handle();
     if (fd < 0) {
-      return error::not_open;
+      return unexpected(error::not_open);
     }
 
     if (::setsockopt(fd, opt.level(), opt.name(), opt.data(), opt.size()) != 0) {
-      return std::error_code(errno, std::generic_category());
+      return unexpected(std::error_code(errno, std::generic_category()));
     }
-    return {};
+    return ok();
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     auto const fd = native_handle();
     if (fd < 0) {
-      return error::not_open;
+      return unexpected(error::not_open);
     }
 
     socklen_t len = opt.size();
     if (::getsockopt(fd, opt.level(), opt.name(), opt.data(), &len) != 0) {
-      return std::error_code(errno, std::generic_category());
+      return unexpected(std::error_code(errno, std::generic_category()));
     }
-    return {};
+    return ok();
   }
 
   /// Cancel any in-flight read or write operations.
@@ -140,7 +141,7 @@ class socket_impl_base {
   void cancel_write() noexcept;
 
   /// Close the socket (best-effort, idempotent).
-  auto close() noexcept -> std::error_code;
+  auto close() noexcept -> result<void>;
 
   auto has_pending_operations() const noexcept -> bool {
     std::scoped_lock lk{mtx_};
@@ -195,41 +196,41 @@ class socket_impl_base {
   }
 
   /// Wait until the native fd becomes readable (read readiness).
-  auto wait_read_ready() -> awaitable<std::error_code> {
+  auto wait_read_ready() -> awaitable<result<void>> {
     auto fh = acquire_fd_handle();
     if (!fh) {
-      co_return error::not_open;
+      co_return unexpected(error::not_open);
     }
 
     auto orig_ex = co_await this_coro::executor;
     co_await this_coro::switch_to(ex_);
-    auto ec = co_await detail::operation_awaiter{
+    auto r = co_await detail::operation_awaiter{
       [this, fh](detail::reactor_op_ptr rop) mutable {
         auto h = ctx_impl_->register_fd_read(fh.fd, std::move(rop));
         set_read_handle(fh, h);
         return h;
       }};
     co_await this_coro::switch_to(orig_ex);
-    co_return ec;
+    co_return r;
   }
 
   /// Wait until the native fd becomes writable (write readiness).
-  auto wait_write_ready() -> awaitable<std::error_code> {
+  auto wait_write_ready() -> awaitable<result<void>> {
     auto fh = acquire_fd_handle();
     if (!fh) {
-      co_return error::not_open;
+      co_return unexpected(error::not_open);
     }
 
     auto orig_ex = co_await this_coro::executor;
     co_await this_coro::switch_to(ex_);
-    auto ec = co_await detail::operation_awaiter{
+    auto r = co_await detail::operation_awaiter{
       [this, fh](detail::reactor_op_ptr rop) mutable {
         auto h = ctx_impl_->register_fd_write(fh.fd, std::move(rop));
         set_write_handle(fh, h);
         return h;
       }};
     co_await this_coro::switch_to(orig_ex);
-    co_return ec;
+    co_return r;
   }
 
  private:

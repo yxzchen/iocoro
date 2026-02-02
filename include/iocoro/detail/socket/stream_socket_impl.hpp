@@ -57,7 +57,7 @@ class stream_socket_impl {
   /// NOTE (internal/testing):
   /// - This is NOT part of the public, user-facing networking API.
   /// - End users should prefer higher-level protocol types (e.g. `ip::tcp::socket`).
-  auto open(int domain, int type, int protocol) noexcept -> std::error_code {
+  auto open(int domain, int type, int protocol) noexcept -> result<void> {
     return base_.open(domain, type, protocol);
   }
 
@@ -78,13 +78,13 @@ class stream_socket_impl {
   /// POSTCONDITIONS (on success):
   /// - The socket takes ownership of `fd` and is ready for I/O operations.
   /// - The fd is set to non-blocking mode (best-effort).
-  auto assign(int fd) noexcept -> std::error_code {
+  auto assign(int fd) noexcept -> result<void> {
     IOCORO_ASSERT(state_ == conn_state::disconnected);
     IOCORO_ASSERT(!read_op_.active && !write_op_.active && !connect_op_.active);
 
-    auto ec = base_.assign(fd);
-    if (ec) {
-      return ec;
+    auto r = base_.assign(fd);
+    if (!r) {
+      return unexpected(r.error());
     }
     // An fd returned by accept() represents an already-established connection.
     // Mark the logical stream state as connected so read/write/remote_endpoint work.
@@ -93,7 +93,7 @@ class stream_socket_impl {
       state_ = conn_state::connected;
       shutdown_ = {};
     }
-    return {};
+    return ok();
   }
 
   auto is_open() const noexcept -> bool { return base_.is_open(); }
@@ -137,23 +137,23 @@ class stream_socket_impl {
   /// - Ensure no operations are in-flight before calling close().
   /// - Or, use stop_token to cancel operations and wait for them to complete.
   /// - For graceful shutdown, call shutdown() before close() to signal peer.
-  auto close() noexcept -> std::error_code;
+  auto close() noexcept -> result<void>;
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     return base_.set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     return base_.get_option(opt);
   }
 
   /// Bind to a native endpoint.
-  auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
+  auto bind(sockaddr const* addr, socklen_t len) -> result<void>;
 
   /// Connect to a native endpoint.
-  auto async_connect(sockaddr const* addr, socklen_t len) -> awaitable<std::error_code>;
+  auto async_connect(sockaddr const* addr, socklen_t len) -> awaitable<result<void>>;
 
   /// Read at most `size` bytes into `data`.
   auto async_read_some(std::span<std::byte> buffer)
@@ -163,7 +163,7 @@ class stream_socket_impl {
   auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<result<std::size_t>>;
 
-  auto shutdown(shutdown_type what) -> std::error_code;
+  auto shutdown(shutdown_type what) -> result<void>;
 
  private:
   enum class conn_state : std::uint8_t { disconnected, connecting, connected };

@@ -29,7 +29,7 @@ inline void stream_socket_impl::cancel_connect() noexcept {
   base_.cancel_write();
 }
 
-inline auto stream_socket_impl::close() noexcept -> std::error_code {
+inline auto stream_socket_impl::close() noexcept -> result<void> {
   {
     std::scoped_lock lk{mtx_};
     read_op_.cancel();
@@ -42,21 +42,21 @@ inline auto stream_socket_impl::close() noexcept -> std::error_code {
   return base_.close();
 }
 
-inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> std::error_code {
+inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return unexpected(error::not_open);
   }
   if (::bind(fd, addr, len) != 0) {
-    return std::error_code(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
-  return {};
+  return ok();
 }
 
 inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len)
-  -> awaitable<std::error_code> {
+  -> awaitable<result<void>> {
   if (!is_open()) {
-    co_return error::not_open;
+    co_return unexpected(error::not_open);
   }
 
   auto const fd = base_.native_handle();
@@ -64,13 +64,13 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   {
     std::scoped_lock lk{mtx_};
     if (connect_op_.active) {
-      co_return error::busy;
+      co_return unexpected(error::busy);
     }
     if (state_ == conn_state::connecting) {
-      co_return error::busy;
+      co_return unexpected(error::busy);
     }
     if (state_ == conn_state::connected) {
-      co_return error::already_connected;
+      co_return unexpected(error::already_connected);
     }
     connect_op_.active = true;
     state_ = conn_state::connecting;
@@ -88,7 +88,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     if (::connect(fd, addr, len) == 0) {
       std::scoped_lock lk{mtx_};
       state_ = conn_state::connected;
-      co_return std::error_code{};
+      co_return ok();
     }
     if (errno == EINTR) {
       continue;
@@ -99,22 +99,22 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     ec = std::error_code(errno, std::generic_category());
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
-    co_return ec;
+    co_return unexpected(ec);
   }
 
   // Wait for writability, then check SO_ERROR.
-  auto wait_ec = co_await base_.wait_write_ready();
-  if (wait_ec) {
+  auto wait_r = co_await base_.wait_write_ready();
+  if (!wait_r) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
-    co_return wait_ec;
+    co_return unexpected(wait_r.error());
   }
 
   // If cancel()/close() happened while we were waiting, treat as aborted.
   if (!connect_op_.is_epoch_current(my_epoch)) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
-    co_return error::operation_aborted;
+    co_return unexpected(error::operation_aborted);
   }
 
   int so_error = 0;
@@ -123,24 +123,24 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     ec = std::error_code(errno, std::generic_category());
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
-    co_return ec;
+    co_return unexpected(ec);
   }
   if (so_error != 0) {
     ec = std::error_code(so_error, std::generic_category());
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
-    co_return ec;
+    co_return unexpected(ec);
   }
 
   {
     std::scoped_lock lk{mtx_};
     if (!connect_op_.is_epoch_current(my_epoch)) {
       state_ = conn_state::disconnected;
-      co_return error::operation_aborted;
+      co_return unexpected(error::operation_aborted);
     }
     state_ = conn_state::connected;
   }
-  co_return std::error_code{};
+  co_return ok();
 }
 
 inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
@@ -184,14 +184,14 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_read_ready();
-      if (ec) {
+      auto r = co_await base_.wait_read_ready();
+      if (!r) {
         // If wait returned EOF, it means the connection was closed.
         // Return 0 to indicate EOF (standard POSIX semantics).
-        if (ec == error::eof) {
+        if (r.error() == error::eof) {
           co_return 0;
         }
-        co_return unexpected(ec);
+        co_return unexpected(r.error());
       }
       if (!read_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
@@ -244,9 +244,9 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto ec = co_await base_.wait_write_ready();
-      if (ec) {
-        co_return unexpected(ec);
+      auto r = co_await base_.wait_write_ready();
+      if (!r) {
+        co_return unexpected(r.error());
       }
       if (!write_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
@@ -257,10 +257,10 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
   }
 }
 
-inline auto stream_socket_impl::shutdown(shutdown_type what) -> std::error_code {
+inline auto stream_socket_impl::shutdown(shutdown_type what) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
-    return error::not_open;
+    return unexpected(error::not_open);
   }
 
   int how = SHUT_RDWR;
@@ -274,9 +274,9 @@ inline auto stream_socket_impl::shutdown(shutdown_type what) -> std::error_code 
 
   if (::shutdown(fd, how) != 0) {
     if (errno == ENOTCONN) {
-      return error::not_connected;
+      return unexpected(error::not_connected);
     }
-    return std::error_code(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
 
   // Update logical shutdown state only after syscall succeeds.
@@ -291,7 +291,7 @@ inline auto stream_socket_impl::shutdown(shutdown_type what) -> std::error_code 
       shutdown_.write = true;
     }
   }
-  return {};
+  return ok();
 }
 
 }  // namespace iocoro::detail::socket

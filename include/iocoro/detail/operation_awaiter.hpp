@@ -2,6 +2,7 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/any_executor.hpp>
@@ -85,8 +86,11 @@ struct operation_awaiter {
     return true;
   }
 
-  auto await_resume() noexcept -> std::error_code {
-    return st->ec;
+  auto await_resume() noexcept -> iocoro::result<void> {
+    if (st->ec) {
+      return iocoro::unexpected(st->ec);
+    }
+    return {};
   }
 };
 

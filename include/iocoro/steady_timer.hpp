@@ -67,15 +67,12 @@ class steady_timer {
     // (important for run_one()-driven tests and deterministic cancel()).
     auto orig_ex = co_await this_coro::executor;
     co_await this_coro::switch_to(ex_);
-    auto ec = co_await detail::operation_awaiter{
+    auto r = co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) {
         return timer->register_timer(std::move(rop));
       }};
     co_await this_coro::switch_to(orig_ex);
-    if (ec) {
-      co_return fail(ec);
-    }
-    co_return ok();
+    co_return r;
   }
 
   /// Cancel the pending timer operation.

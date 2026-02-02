@@ -7,13 +7,13 @@
 
 namespace iocoro::detail::socket {
 
-inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> std::error_code {
+inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept -> result<void> {
   int fd = -1;
   bool opened = false;
   {
     std::scoped_lock lk{mtx_};
     if (state_ != fd_state::closed || native_handle() >= 0) {
-      return error::busy;
+      return unexpected(error::busy);
     }
     state_ = fd_state::opening;
   }
@@ -24,7 +24,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     if (state_ == fd_state::opening) {
       state_ = fd_state::closed;
     }
-    return std::error_code(errno, std::generic_category());
+    return unexpected(std::error_code(errno, std::generic_category()));
   }
 
   // Best-effort: set CLOEXEC + non-blocking.
@@ -42,23 +42,23 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
   }
 
   if (opened) {
-    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
-    if (reg_ec) {
+    auto const reg = ctx_impl_->arm_fd_interest(fd);
+    if (!reg) {
       (void)close();
-      return reg_ec;
+      return unexpected(reg.error());
     }
-    return {};
+    return ok();
   }
 
   // Aborted by close()/assign() while opening.
   // We intentionally do not adopt the fd.
   (void)::close(fd);
-  return error::busy;
+  return unexpected(error::busy);
 }
 
-inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
+inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
   if (fd < 0) {
-    return error::invalid_argument;
+    return unexpected(error::invalid_argument);
   }
 
   int old_fd = -1;
@@ -101,17 +101,17 @@ inline auto socket_impl_base::assign(int fd) noexcept -> std::error_code {
   }
 
   if (assigned) {
-    auto const reg_ec = ctx_impl_->arm_fd_interest(fd);
-    if (reg_ec) {
+    auto const reg = ctx_impl_->arm_fd_interest(fd);
+    if (!reg) {
       (void)close();
-      return reg_ec;
+      return unexpected(reg.error());
     }
-    return {};
+    return ok();
   }
 
   // Aborted by close() while assigning.
   (void)::close(fd);
-  return error::busy;
+  return unexpected(error::busy);
 }
 
 inline void socket_impl_base::cancel() noexcept {
@@ -145,14 +145,14 @@ inline void socket_impl_base::cancel_write() noexcept {
   wh.cancel();
 }
 
-inline auto socket_impl_base::close() noexcept -> std::error_code {
+inline auto socket_impl_base::close() noexcept -> result<void> {
   int fd = -1;
   detail::event_handle rh{};
   detail::event_handle wh{};
   {
     std::scoped_lock lk{mtx_};
     if (state_ == fd_state::closed) {
-      return {};
+      return ok();
     }
 
     // If opening, we only mark closed; the opener will close the fd it created.
@@ -162,7 +162,7 @@ inline auto socket_impl_base::close() noexcept -> std::error_code {
       write_handle_ = {};
       fd_.store(-1, std::memory_order_release);
       (void)fd_gen_.fetch_add(1, std::memory_order_release);
-      return {};
+      return ok();
     }
 
     // open -> closed
@@ -185,10 +185,10 @@ inline auto socket_impl_base::close() noexcept -> std::error_code {
         // close() may be interrupted but the fd is no longer usable; treat as success.
         break;
       }
-      return std::error_code(errno, std::generic_category());
+      return unexpected(std::error_code(errno, std::generic_category()));
     }
   }
-  return {};
+  return ok();
 }
 
 inline auto socket_impl_base::release() noexcept -> int {

@@ -233,17 +233,17 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::write, result.token);
 }
 
-inline auto io_context_impl::arm_fd_interest(int fd) noexcept -> std::error_code {
+inline auto io_context_impl::arm_fd_interest(int fd) noexcept -> result<void> {
   if (fd < 0) {
-    return error::invalid_argument;
+    return unexpected(error::invalid_argument);
   }
   try {
     apply_fd_interest(fd, fd_interest{true, true});
   } catch (...) {
-    return error::internal_error;
+    return unexpected(error::internal_error);
   }
   wakeup();
-  return {};
+  return ok();
 }
 
 inline void io_context_impl::disarm_fd_interest(int fd) noexcept {

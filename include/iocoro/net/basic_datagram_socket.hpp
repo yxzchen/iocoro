@@ -58,34 +58,22 @@ class basic_datagram_socket {
   /// This opens the socket if not already open.
   /// Must be called before receiving data.
   auto bind(endpoint_type const& local_ep) -> result<void> {
-    // Open if not already open.
+    auto open_r = ok();
     if (!handle_.impl().is_open()) {
-      auto ec = handle_.impl().open(local_ep.family(), Protocol::type(), Protocol::protocol());
-      if (ec) {
-        return fail(ec);
-      }
+      open_r = handle_.impl().open(local_ep.family(), Protocol::type(), Protocol::protocol());
     }
-    if (auto ec = handle_.impl().bind(local_ep.data(), local_ep.size())) {
-      return fail(ec);
-    }
-    return ok();
+    return open_r.and_then([&] { return handle_.impl().bind(local_ep.data(), local_ep.size()); });
   }
 
   /// Connect the socket to a remote endpoint.
   /// This opens the socket if not already open and fixes the remote peer.
   /// After connecting, only send_to() to the connected endpoint is allowed.
   auto connect(endpoint_type const& remote_ep) -> result<void> {
-    // Open if not already open.
+    auto open_r = ok();
     if (!handle_.impl().is_open()) {
-      auto ec = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
-      if (ec) {
-        return fail(ec);
-      }
+      open_r = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
     }
-    if (auto ec = handle_.impl().connect(remote_ep.data(), remote_ep.size())) {
-      return fail(ec);
-    }
-    return ok();
+    return open_r.and_then([&] { return handle_.impl().connect(remote_ep.data(), remote_ep.size()); });
   }
 
   /// Send a datagram to the specified destination.
@@ -147,10 +135,7 @@ class basic_datagram_socket {
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
   auto close() noexcept -> result<void> {
-    if (auto ec = handle_.close()) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.close();
   }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
@@ -160,18 +145,12 @@ class basic_datagram_socket {
 
   template <class Option>
   auto set_option(Option const& opt) -> result<void> {
-    if (auto ec = handle_.set_option(opt)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.set_option(opt);
   }
 
   template <class Option>
   auto get_option(Option& opt) -> result<void> {
-    if (auto ec = handle_.get_option(opt)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.get_option(opt);
   }
 
  private:

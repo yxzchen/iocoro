@@ -53,16 +53,12 @@ class basic_stream_socket {
   auto async_connect(endpoint const& ep) -> awaitable<result<void>> {
     // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
     if (!handle_.impl().is_open()) {
-      auto ec = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
-      if (ec) {
-        co_return fail(ec);
+      auto r = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
+      if (!r) {
+        co_return unexpected(r.error());
       }
     }
-    auto ec = co_await handle_.impl().async_connect(ep.data(), ep.size());
-    if (ec) {
-      co_return fail(ec);
-    }
-    co_return ok();
+    co_return co_await handle_.impl().async_connect(ep.data(), ep.size());
   }
 
   auto async_read_some(std::span<std::byte> buffer)
@@ -91,10 +87,7 @@ class basic_stream_socket {
   }
 
   auto shutdown(shutdown_type what) -> result<void> {
-    if (auto ec = handle_.impl().shutdown(what)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.impl().shutdown(what);
   }
 
   auto is_connected() const noexcept -> bool { return handle_.impl().is_connected(); }
@@ -104,10 +97,7 @@ class basic_stream_socket {
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
   auto close() noexcept -> result<void> {
-    if (auto ec = handle_.close()) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.close();
   }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
@@ -117,18 +107,12 @@ class basic_stream_socket {
 
   template <class Option>
   auto set_option(Option const& opt) -> result<void> {
-    if (auto ec = handle_.set_option(opt)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.set_option(opt);
   }
 
   template <class Option>
   auto get_option(Option& opt) -> result<void> {
-    if (auto ec = handle_.get_option(opt)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.get_option(opt);
   }
 
  private:
@@ -137,10 +121,7 @@ class basic_stream_socket {
 
   // Internal hook for acceptors: adopt a connected fd from accept().
   auto assign(int fd) -> result<void> {
-    if (auto ec = handle_.impl().assign(fd)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.impl().assign(fd);
   }
 
   handle_type handle_;

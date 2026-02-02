@@ -63,7 +63,7 @@ class datagram_socket_impl {
   ///
   /// NOTE: This is called internally by bind() or connect().
   /// End users should NOT call this directly; use bind() or connect() instead.
-  auto open(int domain, int type, int protocol) noexcept -> std::error_code {
+  auto open(int domain, int type, int protocol) noexcept -> result<void> {
     return base_.open(domain, type, protocol);
   }
 
@@ -89,23 +89,23 @@ class datagram_socket_impl {
   void cancel_write() noexcept;
 
   /// Close the datagram socket (best-effort, idempotent).
-  auto close() noexcept -> std::error_code;
+  auto close() noexcept -> result<void>;
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
+  auto set_option(Option const& opt) -> result<void> {
     return base_.set_option(opt);
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
+  auto get_option(Option& opt) -> result<void> {
     return base_.get_option(opt);
   }
 
   /// Bind to a local endpoint.
-  auto bind(sockaddr const* addr, socklen_t len) -> std::error_code;
+  auto bind(sockaddr const* addr, socklen_t len) -> result<void>;
 
   /// Connect to a remote endpoint (fixes the peer for this socket).
-  auto connect(sockaddr const* addr, socklen_t len) -> std::error_code;
+  auto connect(sockaddr const* addr, socklen_t len) -> result<void>;
 
   /// Send a datagram to the specified destination.
   ///

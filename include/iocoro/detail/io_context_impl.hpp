@@ -6,6 +6,7 @@
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/timer_registry.hpp>
 #include <iocoro/detail/unique_function.hpp>
+#include <iocoro/result.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -61,7 +62,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   void deregister_fd(int fd);
 
-  auto arm_fd_interest(int fd) noexcept -> std::error_code;
+  auto arm_fd_interest(int fd) noexcept -> result<void>;
   void disarm_fd_interest(int fd) noexcept;
 
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;

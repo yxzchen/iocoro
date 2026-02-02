@@ -65,19 +65,16 @@ class basic_acceptor {
   template <class Configure>
     requires std::invocable<Configure, basic_acceptor&>
   auto listen(endpoint const& ep, int backlog, Configure&& configure) -> result<void> {
+    auto open_r = ok();
     if (!is_open()) {
-      if (auto ec = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol())) {
-        return fail(ec);
-      }
+      open_r = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
     }
-    std::invoke(std::forward<Configure>(configure), *this);
-    if (auto ec = handle_.impl().bind(ep.data(), ep.size())) {
-      return fail(ec);
-    }
-    if (auto ec = handle_.impl().listen(backlog)) {
-      return fail(ec);
-    }
-    return ok();
+    return open_r
+      .and_then([&] {
+        std::invoke(std::forward<Configure>(configure), *this);
+        return handle_.impl().bind(ep.data(), ep.size());
+      })
+      .and_then([&] { return handle_.impl().listen(backlog); });
   }
 
   auto local_endpoint() const -> result<endpoint> {
@@ -107,10 +104,7 @@ class basic_acceptor {
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
   auto close() noexcept -> result<void> {
-    if (auto ec = handle_.close()) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.close();
   }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
@@ -119,18 +113,12 @@ class basic_acceptor {
 
   template <class Option>
   auto set_option(Option const& opt) -> result<void> {
-    if (auto ec = handle_.set_option(opt)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.set_option(opt);
   }
 
   template <class Option>
   auto get_option(Option& opt) -> result<void> {
-    if (auto ec = handle_.get_option(opt)) {
-      return fail(ec);
-    }
-    return ok();
+    return handle_.get_option(opt);
   }
 
  private:

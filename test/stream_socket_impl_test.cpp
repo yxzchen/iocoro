@@ -34,7 +34,7 @@ TEST(stream_socket_impl_test, read_without_connect_returns_not_connected) {
   iocoro::detail::socket::stream_socket_impl impl{ctx.get_executor()};
 
   auto ec = impl.open(AF_INET, SOCK_STREAM, 0);
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
   std::array<std::byte, 4> buf{};
   auto r = iocoro::test::sync_wait(
@@ -57,7 +57,7 @@ TEST(stream_socket_impl_test, concurrent_reads_return_busy_and_cancel_aborts) {
   ASSERT_GE(fds[1], 0);
 
   auto ec = impl.assign(fds[0]);
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
   int peer = fds[1];
 
   std::array<std::byte, 4> buf1{};

@@ -31,7 +31,7 @@ TEST(acceptor_impl_test, async_accept_without_listen_returns_not_listening) {
   iocoro::detail::socket::acceptor_impl acc{ctx.get_executor()};
 
   auto ec = acc.open(AF_INET, SOCK_STREAM, 0);
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
   auto r = iocoro::test::sync_wait(
     ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
@@ -48,17 +48,17 @@ TEST(acceptor_impl_test, cancel_read_aborts_pending_accept) {
   iocoro::detail::socket::acceptor_impl acc{ctx.get_executor()};
 
   auto ec = acc.open(AF_INET, SOCK_STREAM, 0);
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(0);
   ec = acc.bind(reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
   ec = acc.listen(16);
-  ASSERT_FALSE(ec) << ec.message();
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
   std::mutex m;
   std::condition_variable cv;
