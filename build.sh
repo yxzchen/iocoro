@@ -108,19 +108,16 @@ parse_args() {
             --asan)
                 SANITIZER="address"
                 BUILD_TYPE="Debug"
-                BUILD_DIR="build-asan"
                 shift
                 ;;
             --tsan)
                 SANITIZER="thread"
                 BUILD_TYPE="Debug"
-                BUILD_DIR="build-tsan"
                 shift
                 ;;
             --ubsan)
                 SANITIZER="undefined"
                 BUILD_TYPE="Debug"
-                BUILD_DIR="build-ubsan"
                 shift
                 ;;
             --prefix)
