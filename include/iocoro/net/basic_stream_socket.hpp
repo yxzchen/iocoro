@@ -9,7 +9,7 @@
 #include <iocoro/error.hpp>
 
 #include <iocoro/detail/socket/stream_socket_impl.hpp>
-#include <iocoro/detail/socket_endpoint_utils.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 
 #include <cstddef>
 #include <span>

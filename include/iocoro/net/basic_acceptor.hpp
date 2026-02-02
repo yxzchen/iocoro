@@ -8,7 +8,7 @@
 #include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/acceptor_impl.hpp>
-#include <iocoro/detail/socket_endpoint_utils.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
 
 #include <concepts>

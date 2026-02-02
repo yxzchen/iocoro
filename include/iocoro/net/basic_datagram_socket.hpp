@@ -8,7 +8,7 @@
 #include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/datagram_socket_impl.hpp>
-#include <iocoro/detail/socket_endpoint_utils.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 
 #include <cstddef>
 #include <span>
