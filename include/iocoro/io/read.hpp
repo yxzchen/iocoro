@@ -17,6 +17,13 @@ namespace iocoro::io {
 /// - This is an algorithm layered on top of the Stream's `async_read_some` primitive.
 /// - Concurrency rules (e.g. "only one read in-flight") are defined by the Stream type.
 /// - If `async_read_some` yields 0 before the buffer is full, this returns `error::eof`.
+///
+/// IMPORTANT - Buffer Lifetime:
+/// The caller is responsible for ensuring the buffer remains valid until
+/// the operation completes. If the operation is cancelled (via stop_token),
+/// the buffer must still remain valid until the coroutine yields control.
+/// Destroying the buffer while the operation is in progress results in
+/// undefined behavior (use-after-free).
 template <async_read_stream Stream>
 auto async_read(Stream& s, std::span<std::byte> buf)
   -> awaitable<result<std::size_t>> {

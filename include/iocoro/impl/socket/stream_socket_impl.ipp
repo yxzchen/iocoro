@@ -186,17 +186,10 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       auto ec = co_await base_.wait_read_ready();
       if (ec) {
+        // If wait returned EOF, it means the connection was closed.
+        // Return 0 to indicate EOF (standard POSIX semantics).
         if (ec == error::eof) {
-          for (;;) {
-            auto n2 = ::read(fd, buffer.data(), buffer.size());
-            if (n2 >= 0) {
-              co_return static_cast<std::size_t>(n2);
-            }
-            if (errno == EINTR) {
-              continue;
-            }
-            break;
-          }
+          co_return 0;
         }
         co_return unexpected(ec);
       }

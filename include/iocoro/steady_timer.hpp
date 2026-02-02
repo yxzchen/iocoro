@@ -84,14 +84,21 @@ class steady_timer {
     if (!ctx_impl_) {
       return detail::io_context_impl::event_handle::invalid_handle();
     }
-    auto h = ctx_impl_->add_timer(expiry(), std::move(rop));
-    set_handle(h);
-    return h;
-  }
-
-  void set_handle(detail::io_context_impl::event_handle h) noexcept {
+    
+    // CRITICAL: Hold the mutex during the entire registration process to prevent
+    // race conditions with cancel(). Without this, cancel() could be called after
+    // add_timer() but before setting handle, resulting in a handle leak.
     std::scoped_lock lk{mtx_};
+    
+    // Cancel any existing timer first
+    if (handle_) {
+      handle_.cancel();
+    }
+    
+    // Register new timer and store the handle atomically
+    auto h = ctx_impl_->add_timer(expiry(), std::move(rop));
     handle_ = h;
+    return h;
   }
 
   auto take_handle() noexcept -> detail::io_context_impl::event_handle {

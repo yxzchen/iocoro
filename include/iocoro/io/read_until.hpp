@@ -44,6 +44,13 @@ inline auto find_in_span(std::span<std::byte const> data, std::span<std::byte co
 ///
 /// Note: the underlying `async_read_some` may read past the delimiter; in that case, `buf`
 /// will contain extra bytes after the returned count.
+///
+/// IMPORTANT - Buffer Lifetime:
+/// The caller is responsible for ensuring the buffer remains valid until
+/// the operation completes. If the operation is cancelled (via stop_token),
+/// the buffer must still remain valid until the coroutine yields control.
+/// Destroying the buffer while the operation is in progress results in
+/// undefined behavior (use-after-free).
 template <async_read_stream Stream>
 auto async_read_until(Stream& s, std::span<std::byte> buf, std::span<std::byte const> delim,
                       std::size_t initial_size = 0)

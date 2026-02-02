@@ -26,6 +26,25 @@ using expected = std::expected<T, E>;
 
 #else
 
+// Exception type for bad expected access (mimics C++23 std::bad_expected_access)
+template <class E>
+class bad_expected_access : public std::exception {
+ public:
+  explicit bad_expected_access(E e) : err_(std::move(e)) {}
+  
+  auto error() const& -> E const& { return err_; }
+  auto error() & -> E& { return err_; }
+  auto error() const&& -> E const&& { return std::move(err_); }
+  auto error() && -> E&& { return std::move(err_); }
+  
+  const char* what() const noexcept override {
+    return "bad expected access";
+  }
+  
+ private:
+  E err_;
+};
+
 template <class E>
 class unexpected {
  public:
@@ -258,7 +277,7 @@ class expected {
   std::variant<T, E> storage_;
 
   [[noreturn]] void throw_bad_expected_access() const {
-    throw std::runtime_error("bad expected access");
+    throw bad_expected_access<E>(error());
   }
 };
 
@@ -430,7 +449,7 @@ class expected<void, E> {
   std::variant<std::monostate, E> storage_;
 
   [[noreturn]] void throw_bad_expected_access() const {
-    throw std::runtime_error("bad expected access");
+    throw bad_expected_access<E>(error());
   }
 };
 

@@ -18,6 +18,13 @@ namespace iocoro::io {
 /// - Concurrency rules (e.g. "only one write in-flight") are defined by the Stream type.
 /// - If `async_write_some` yields 0 before the buffer is fully written, this returns
 ///   `error::broken_pipe`.
+///
+/// IMPORTANT - Buffer Lifetime:
+/// The caller is responsible for ensuring the buffer remains valid until
+/// the operation completes. If the operation is cancelled (via stop_token),
+/// the buffer must still remain valid until the coroutine yields control.
+/// Destroying the buffer while the operation is in progress results in
+/// undefined behavior (use-after-free).
 template <async_write_stream Stream>
 auto async_write(Stream& s, std::span<std::byte const> buf)
   -> awaitable<result<std::size_t>> {

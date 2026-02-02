@@ -124,8 +124,19 @@ class stream_socket_impl {
   /// Close the stream socket (best-effort, idempotent).
   ///
   /// Semantics:
+  /// - Cancels all pending operations (increments epochs to signal cancellation).
   /// - Closes the underlying fd via socket_impl_base.
   /// - Resets stream-level state so the object can be reused after a later assign/open.
+  ///
+  /// IMPORTANT - Asynchronous Close Behavior:
+  /// - close() does NOT wait for pending operations to complete.
+  /// - Pending operations may still be accessing the fd when it is closed.
+  /// - This can result in operations receiving EBADF or other errors.
+  ///
+  /// Best Practices:
+  /// - Ensure no operations are in-flight before calling close().
+  /// - Or, use stop_token to cancel operations and wait for them to complete.
+  /// - For graceful shutdown, call shutdown() before close() to signal peer.
   auto close() noexcept -> std::error_code;
 
   template <class Option>

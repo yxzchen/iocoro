@@ -1,19 +1,19 @@
 #include <iocoro/detail/socket/acceptor_impl.hpp>
 #include <iocoro/detail/socket_utils.hpp>
+#include <iocoro/detail/scope_guard.hpp>
 
 namespace iocoro::detail::socket {
 
 inline void acceptor_impl::cancel_read() noexcept {
-  accept_epoch_.fetch_add(1, std::memory_order_acq_rel);
+  accept_op_.cancel();
   base_.cancel_read();
 }
 
 inline auto acceptor_impl::close() noexcept -> std::error_code {
   {
     std::scoped_lock lk{mtx_};
-    accept_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    accept_op_.cancel();
     listening_ = false;
-    accept_active_ = false;
   }
   return base_.close();
 }
@@ -70,26 +70,19 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
     if (!listening_) {
       co_return unexpected(error::not_listening);
     }
-    if (accept_active_) {
+    if (accept_op_.active) {
       co_return unexpected(error::busy);
     }
-    accept_active_ = true;
-    my_epoch = accept_epoch_.load(std::memory_order_acquire);
+    accept_op_.active = true;
+    my_epoch = accept_op_.epoch.load(std::memory_order_acquire);
   }
 
-  // RAII guard to ensure accept_active_ is cleared on all exit paths.
-  struct accept_guard {
-    acceptor_impl* self;
-    ~accept_guard() {
-      std::scoped_lock lk{self->mtx_};
-      self->accept_active_ = false;
-    }
-  };
-  accept_guard guard{this};
+  // RAII guard to ensure accept operation is marked finished on all exit paths.
+  auto guard = detail::make_scope_exit([this] { accept_op_.finish(mtx_); });
 
   for (;;) {
     // Cancellation check to close the "cancel between accept() and wait_read_ready()" race.
-    if (!is_accept_epoch_current(my_epoch)) {
+    if (!accept_op_.is_epoch_current(my_epoch)) {
       co_return unexpected(error::operation_aborted);
     }
 
@@ -107,7 +100,7 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
 #endif
 
     if (fd >= 0) {
-      if (!is_accept_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch)) {
         (void)::close(fd);
         co_return unexpected(error::operation_aborted);
       }
@@ -119,14 +112,14 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      if (!is_accept_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
       auto ec = co_await base_.wait_read_ready();
       if (ec) {
         co_return unexpected(ec);
       }
-      if (!is_accept_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch)) {
         co_return unexpected(error::operation_aborted);
       }
       continue;

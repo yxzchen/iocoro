@@ -16,7 +16,10 @@ class scope_exit {
   auto operator=(scope_exit&& other) noexcept -> scope_exit& {
     if (this != &other) {
       if (active_) {
-        f_();
+        try {
+          f_();
+        } catch (...) {
+        }
       }
       f_ = std::move(other.f_);
       active_ = other.active_;
@@ -26,7 +29,10 @@ class scope_exit {
   }
   ~scope_exit() {
     if (active_) {
-      f_();
+      try {
+        f_();
+      } catch (...) {
+      }
     }
   }
 
