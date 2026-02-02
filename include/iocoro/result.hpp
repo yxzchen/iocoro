@@ -3,19 +3,21 @@
 #include <iocoro/expected.hpp>
 
 #include <system_error>
-#include <variant>
 
 namespace iocoro {
 
-/// Common result type for IO-style APIs.
+/// Common result type for error_code-based APIs.
 template <class T>
-using io_result = expected<T, std::error_code>;
+using result = expected<T, std::error_code>;
+
+/// Backward-compatible alias (kept for clarity in IO-heavy APIs).
+template <class T>
+using io_result = result<T>;
 
 /// Result type for void-returning operations.
-/// (iocoro::expected does not support T=void in the fallback implementation.)
-using void_result = expected<std::monostate, std::error_code>;
+using void_result = expected<void, std::error_code>;
 
-[[nodiscard]] inline auto ok() noexcept -> void_result { return std::monostate{}; }
+[[nodiscard]] inline auto ok() noexcept -> void_result { return {}; }
 [[nodiscard]] inline auto fail(std::error_code ec) noexcept -> void_result { return unexpected(ec); }
 
 }  // namespace iocoro
