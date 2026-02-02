@@ -86,12 +86,15 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;
 
-  // Execute a reactor callback on the reactor thread.
+  // Execute a function on the reactor thread (registry/backend ownership thread).
   //
-  // If already on the reactor thread, the callback executes inline.
-  // Otherwise, it is enqueued via post() and will execute when the event loop runs.
-  void schedule_reactor_callback(unique_function<void()> f) noexcept;
-  void schedule_abort(reactor_op_ptr op, std::error_code ec) noexcept;
+  // - If already on the reactor thread, executes inline (even if stopped).
+  // - Otherwise, enqueues via post() and executes on the next event-loop iteration.
+  // - In shared-owned mode, pins lifetime during execution via weak_from_this().
+  void dispatch_reactor(unique_function<void(io_context_impl&)> f) noexcept;
+
+  // Abort a reactor op. Must only be called on the reactor thread.
+  static void abort_op(reactor_op_ptr op, std::error_code ec) noexcept;
 
   void apply_fd_interest(int fd, fd_interest interest);
 
