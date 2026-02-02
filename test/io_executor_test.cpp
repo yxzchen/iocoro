@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/any_io_executor.hpp>
+#include <iocoro/any_executor.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/strand.hpp>
 
 #include <atomic>
 #include <vector>
@@ -66,4 +68,36 @@ TEST(io_executor_test, dispatch_runs_inline_on_context_thread) {
   EXPECT_EQ(order[0], 1);
   EXPECT_EQ(order[1], 2);
   EXPECT_EQ(order[2], 3);
+}
+
+TEST(io_executor_test, any_io_executor_any_executor_roundtrip_preserves_equality) {
+  iocoro::io_context ctx;
+  auto ioex = ctx.get_executor();
+
+  // any_io_executor <-> any_executor alternating round-trips.
+  iocoro::any_executor e0 = iocoro::any_executor{ioex};
+  iocoro::any_io_executor i1{e0};
+  iocoro::any_executor e1{i1};
+  iocoro::any_io_executor i2{e1};
+  iocoro::any_executor e2{i2};
+
+  EXPECT_EQ(e0, e1);
+  EXPECT_EQ(e0, e2);
+  EXPECT_EQ(i1, i2);
+}
+
+TEST(io_executor_test, any_io_executor_any_executor_roundtrip_preserves_equality_for_strand) {
+  iocoro::io_context ctx;
+  auto base = ctx.get_executor().as_any_executor();
+
+  auto strand = iocoro::make_strand(base);
+  iocoro::any_executor e0{strand};
+  iocoro::any_io_executor i1{e0};
+  iocoro::any_executor e1{i1};
+  iocoro::any_io_executor i2{e1};
+  iocoro::any_executor e2{i2};
+
+  EXPECT_EQ(e0, e1);
+  EXPECT_EQ(e0, e2);
+  EXPECT_EQ(i1, i2);
 }

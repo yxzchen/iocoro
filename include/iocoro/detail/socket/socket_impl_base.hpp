@@ -2,7 +2,6 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/any_io_executor.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>

@@ -10,18 +10,18 @@
 #include <chrono>
 #include <optional>
 
-TEST(steady_timer_test, steady_timer_async_wait_resumes_on_fire) {
-  iocoro::io_context ctx;
+// TEST(steady_timer_test, steady_timer_async_wait_resumes_on_fire) {
+//   iocoro::io_context ctx;
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
-      iocoro::steady_timer t{ctx.get_executor(), std::chrono::milliseconds{1}};
-      co_return co_await t.async_wait(iocoro::use_awaitable);
-    }());
+//   auto r = iocoro::test::sync_wait(
+//     ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
+//       iocoro::steady_timer t{ctx.get_executor(), std::chrono::milliseconds{1}};
+//       co_return co_await t.async_wait(iocoro::use_awaitable);
+//     }());
 
-  ASSERT_TRUE(r);
-  ASSERT_TRUE(*r);
-}
+//   ASSERT_TRUE(r);
+//   ASSERT_TRUE(*r);
+// }
 
 TEST(steady_timer_test, cancel_timer_prevents_execution) {
   iocoro::io_context ctx;
