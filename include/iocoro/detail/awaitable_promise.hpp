@@ -4,6 +4,7 @@
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_cast.hpp>
+#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/this_coro.hpp>
 
@@ -43,7 +44,7 @@ struct awaitable_promise_base {
         // If detached, the coroutine owns its own lifetime.
         if (self->detached_) {
           // Detached coroutines must not have a continuation.
-          self->ex_.post([h]() mutable { h.destroy(); });
+          h.destroy();
           return;
         }
 
@@ -108,22 +109,10 @@ struct awaitable_promise_base {
   void schedule_resume(std::coroutine_handle<> h) noexcept {
     IOCORO_ENSURE(ex_, "awaitable_promise: schedule_resume() requires executor");
 
-    constexpr std::uint32_t max_inline_depth = 64;
-    thread_local std::uint32_t inline_depth = 0;
-
-    if (inline_depth >= max_inline_depth) {
-      ex_.post([h]() mutable { h.resume(); });
-      return;
-    }
-
-    struct inline_guard {
-      std::uint32_t& depth;
-      ~inline_guard() { --depth; }
-    };
-
-    ++inline_depth;
-    inline_guard guard{inline_depth};
-    ex_.dispatch([h]() mutable { h.resume(); });
+    // Always post to avoid re-entrancy where dispatch() could resume inline and
+    // allow cross-thread destruction of coroutine frames while still on-stack.
+    auto ex = ex_;
+    ex.post([h]() mutable { h.resume(); });
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
@@ -167,14 +156,14 @@ struct awaitable_promise_base {
       any_executor target;
 
       bool await_ready() noexcept {
-        // switch_to never short-circuits based on "current == target".
-        // The adapter does not inspect TLS or compare executors; it always schedules.
-        return false;
+        IOCORO_ENSURE(target, "this_coro::switch_to: empty executor");
+
+        // Fast-path: if we're already running under the target executor, continue inline.
+        // This avoids an unnecessary post() and keeps switch_to cheap for same-executor hops.
+        return detail::get_current_executor() == target;
       }
 
       auto await_suspend(std::coroutine_handle<> h) noexcept -> bool {
-        IOCORO_ENSURE(target, "this_coro::switch_to: empty executor");
-
         self->ex_ = std::move(target);
         self->schedule_resume(h);
         return true;

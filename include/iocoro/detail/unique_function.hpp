@@ -106,7 +106,9 @@ class unique_function<R(Args...)> {
 
   static constexpr std::size_t inline_size = 3 * sizeof(void*);
   static constexpr std::size_t inline_align = alignof(std::max_align_t);
-  using inline_storage = alignas(inline_align) std::byte[inline_size];
+  struct alignas(inline_align) inline_storage {
+    std::byte data[inline_size];
+  };
 
   template <typename F>
   static constexpr bool fits_inline =
@@ -150,7 +152,7 @@ class unique_function<R(Args...)> {
     other.is_inline_ = false;
   }
 
-  auto storage_ptr() noexcept -> void* { return static_cast<void*>(storage_); }
+  auto storage_ptr() noexcept -> void* { return static_cast<void*>(storage_.data); }
 
   inline_storage storage_{};
   void* ptr_{};

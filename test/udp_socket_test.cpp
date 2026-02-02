@@ -12,10 +12,10 @@ TEST(udp_socket_test, basic_send_receive) {
   iocoro::ip::udp::socket s1{ctx};
   iocoro::ip::udp::socket s2{ctx};
 
-  auto ec = s1.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
-  ASSERT_FALSE(ec) << ec.message();
-  ec = s2.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
-  ASSERT_FALSE(ec) << ec.message();
+  auto r1 = s1.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(r1) << r1.error().message();
+  auto r2 = s2.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(r2) << r2.error().message();
 
   auto ep2 = s2.local_endpoint();
   ASSERT_TRUE(ep2);
@@ -50,10 +50,10 @@ TEST(udp_socket_test, send_empty_buffer_returns_zero) {
   iocoro::ip::udp::socket s1{ctx};
   iocoro::ip::udp::socket s2{ctx};
 
-  auto ec = s1.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
-  ASSERT_FALSE(ec) << ec.message();
-  ec = s2.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
-  ASSERT_FALSE(ec) << ec.message();
+  auto r1 = s1.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(r1) << r1.error().message();
+  auto r2 = s2.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(r2) << r2.error().message();
 
   auto ep2 = s2.local_endpoint();
   ASSERT_TRUE(ep2);
@@ -73,8 +73,8 @@ TEST(udp_socket_test, receive_empty_buffer_returns_invalid_argument) {
   iocoro::io_context ctx;
   iocoro::ip::udp::socket s1{ctx};
 
-  auto ec = s1.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
-  ASSERT_FALSE(ec) << ec.message();
+  auto r1 = s1.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(r1) << r1.error().message();
 
   auto r = iocoro::test::sync_wait(
     ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {

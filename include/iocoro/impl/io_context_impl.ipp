@@ -135,26 +135,32 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
 }
 
 inline void io_context_impl::schedule_reactor_callback(unique_function<void()> f) noexcept {
-  // If the event loop is not active, there is no reactor thread to process
-  // posted callbacks. Execute inline to avoid leaking callback ownership.
-  if (!running_.load(std::memory_order_acquire)) {
-    if (f) {
-      f();
-    }
-    return;
-  }
-
-  // If we are already on the reactor thread, execute inline to preserve
-  // relative ordering and reduce latency.
+  // Reactor invariant: completion/abort callbacks must execute on the reactor thread.
+  // If the loop is not running yet, we still enqueue so that the next run()/run_one()
+  // establishes the reactor thread and drains the callback there.
   if (running_in_this_thread()) {
     if (f) {
       f();
     }
     return;
   }
-
-  // Otherwise, hand off to the reactor thread.
-  post(std::move(f));
+  // Avoid creating a self-owning cycle via posted callbacks; only execute the
+  // callback if the io_context_impl is still alive at drain time.
+  auto weak = weak_from_this();
+  if (weak.lock()) {
+    post([weak = std::move(weak), f = std::move(f)]() mutable noexcept {
+      auto self = weak.lock();
+      if (!self) {
+        return;
+      }
+      if (f) {
+        f();
+      }
+    });
+  } else {
+    // Stack-allocated io_context_impl (tests): no shared ownership available.
+    post(std::move(f));
+  }
 }
 
 inline void io_context_impl::schedule_abort(reactor_op_ptr op, std::error_code ec) noexcept {
@@ -168,21 +174,35 @@ inline void io_context_impl::schedule_abort(reactor_op_ptr op, std::error_code e
 
 inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point expiry,
                                        reactor_op_ptr op) -> event_handle {
+  // When the event loop is active, registry/backend ownership is the reactor thread.
+  // Before the loop starts, we allow single-threaded setup on the caller thread.
+  if (running_.load(std::memory_order_acquire)) {
+    IOCORO_ENSURE(running_in_this_thread(),
+                 "io_context_impl::add_timer(): must run on io_context thread");
+  }
   auto token = timers_.add_timer(expiry, std::move(op));
   auto h = event_handle::make_timer(weak_from_this(), token.index, token.generation);
   wakeup();
   return h;
 }
 
-inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept {
-  auto res = timers_.cancel(timer_registry::timer_token{index, generation});
-  schedule_abort(std::move(res.op), error::operation_aborted);
-  if (res.cancelled) {
-    wakeup();
-  }
+inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint64_t generation) noexcept {
+  // Thread-safe entrypoint: always route cancellation to the reactor thread so that
+  // registry mutation and abort callbacks occur in a single-threaded context.
+  schedule_reactor_callback([this, index, generation]() mutable noexcept {
+    auto res = timers_.cancel(timer_registry::timer_token{index, generation});
+    schedule_abort(std::move(res.op), error::operation_aborted);
+    if (res.cancelled) {
+      wakeup();
+    }
+  });
 }
 
 inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> event_handle {
+  if (running_.load(std::memory_order_acquire)) {
+    IOCORO_ENSURE(running_in_this_thread(),
+                 "io_context_impl::register_fd_read(): must run on io_context thread");
+  }
   auto result = fd_registry_.register_read(fd, std::move(op));
   schedule_abort(std::move(result.replaced), error::operation_aborted);
   wakeup();
@@ -193,6 +213,10 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> even
 }
 
 inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> event_handle {
+  if (running_.load(std::memory_order_acquire)) {
+    IOCORO_ENSURE(running_in_this_thread(),
+                 "io_context_impl::register_fd_write(): must run on io_context thread");
+  }
   auto result = fd_registry_.register_write(fd, std::move(op));
   schedule_abort(std::move(result.replaced), error::operation_aborted);
   wakeup();
@@ -223,6 +247,10 @@ inline void io_context_impl::disarm_fd_interest(int fd) noexcept {
 }
 
 inline void io_context_impl::deregister_fd(int fd) {
+  if (running_.load(std::memory_order_acquire)) {
+    IOCORO_ENSURE(running_in_this_thread(),
+                 "io_context_impl::deregister_fd(): must run on io_context thread");
+  }
   auto removed = fd_registry_.deregister(fd);
   schedule_abort(std::move(removed.read), error::operation_aborted);
   schedule_abort(std::move(removed.write), error::operation_aborted);
@@ -231,13 +259,16 @@ inline void io_context_impl::deregister_fd(int fd) {
 
 inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,
                                              std::uint64_t token) noexcept {
-  auto result = fd_registry_.cancel(fd, kind, token);
-  if (!result.matched) {
-    return;
-  }
-
-  schedule_abort(std::move(result.removed), error::operation_aborted);
-  wakeup();
+  // Thread-safe entrypoint: always route cancellation to the reactor thread so that
+  // registry mutation and abort callbacks occur in a single-threaded context.
+  schedule_reactor_callback([this, fd, kind, token]() mutable noexcept {
+    auto result = fd_registry_.cancel(fd, kind, token);
+    if (!result.matched) {
+      return;
+    }
+    schedule_abort(std::move(result.removed), error::operation_aborted);
+    wakeup();
+  });
 }
 
 inline void io_context_impl::cancel_event(event_handle h) noexcept {

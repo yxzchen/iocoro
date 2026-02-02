@@ -26,7 +26,7 @@ struct event_handle {
   std::uint64_t token = 0;
 
   std::uint32_t timer_index = 0;
-  std::uint32_t timer_generation = 0;
+  std::uint64_t timer_generation = 0;
 
   static constexpr std::uint64_t invalid_token = 0;
 
@@ -46,7 +46,7 @@ struct event_handle {
 
   static auto make_timer(std::weak_ptr<io_context_impl> impl_,
                          std::uint32_t index,
-                         std::uint32_t generation) noexcept -> event_handle {
+                         std::uint64_t generation) noexcept -> event_handle {
     event_handle out;
     out.impl = std::move(impl_);
     out.type = kind::timer;

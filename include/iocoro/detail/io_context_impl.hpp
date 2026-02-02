@@ -50,7 +50,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   ///
   /// Thread-safe: can be called from any thread. Completion/abort callbacks
   /// and operation destruction still occur on the reactor thread.
-  void cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept;
+  void cancel_timer(std::uint32_t index, std::uint64_t generation) noexcept;
   void cancel_event(event_handle h) noexcept;
 
   auto register_fd_read(int fd, reactor_op_ptr op) -> event_handle;
@@ -86,9 +86,10 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;
 
-  // Execute a reactor callback either inline (if safe) or by posting it onto
-  // the reactor thread. When the event loop is not running, callbacks execute
-  // inline on the caller thread to avoid leaking queued callbacks.
+  // Execute a reactor callback on the reactor thread.
+  //
+  // If already on the reactor thread, the callback executes inline.
+  // Otherwise, it is enqueued via post() and will execute when the event loop runs.
   void schedule_reactor_callback(unique_function<void()> f) noexcept;
   void schedule_abort(reactor_op_ptr op, std::error_code ec) noexcept;
 

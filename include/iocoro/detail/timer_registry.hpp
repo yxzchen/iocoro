@@ -24,7 +24,7 @@ class timer_registry {
  public:
   struct timer_token {
     std::uint32_t index = 0;
-    std::uint32_t generation = 0;
+    std::uint64_t generation = 0;
   };
 
   struct cancel_result {
@@ -42,7 +42,7 @@ class timer_registry {
   struct timer_node {
     std::chrono::steady_clock::time_point expiry{};
     reactor_op_ptr op{};
-    std::uint32_t generation = 1;
+    std::uint64_t generation = 1;
     timer_state state{timer_state::pending};
   };
 

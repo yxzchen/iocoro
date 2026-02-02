@@ -7,6 +7,7 @@
 #include "test_util.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -26,8 +27,8 @@ TEST(local_stream_test, accept_and_exchange_data) {
   iocoro::io_context ctx;
   iocoro::local::stream::acceptor acc{ctx};
 
-  auto ec = acc.listen(*ep);
-  ASSERT_FALSE(ec) << ec.message();
+  auto lr = acc.listen(*ep);
+  ASSERT_TRUE(lr) << lr.error().message();
 
   std::thread client([path] {
     int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
@@ -37,7 +38,15 @@ TEST(local_stream_test, accept_and_exchange_data) {
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    bool connected = false;
+    for (int i = 0; i < 200; ++i) {
+      if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
+        connected = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    if (!connected) {
       (void)::close(fd);
       return;
     }

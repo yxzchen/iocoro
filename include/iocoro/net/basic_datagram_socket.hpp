@@ -57,29 +57,35 @@ class basic_datagram_socket {
   /// Bind the socket to a local endpoint.
   /// This opens the socket if not already open.
   /// Must be called before receiving data.
-  auto bind(endpoint_type const& local_ep) -> std::error_code {
+  auto bind(endpoint_type const& local_ep) -> result<void> {
     // Open if not already open.
     if (!handle_.impl().is_open()) {
       auto ec = handle_.impl().open(local_ep.family(), Protocol::type(), Protocol::protocol());
       if (ec) {
-        return ec;
+        return fail(ec);
       }
     }
-    return handle_.impl().bind(local_ep.data(), local_ep.size());
+    if (auto ec = handle_.impl().bind(local_ep.data(), local_ep.size())) {
+      return fail(ec);
+    }
+    return ok();
   }
 
   /// Connect the socket to a remote endpoint.
   /// This opens the socket if not already open and fixes the remote peer.
   /// After connecting, only send_to() to the connected endpoint is allowed.
-  auto connect(endpoint_type const& remote_ep) -> std::error_code {
+  auto connect(endpoint_type const& remote_ep) -> result<void> {
     // Open if not already open.
     if (!handle_.impl().is_open()) {
       auto ec = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
       if (ec) {
-        return ec;
+        return fail(ec);
       }
     }
-    return handle_.impl().connect(remote_ep.data(), remote_ep.size());
+    if (auto ec = handle_.impl().connect(remote_ep.data(), remote_ep.size())) {
+      return fail(ec);
+    }
+    return ok();
   }
 
   /// Send a datagram to the specified destination.
@@ -140,7 +146,12 @@ class basic_datagram_socket {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  auto close() noexcept -> std::error_code { return handle_.close(); }
+  auto close() noexcept -> result<void> {
+    if (auto ec = handle_.close()) {
+      return fail(ec);
+    }
+    return ok();
+  }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }
@@ -148,13 +159,19 @@ class basic_datagram_socket {
   void cancel_write() noexcept { handle_.cancel_write(); }
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
-    return handle_.set_option(opt);
+  auto set_option(Option const& opt) -> result<void> {
+    if (auto ec = handle_.set_option(opt)) {
+      return fail(ec);
+    }
+    return ok();
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
-    return handle_.get_option(opt);
+  auto get_option(Option& opt) -> result<void> {
+    if (auto ec = handle_.get_option(opt)) {
+      return fail(ec);
+    }
+    return ok();
   }
 
  private:

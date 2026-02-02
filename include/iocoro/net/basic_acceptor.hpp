@@ -54,7 +54,7 @@ class basic_acceptor {
   /// Open + bind + listen in one step.
   ///
   /// This is the recommended user-facing entry point for acceptors.
-  auto listen(endpoint const& ep, int backlog = 0) -> std::error_code {
+  auto listen(endpoint const& ep, int backlog = 0) -> result<void> {
     return listen(ep, backlog, [](basic_acceptor&) {});
   }
 
@@ -64,17 +64,20 @@ class basic_acceptor {
   /// This enables pre-bind socket options like SO_REUSEADDR.
   template <class Configure>
     requires std::invocable<Configure, basic_acceptor&>
-  auto listen(endpoint const& ep, int backlog, Configure&& configure) -> std::error_code {
+  auto listen(endpoint const& ep, int backlog, Configure&& configure) -> result<void> {
     if (!is_open()) {
       if (auto ec = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol())) {
-        return ec;
+        return fail(ec);
       }
     }
     std::invoke(std::forward<Configure>(configure), *this);
     if (auto ec = handle_.impl().bind(ep.data(), ep.size())) {
-      return ec;
+      return fail(ec);
     }
-    return handle_.impl().listen(backlog);
+    if (auto ec = handle_.impl().listen(backlog)) {
+      return fail(ec);
+    }
+    return ok();
   }
 
   auto local_endpoint() const -> result<endpoint> {
@@ -92,8 +95,9 @@ class basic_acceptor {
       co_return unexpected(r.error());
     }
     socket s{handle_.get_executor()};
-    if (auto ec = s.assign(*r)) {
-      co_return unexpected(ec);
+    auto ar = s.assign(*r);
+    if (!ar) {
+      co_return unexpected(ar.error());
     }
     co_return s;
   }
@@ -102,20 +106,31 @@ class basic_acceptor {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  auto close() noexcept -> std::error_code { return handle_.close(); }
+  auto close() noexcept -> result<void> {
+    if (auto ec = handle_.close()) {
+      return fail(ec);
+    }
+    return ok();
+  }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }
   void cancel_read() noexcept { handle_.cancel_read(); }
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
-    return handle_.set_option(opt);
+  auto set_option(Option const& opt) -> result<void> {
+    if (auto ec = handle_.set_option(opt)) {
+      return fail(ec);
+    }
+    return ok();
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
-    return handle_.get_option(opt);
+  auto get_option(Option& opt) -> result<void> {
+    if (auto ec = handle_.get_option(opt)) {
+      return fail(ec);
+    }
+    return ok();
   }
 
  private:

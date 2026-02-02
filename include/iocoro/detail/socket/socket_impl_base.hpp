@@ -7,6 +7,7 @@
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/any_executor.hpp>
+#include <iocoro/this_coro.hpp>
 #include <iocoro/socket_option.hpp>
 
 #include <atomic>
@@ -200,12 +201,17 @@ class socket_impl_base {
     if (!fh) {
       co_return error::not_open;
     }
-    co_return co_await detail::operation_awaiter{
+
+    auto orig_ex = co_await this_coro::executor;
+    co_await this_coro::switch_to(ex_);
+    auto ec = co_await detail::operation_awaiter{
       [this, fh](detail::reactor_op_ptr rop) mutable {
         auto h = ctx_impl_->register_fd_read(fh.fd, std::move(rop));
         set_read_handle(fh, h);
         return h;
       }};
+    co_await this_coro::switch_to(orig_ex);
+    co_return ec;
   }
 
   /// Wait until the native fd becomes writable (write readiness).
@@ -214,12 +220,17 @@ class socket_impl_base {
     if (!fh) {
       co_return error::not_open;
     }
-    co_return co_await detail::operation_awaiter{
+
+    auto orig_ex = co_await this_coro::executor;
+    co_await this_coro::switch_to(ex_);
+    auto ec = co_await detail::operation_awaiter{
       [this, fh](detail::reactor_op_ptr rop) mutable {
         auto h = ctx_impl_->register_fd_write(fh.fd, std::move(rop));
         set_write_handle(fh, h);
         return h;
       }};
+    co_await this_coro::switch_to(orig_ex);
+    co_return ec;
   }
 
  private:

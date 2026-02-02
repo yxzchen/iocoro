@@ -243,7 +243,9 @@ class any_executor {
   // Larger or more strictly-aligned executors fall back to heap storage.
   static constexpr std::size_t inline_size = 3 * sizeof(void*);
   static constexpr std::size_t inline_align = alignof(std::max_align_t);
-  using inline_storage = alignas(inline_align) std::byte[inline_size];
+  struct alignas(inline_align) inline_storage {
+    std::byte data[inline_size];
+  };
 
   template <class Ex>
   static constexpr bool fits_inline =
@@ -316,7 +318,7 @@ class any_executor {
     other.is_inline_ = false;
   }
 
-  auto storage_ptr() noexcept -> void* { return static_cast<void*>(inline_storage_); }
+  auto storage_ptr() noexcept -> void* { return static_cast<void*>(inline_storage_.data); }
 
   template <class T>
   auto target() const noexcept -> T const* {

@@ -67,12 +67,12 @@ class basic_stream_socket {
 
   auto async_read_some(std::span<std::byte> buffer)
     -> awaitable<result<std::size_t>> {
-    co_return co_await handle_.impl().async_read_some(buffer);
+    return handle_.impl().async_read_some(buffer);
   }
 
   auto async_write_some(std::span<std::byte const> buffer)
     -> awaitable<result<std::size_t>> {
-    co_return co_await handle_.impl().async_write_some(buffer);
+    return handle_.impl().async_write_some(buffer);
   }
 
   auto local_endpoint() const -> result<endpoint> {
@@ -90,7 +90,12 @@ class basic_stream_socket {
     return ::iocoro::detail::socket::get_remote_endpoint<endpoint>(fd);
   }
 
-  auto shutdown(shutdown_type what) -> std::error_code { return handle_.impl().shutdown(what); }
+  auto shutdown(shutdown_type what) -> result<void> {
+    if (auto ec = handle_.impl().shutdown(what)) {
+      return fail(ec);
+    }
+    return ok();
+  }
 
   auto is_connected() const noexcept -> bool { return handle_.impl().is_connected(); }
 
@@ -98,7 +103,12 @@ class basic_stream_socket {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  auto close() noexcept -> std::error_code { return handle_.close(); }
+  auto close() noexcept -> result<void> {
+    if (auto ec = handle_.close()) {
+      return fail(ec);
+    }
+    return ok();
+  }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }
@@ -106,13 +116,19 @@ class basic_stream_socket {
   void cancel_write() noexcept { handle_.cancel_write(); }
 
   template <class Option>
-  auto set_option(Option const& opt) -> std::error_code {
-    return handle_.set_option(opt);
+  auto set_option(Option const& opt) -> result<void> {
+    if (auto ec = handle_.set_option(opt)) {
+      return fail(ec);
+    }
+    return ok();
   }
 
   template <class Option>
-  auto get_option(Option& opt) -> std::error_code {
-    return handle_.get_option(opt);
+  auto get_option(Option& opt) -> result<void> {
+    if (auto ec = handle_.get_option(opt)) {
+      return fail(ec);
+    }
+    return ok();
   }
 
  private:
@@ -120,7 +136,12 @@ class basic_stream_socket {
   friend class basic_acceptor;
 
   // Internal hook for acceptors: adopt a connected fd from accept().
-  auto assign(int fd) -> std::error_code { return handle_.impl().assign(fd); }
+  auto assign(int fd) -> result<void> {
+    if (auto ec = handle_.impl().assign(fd)) {
+      return fail(ec);
+    }
+    return ok();
+  }
 
   handle_type handle_;
 };

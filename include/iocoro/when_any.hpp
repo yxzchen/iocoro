@@ -130,8 +130,8 @@ auto when_any(awaitable<Ts>... tasks)
   IOCORO_ENSURE(fallback_ex, "when_any: requires a bound executor");
 
   auto st = std::make_shared<detail::when_any_variadic_state<Ts...>>();
-  detail::when_any_start_variadic<Ts...>(fallback_ex, st,
-                                         std::tuple<awaitable<Ts>...>{std::move(tasks)...},
+  auto tasks_tuple = std::tuple<awaitable<Ts>...>{std::move(tasks)...};
+  detail::when_any_start_variadic<Ts...>(fallback_ex, st, std::move(tasks_tuple),
                                          std::index_sequence_for<Ts...>{});
 
   co_await detail::await_when(st);

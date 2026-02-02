@@ -7,6 +7,7 @@
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/result.hpp>
+#include <iocoro/this_coro.hpp>
 #include <chrono>
 #include <cstddef>
 #include <system_error>
@@ -26,11 +27,13 @@ class steady_timer {
   using duration = clock::duration;
 
   explicit steady_timer(any_io_executor ex) noexcept
-      : ctx_impl_(ex.io_context_ptr()), expiry_(clock::now()) {}
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now()) {}
   explicit steady_timer(any_io_executor ex, time_point at) noexcept
-      : ctx_impl_(ex.io_context_ptr()), expiry_(at) {}
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(at) {}
   explicit steady_timer(any_io_executor ex, duration after) noexcept
-      : ctx_impl_(ex.io_context_ptr()), expiry_(clock::now() + after) {}
+      : ex_(std::move(ex)),
+        ctx_impl_(ex_.io_context_ptr()),
+        expiry_(clock::now() + after) {}
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
@@ -59,10 +62,16 @@ class steady_timer {
   /// - `ok()` on successful timer expiry.
   auto async_wait(use_awaitable_t) -> awaitable<result<void>> {
     auto* timer = this;
+    // Ensure timer registration runs on the reactor thread.
+    // If we're already on the reactor thread, avoid an extra scheduling hop
+    // (important for run_one()-driven tests and deterministic cancel()).
+    auto orig_ex = co_await this_coro::executor;
+    co_await this_coro::switch_to(ex_);
     auto ec = co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) {
         return timer->register_timer(std::move(rop));
       }};
+    co_await this_coro::switch_to(orig_ex);
     if (ec) {
       co_return fail(ec);
     }
@@ -81,10 +90,6 @@ class steady_timer {
 
  private:
   auto register_timer(detail::reactor_op_ptr rop) noexcept -> detail::io_context_impl::event_handle {
-    if (!ctx_impl_) {
-      return detail::io_context_impl::event_handle::invalid_handle();
-    }
-    
     // CRITICAL: Hold the mutex during the entire registration process to prevent
     // race conditions with cancel(). Without this, cancel() could be called after
     // add_timer() but before setting handle, resulting in a handle leak.
@@ -106,6 +111,7 @@ class steady_timer {
     return std::exchange(handle_, detail::io_context_impl::event_handle::invalid_handle());
   }
 
+  any_io_executor ex_{};
   detail::io_context_impl* ctx_impl_;
   time_point expiry_{clock::now()};
   mutable std::mutex mtx_{};

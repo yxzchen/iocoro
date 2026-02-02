@@ -18,8 +18,8 @@ TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
   iocoro::ip::tcp::acceptor acc{ctx};
 
   iocoro::ip::tcp::endpoint listen_ep{iocoro::ip::address_v4::loopback(), 0};
-  auto ec = acc.listen(listen_ep);
-  ASSERT_FALSE(ec) << ec.message();
+  auto lr = acc.listen(listen_ep);
+  ASSERT_TRUE(lr) << lr.error().message();
 
   auto local_ep = acc.local_endpoint();
   ASSERT_TRUE(local_ep);
@@ -64,8 +64,8 @@ TEST(tcp_acceptor_test, accepts_multiple_connections_sequentially) {
   iocoro::ip::tcp::acceptor acc{ctx};
 
   iocoro::ip::tcp::endpoint listen_ep{iocoro::ip::address_v4::loopback(), 0};
-  auto ec = acc.listen(listen_ep);
-  ASSERT_FALSE(ec) << ec.message();
+  auto lr = acc.listen(listen_ep);
+  ASSERT_TRUE(lr) << lr.error().message();
 
   auto local_ep = acc.local_endpoint();
   ASSERT_TRUE(local_ep);

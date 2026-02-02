@@ -23,10 +23,10 @@ TEST(local_dgram_test, send_and_receive_between_endpoints) {
   iocoro::local::dgram::socket s1{ctx};
   iocoro::local::dgram::socket s2{ctx};
 
-  auto ec = s1.bind(*ep1);
-  ASSERT_FALSE(ec) << ec.message();
-  ec = s2.bind(*ep2);
-  ASSERT_FALSE(ec) << ec.message();
+  auto r1 = s1.bind(*ep1);
+  ASSERT_TRUE(r1) << r1.error().message();
+  auto r2 = s2.bind(*ep2);
+  ASSERT_TRUE(r2) << r2.error().message();
 
   auto r = iocoro::test::sync_wait(
     ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
