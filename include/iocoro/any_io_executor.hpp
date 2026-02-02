@@ -32,23 +32,8 @@ class any_io_executor {
   template <executor Ex>
   explicit any_io_executor(Ex ex) noexcept : any_io_executor(any_executor{std::move(ex)}) {}
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void post(F&& f) const noexcept {
-    if (!storage_) {
-      return;
-    }
-    storage_.post(detail::unique_function<void()>{std::forward<F>(f)});
-  }
-
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void dispatch(F&& f) const noexcept {
-    if (!storage_) {
-      return;
-    }
-    storage_.dispatch(detail::unique_function<void()>{std::forward<F>(f)});
-  }
+  void post(detail::unique_function<void()> f) const noexcept { storage_.post(std::move(f)); }
+  void dispatch(detail::unique_function<void()> f) const noexcept { storage_.dispatch(std::move(f)); }
 
   auto capabilities() const noexcept -> executor_capability { return storage_.capabilities(); }
 

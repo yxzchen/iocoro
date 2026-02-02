@@ -41,6 +41,7 @@ struct awaitable_promise_base {
       bool await_ready() noexcept { return false; }
 
       void await_suspend(std::coroutine_handle<> h) noexcept {
+        self->parent_stop_cb_.reset();
         // If detached, the coroutine owns its own lifetime.
         if (self->detached_) {
           // Detached coroutines must not have a continuation.
@@ -103,16 +104,8 @@ struct awaitable_promise_base {
     if (!continuation_) {
       return;
     }
-    schedule_resume(continuation_);
-  }
-
-  void schedule_resume(std::coroutine_handle<> h) noexcept {
-    IOCORO_ENSURE(ex_, "awaitable_promise: schedule_resume() requires executor");
-
-    // Always post to avoid re-entrancy where dispatch() could resume inline and
-    // allow cross-thread destruction of coroutine frames while still on-stack.
-    auto ex = ex_;
-    ex.post([h]() mutable { h.resume(); });
+    auto h = continuation_;
+    ex_.post([h]() mutable { h.resume(); });
   }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
@@ -160,12 +153,16 @@ struct awaitable_promise_base {
 
         // Fast-path: if we're already running under the target executor, continue inline.
         // This avoids an unnecessary post() and keeps switch_to cheap for same-executor hops.
-        return detail::get_current_executor() == target;
+        if (detail::get_current_executor() == target) {
+          self->ex_ = target;
+          return true;
+        }
+        return false;
       }
 
       auto await_suspend(std::coroutine_handle<> h) noexcept -> bool {
-        self->ex_ = std::move(target);
-        self->schedule_resume(h);
+        self->ex_ = target;
+        target.post([h]() mutable { h.resume(); });
         return true;
       }
 

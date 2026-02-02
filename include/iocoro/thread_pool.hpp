@@ -96,14 +96,12 @@ class thread_pool::executor_type {
   executor_type(executor_type&&) noexcept = default;
   auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void post(F&& f) const noexcept {
+  void post(detail::unique_function<void()> f) const noexcept {
     if (!pool_) {
       return;
     }
 
-    auto task = detail::unique_function<void()>{[ex = *this, fn = std::forward<F>(f)]() mutable {
+    auto task = detail::unique_function<void()>{[ex = *this, fn = std::move(f)]() mutable {
       detail::executor_guard g{any_executor{ex}};
       fn();
     }};
@@ -117,9 +115,7 @@ class thread_pool::executor_type {
     pool_->cv_.notify_one();
   }
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void dispatch(F&& f) const noexcept {
+  void dispatch(detail::unique_function<void()> f) const noexcept {
     if (!pool_) {
       return;
     }
@@ -133,7 +129,7 @@ class thread_pool::executor_type {
       }
     }
 
-    post(std::forward<F>(f));
+    post(std::move(f));
   }
 
   auto stopped() const noexcept -> bool {

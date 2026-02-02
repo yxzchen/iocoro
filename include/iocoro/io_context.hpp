@@ -32,21 +32,17 @@ class io_context {
     executor_type(executor_type&&) noexcept = default;
     auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
-    template <class F>
-      requires std::is_invocable_v<F&>
-    void post(F&& f) const noexcept {
-      ensure_impl().post([ex = *this, f = std::move(f)]() mutable {
+    void post(detail::unique_function<void()> f) const noexcept {
+      ensure_impl().post([ex = *this, fn = std::move(f)]() mutable {
         detail::executor_guard g{any_executor{ex}};
-        f();
+        fn();
       });
     }
 
-    template <class F>
-      requires std::is_invocable_v<F&>
-    void dispatch(F&& f) const noexcept {
-      ensure_impl().dispatch([ex = *this, f = std::move(f)]() mutable {
+    void dispatch(detail::unique_function<void()> f) const noexcept {
+      ensure_impl().dispatch([ex = *this, fn = std::move(f)]() mutable {
         detail::executor_guard g{any_executor{ex}};
-        f();
+        fn();
       });
     }
 

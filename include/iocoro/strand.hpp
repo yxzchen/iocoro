@@ -32,14 +32,11 @@ class strand_executor {
   template <executor Ex>
   explicit strand_executor(Ex ex) : strand_executor(any_executor{std::move(ex)}) {}
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void post(F&& f) const noexcept {
+  void post(detail::unique_function<void()> f) const noexcept {
     IOCORO_ENSURE(state_, "strand_executor::post: empty state");
     IOCORO_ENSURE(state_->base, "strand_executor::post: empty base executor");
 
-    auto fn = detail::unique_function<void()>{std::forward<F>(f)};
-    bool const should_schedule = state_->enqueue(std::move(fn));
+    bool const should_schedule = state_->enqueue(std::move(f));
 
     if (should_schedule) {
       // Schedule a drain on the underlying executor.
@@ -48,9 +45,7 @@ class strand_executor {
     }
   }
 
-  template <class F>
-    requires std::is_invocable_v<F&>
-  void dispatch(F&& f) const noexcept {
+  void dispatch(detail::unique_function<void()> f) const noexcept {
     IOCORO_ENSURE(state_, "strand_executor::dispatch: empty state");
     IOCORO_ENSURE(state_->base, "strand_executor::dispatch: empty base executor");
 
@@ -63,8 +58,7 @@ class strand_executor {
       return;
     }
 
-    auto fn = detail::unique_function<void()>{std::forward<F>(f)};
-    bool const should_schedule = state_->enqueue(std::move(fn));
+    bool const should_schedule = state_->enqueue(std::move(f));
     if (should_schedule) {
       auto st = state_;
       state_->base.dispatch([st]() noexcept { strand_executor::drain(std::move(st)); });
