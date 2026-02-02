@@ -82,6 +82,12 @@ class posted_queue {
     return !queue_.empty();
   }
 
+  // True iff there are queued posted tasks (does NOT consider work_guard).
+  auto has_pending_tasks() const -> bool {
+    std::scoped_lock lk{mtx_};
+    return !queue_.empty();
+  }
+
  private:
   mutable std::mutex mtx_{};
   std::queue<unique_function<void()>> queue_{};

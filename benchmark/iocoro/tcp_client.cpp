@@ -23,7 +23,7 @@ auto example(iocoro::io_context& ctx, tcp::endpoint ep, std::string msg, int n)
   -> iocoro::awaitable<void> {
   try {
     iocoro::ip::tcp::socket socket{ctx};
-    if (auto ec = co_await socket.async_connect(ep)) {
+    if (!co_await socket.async_connect(ep)) {
       throw std::runtime_error("connect failed");
     }
 

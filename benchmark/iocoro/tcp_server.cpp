@@ -43,7 +43,7 @@ auto listener(iocoro::io_context& ctx) -> iocoro::awaitable<void> {
   auto ex = co_await iocoro::this_coro::executor;
   tcp::acceptor acceptor{ctx};
   auto ep = tcp::endpoint{iocoro::ip::address_v4::loopback(), 55555};
-  if (auto ec = acceptor.listen(ep)) {
+  if (!acceptor.listen(ep)) {
     throw std::runtime_error("listen failed");
   }
   std::cout << "iocoro_tcp_server listening on " << ep.to_string() << "\n";

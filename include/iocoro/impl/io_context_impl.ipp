@@ -60,7 +60,11 @@ inline auto io_context_impl::run() -> std::size_t {
     if (is_stopped() || !has_work()) {
       break;
     }
-    count += process_events(next_wait(std::nullopt));
+    auto wait = next_wait(std::nullopt);
+    if (posted_.has_pending_tasks()) {
+      wait = std::chrono::milliseconds{0};
+    }
+    count += process_events(wait);
   }
   return count;
 }
@@ -109,7 +113,11 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
       break;
     }
 
-    count += process_events(next_wait(deadline));
+    auto wait = next_wait(deadline);
+    if (posted_.has_pending_tasks()) {
+      wait = std::chrono::milliseconds{0};
+    }
+    count += process_events(wait);
   }
   return count;
 }
@@ -123,7 +131,9 @@ inline void io_context_impl::restart() { stopped_.store(false, std::memory_order
 
 inline void io_context_impl::post(unique_function<void()> f) {
   posted_.post(std::move(f));
-  wakeup();
+  if (!running_in_this_thread()) {
+    wakeup();
+  }
 }
 
 inline void io_context_impl::dispatch(unique_function<void()> f) {
