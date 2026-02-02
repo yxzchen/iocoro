@@ -37,6 +37,12 @@ class socket_impl_base {
  public:
   using event_handle = io_context_impl::event_handle;
 
+  struct fd_handle {
+    int fd = -1;
+    std::uint64_t gen = 0;
+    explicit operator bool() const noexcept { return fd >= 0 && gen != 0; }
+  };
+
   socket_impl_base() noexcept = delete;
   explicit socket_impl_base(any_io_executor ex) noexcept
       : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()) {
@@ -61,6 +67,16 @@ class socket_impl_base {
   /// - The atomic is used to avoid data races for lock-free reads; it does not guarantee
   ///   any consistency beyond that.
   auto native_handle() const noexcept -> int { return fd_.load(std::memory_order_acquire); }
+  auto native_handle_gen() const noexcept -> std::uint64_t {
+    return fd_gen_.load(std::memory_order_acquire);
+  }
+
+  /// Acquire a stable (fd, generation) snapshot.
+  /// The generation increments whenever the underlying fd instance changes
+  /// (open/assign/close/release).
+  auto acquire_fd_handle() const noexcept -> fd_handle {
+    return fd_handle{native_handle(), native_handle_gen()};
+  }
 
   /// Returns true if the socket is in the 'open' state and has a valid fd.
   /// Returns false during 'opening' (fd not yet assigned) and 'closed' states.
@@ -124,7 +140,7 @@ class socket_impl_base {
   void cancel_write() noexcept;
 
   /// Close the socket (best-effort, idempotent).
-  void close() noexcept;
+  auto close() noexcept -> std::error_code;
 
   auto has_pending_operations() const noexcept -> bool {
     std::scoped_lock lk{mtx_};
@@ -147,40 +163,61 @@ class socket_impl_base {
   ///
   /// Therefore, higher layers MUST enforce that, per-direction, there is at most one
   /// in-flight waiter that relies on this handle for cancellation.
-  void set_read_handle(event_handle h) noexcept {
-    std::scoped_lock lk{mtx_};
-    read_handle_ = h;
+  void set_read_handle(fd_handle fh, event_handle h) noexcept {
+    bool accept = false;
+    {
+      std::scoped_lock lk{mtx_};
+      // Only publish the handle if the fd instance hasn't changed.
+      if (state_ == fd_state::open && fh.fd == native_handle() && fh.gen == native_handle_gen()) {
+        read_handle_ = h;
+        accept = true;
+      }
+    }
+    if (!accept && h) {
+      h.cancel();
+    }
   }
 
   /// Publish the current handle for the "write readiness" waiter.
   /// See `set_read_handle()` for the ownership/contract details.
-  void set_write_handle(event_handle h) noexcept {
-    std::scoped_lock lk{mtx_};
-    write_handle_ = h;
+  void set_write_handle(fd_handle fh, event_handle h) noexcept {
+    bool accept = false;
+    {
+      std::scoped_lock lk{mtx_};
+      if (state_ == fd_state::open && fh.fd == native_handle() && fh.gen == native_handle_gen()) {
+        write_handle_ = h;
+        accept = true;
+      }
+    }
+    if (!accept && h) {
+      h.cancel();
+    }
   }
 
   /// Wait until the native fd becomes readable (read readiness).
   auto wait_read_ready() -> awaitable<std::error_code> {
-    if (native_handle() < 0) {
+    auto fh = acquire_fd_handle();
+    if (!fh) {
       co_return error::not_open;
     }
     co_return co_await detail::operation_awaiter{
-      [this](detail::reactor_op_ptr rop) {
-        auto h = ctx_impl_->register_fd_read(native_handle(), std::move(rop));
-        set_read_handle(h);
+      [this, fh](detail::reactor_op_ptr rop) mutable {
+        auto h = ctx_impl_->register_fd_read(fh.fd, std::move(rop));
+        set_read_handle(fh, h);
         return h;
       }};
   }
 
   /// Wait until the native fd becomes writable (write readiness).
   auto wait_write_ready() -> awaitable<std::error_code> {
-    if (native_handle() < 0) {
+    auto fh = acquire_fd_handle();
+    if (!fh) {
       co_return error::not_open;
     }
     co_return co_await detail::operation_awaiter{
-      [this](detail::reactor_op_ptr rop) {
-        auto h = ctx_impl_->register_fd_write(native_handle(), std::move(rop));
-        set_write_handle(h);
+      [this, fh](detail::reactor_op_ptr rop) mutable {
+        auto h = ctx_impl_->register_fd_write(fh.fd, std::move(rop));
+        set_write_handle(fh, h);
         return h;
       }};
   }
@@ -204,6 +241,9 @@ class socket_impl_base {
 
   // fd_ is written under mtx_ in lifecycle operations; native_handle() reads a race-free snapshot.
   std::atomic<int> fd_{-1};
+  // Generation counter for the currently installed fd instance.
+  // Incremented whenever the underlying fd identity changes.
+  std::atomic<std::uint64_t> fd_gen_{1};
   fd_state state_{fd_state::closed};
 
   event_handle read_handle_{};

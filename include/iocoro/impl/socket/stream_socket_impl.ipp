@@ -29,7 +29,7 @@ inline void stream_socket_impl::cancel_connect() noexcept {
   base_.cancel_write();
 }
 
-inline void stream_socket_impl::close() noexcept {
+inline auto stream_socket_impl::close() noexcept -> std::error_code {
   {
     std::scoped_lock lk{mtx_};
     read_op_.cancel();
@@ -39,7 +39,7 @@ inline void stream_socket_impl::close() noexcept {
     shutdown_ = {};
     // NOTE: do not touch active flags here; their owner is the coroutine.
   }
-  base_.close();
+  return base_.close();
 }
 
 inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> std::error_code {

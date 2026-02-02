@@ -89,7 +89,7 @@ class datagram_socket_impl {
   void cancel_write() noexcept;
 
   /// Close the datagram socket (best-effort, idempotent).
-  void close() noexcept;
+  auto close() noexcept -> std::error_code;
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {

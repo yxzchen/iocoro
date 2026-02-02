@@ -25,11 +25,11 @@ inline void thread_pool::worker_loop(thread_pool* pool, std::size_t /*index*/) {
     {
       std::unique_lock lock{pool->cv_mutex_};
       pool->cv_.wait(lock, [&] {
-        return pool->pending_.load(std::memory_order_acquire) > 0 ||
+        return !pool->queue_.empty() ||
                (pool->state_ == state_t::draining && pool->work_guard_.count() == 0);
       });
 
-      if (pool->pending_.load(std::memory_order_acquire) == 0) {
+      if (pool->queue_.empty()) {
         if (pool->state_ == state_t::draining && pool->work_guard_.count() == 0) {
           break;
         }
@@ -38,7 +38,6 @@ inline void thread_pool::worker_loop(thread_pool* pool, std::size_t /*index*/) {
 
       task = std::move(pool->queue_.front());
       pool->queue_.pop_front();
-      pool->pending_.fetch_sub(1, std::memory_order_acq_rel);
     }
 
     try {

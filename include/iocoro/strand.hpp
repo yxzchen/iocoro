@@ -114,6 +114,17 @@ class strand_executor {
       tasks.pop();
       return true;
     }
+
+    // If the queue is empty, clear active and return false.
+    // If not empty, keep active=true and return true.
+    auto keep_active_for_more() noexcept -> bool {
+      std::scoped_lock lk{m};
+      if (tasks.empty()) {
+        active = false;
+        return false;
+      }
+      return true;
+    }
   };
 
   static void drain(std::shared_ptr<state> st) noexcept {
@@ -124,14 +135,24 @@ class strand_executor {
     strand_executor ex{st};
     detail::executor_guard g{any_executor{ex}};
 
+    constexpr std::size_t max_drain_per_tick = 256;
+
     detail::unique_function<void()> fn{};
-    while (st->try_pop(fn)) {
+    std::size_t n = 0;
+    while (n < max_drain_per_tick && st->try_pop(fn)) {
       try {
         fn();
       } catch (...) {
         // Scheduling APIs are noexcept; swallow task exceptions.
       }
       fn = {};
+      ++n;
+    }
+
+    // Fairness: if more tasks remain, reschedule another drain onto the base executor.
+    if (st->keep_active_for_more()) {
+      auto again = st;
+      st->base.post([again]() noexcept { strand_executor::drain(std::move(again)); });
     }
   }
 

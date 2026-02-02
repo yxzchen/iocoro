@@ -15,7 +15,7 @@
 
 namespace iocoro::detail {
 
-class io_context_impl {
+class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
  public:
   using event_handle = detail::event_handle;
 
@@ -86,11 +86,20 @@ class io_context_impl {
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;
 
+  // Execute a reactor callback either inline (if safe) or by posting it onto
+  // the reactor thread. When the event loop is not running, callbacks execute
+  // inline on the caller thread to avoid leaking queued callbacks.
+  void schedule_reactor_callback(unique_function<void()> f) noexcept;
+  void schedule_abort(reactor_op_ptr op, std::error_code ec) noexcept;
+
   void apply_fd_interest(int fd, fd_interest interest);
 
   std::unique_ptr<backend_interface> backend_;
 
   std::atomic<bool> stopped_{false};
+  // True while a thread is inside run/run_one/run_for. This is used to reject
+  // concurrent event-loop execution for the same io_context_impl instance.
+  std::atomic<bool> running_{false};
 
   fd_registry fd_registry_{};
   timer_registry timers_{};

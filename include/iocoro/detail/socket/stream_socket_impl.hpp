@@ -126,7 +126,7 @@ class stream_socket_impl {
   /// Semantics:
   /// - Closes the underlying fd via socket_impl_base.
   /// - Resets stream-level state so the object can be reused after a later assign/open.
-  void close() noexcept;
+  auto close() noexcept -> std::error_code;
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {

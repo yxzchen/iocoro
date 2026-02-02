@@ -6,6 +6,7 @@
 // Error & result model
 #include <iocoro/error.hpp>
 #include <iocoro/expected.hpp>
+#include <iocoro/result.hpp>
 
 // Coroutine & completion model
 #include <iocoro/any_executor.hpp>

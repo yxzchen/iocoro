@@ -6,6 +6,7 @@
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/result.hpp>
 #include <chrono>
 #include <cstddef>
 #include <system_error>
@@ -55,14 +56,17 @@ class steady_timer {
   /// Wait until expiry as an awaitable.
   ///
   /// Returns:
-  /// - `std::error_code{}` on successful timer expiry.
-  auto async_wait(use_awaitable_t) -> awaitable<std::error_code> {
+  /// - `ok()` on successful timer expiry.
+  auto async_wait(use_awaitable_t) -> awaitable<void_result> {
     auto* timer = this;
     auto ec = co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) {
         return timer->register_timer(std::move(rop));
       }};
-    co_return ec;
+    if (ec) {
+      co_return fail(ec);
+    }
+    co_return ok();
   }
 
   /// Cancel the pending timer operation.

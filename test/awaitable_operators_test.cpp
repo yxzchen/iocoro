@@ -15,15 +15,16 @@ using namespace std::chrono_literals;
 auto wait_timer_value(iocoro::steady_timer& timer,
                       std::shared_ptr<std::optional<std::error_code>> out,
                       int value) -> iocoro::awaitable<int> {
-  auto ec = co_await timer.async_wait(iocoro::use_awaitable);
-  *out = ec;
+  auto r = co_await timer.async_wait(iocoro::use_awaitable);
+  *out = r ? std::error_code{} : r.error();
   co_return value;
 }
 
 auto wait_timer_ec(iocoro::steady_timer& timer,
                    std::shared_ptr<std::optional<std::error_code>> out)
   -> iocoro::awaitable<std::error_code> {
-  auto ec = co_await timer.async_wait(iocoro::use_awaitable);
+  auto r = co_await timer.async_wait(iocoro::use_awaitable);
+  auto ec = r ? std::error_code{} : r.error();
   *out = ec;
   co_return ec;
 }

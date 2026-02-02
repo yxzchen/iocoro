@@ -8,14 +8,14 @@ inline void acceptor_impl::cancel_read() noexcept {
   base_.cancel_read();
 }
 
-inline void acceptor_impl::close() noexcept {
+inline auto acceptor_impl::close() noexcept -> std::error_code {
   {
     std::scoped_lock lk{mtx_};
     accept_epoch_.fetch_add(1, std::memory_order_acq_rel);
     listening_ = false;
     accept_active_ = false;
   }
-  base_.close();
+  return base_.close();
 }
 
 inline auto acceptor_impl::open(int domain, int type, int protocol) -> std::error_code {

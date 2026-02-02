@@ -71,7 +71,6 @@ class thread_pool {
   mutable std::mutex cv_mutex_;
   std::condition_variable cv_;
   std::deque<detail::unique_function<void()>> queue_;
-  std::atomic<std::size_t> pending_{0};
 
   state_t state_{state_t::running};
   detail::work_guard_counter work_guard_;
@@ -114,7 +113,6 @@ class thread_pool::executor_type {
         return;
       }
       pool_->queue_.emplace_back(std::move(task));
-      pool_->pending_.fetch_add(1, std::memory_order_release);
     }
     pool_->cv_.notify_one();
   }

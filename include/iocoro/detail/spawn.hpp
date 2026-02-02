@@ -125,6 +125,9 @@ struct spawn_result_state {
     unique_function<void()> resume_cb{};
     {
       std::scoped_lock lk{m};
+      if (done) {
+        return;
+      }
       done = true;
       resume_cb = std::exchange(resume, {});
     }

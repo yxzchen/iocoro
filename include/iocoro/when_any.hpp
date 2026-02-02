@@ -140,7 +140,7 @@ auto when_any(awaitable<Ts>... tasks)
   std::size_t index{};
   typename detail::when_any_variadic_state<Ts...>::values_variant result{};
   {
-    std::scoped_lock lk{st->result_m};
+    std::scoped_lock lk{st->m};
     ep = st->first_ep;
     if (!ep) {
       index = st->completed_index;
@@ -186,7 +186,7 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   std::exception_ptr ep{};
   std::size_t index{};
   {
-    std::scoped_lock lk{st->result_m};
+    std::scoped_lock lk{st->m};
     ep = st->first_ep;
     if (!ep) {
       index = st->completed_index;
@@ -200,7 +200,7 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   if constexpr (std::is_void_v<T>) {
     co_return std::make_pair(index, std::monostate{});
   } else {
-    std::scoped_lock lk{st->result_m};
+    std::scoped_lock lk{st->m};
     IOCORO_ENSURE(st->result.has_value(), "when_any(vector): missing value");
     co_return std::make_pair(index, std::move(*st->result));
   }

@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <coroutine>
+#include <cstdint>
 #include <cstddef>
 #include <exception>
 #include <mutex>
@@ -22,8 +23,13 @@ struct when_state_base {
   any_executor ex{};
   std::mutex m;
   std::atomic<std::size_t> remaining{0};
-  std::coroutine_handle<> waiter{};
   std::exception_ptr first_ep{};
+  std::atomic<void*> waiter_addr{nullptr};
+
+  static auto done_sentinel() noexcept -> void* {
+    // Coroutine frame addresses are at least pointer-aligned; reserve 1.
+    return reinterpret_cast<void*>(static_cast<std::uintptr_t>(1));
+  }
 
   explicit when_state_base(std::size_t n) {
     remaining.store(n, std::memory_order_relaxed);
@@ -39,15 +45,39 @@ struct when_state_base {
   bool try_complete() noexcept { return (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1); }
 
   void complete() noexcept {
-    std::coroutine_handle<> w{};
+    // Publish completion and, if a waiter exists, resume it exactly once.
+    void* addr = waiter_addr.load(std::memory_order_acquire);
+    for (;;) {
+      if (addr == done_sentinel()) {
+        return;
+      }
+      if (addr == nullptr) {
+        if (waiter_addr.compare_exchange_weak(addr, done_sentinel(),
+                                             std::memory_order_acq_rel,
+                                             std::memory_order_acquire)) {
+          return;
+        }
+        continue;
+      }
+      if (waiter_addr.compare_exchange_weak(addr, done_sentinel(),
+                                           std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) {
+        break;
+      }
+    }
+
+    auto w = std::coroutine_handle<>::from_address(addr);
+    if (!w) {
+      return;
+    }
+
+    any_executor resume_ex{};
     {
       std::scoped_lock lk{m};
-      w = waiter;
-      waiter = {};
+      resume_ex = ex;
     }
-    if (w) {
-      ex.post([w]() { w.resume(); });
-    }
+    IOCORO_ENSURE(resume_ex, "when_all/when_any: empty executor for resume");
+    resume_ex.post([w]() mutable noexcept { w.resume(); });
   }
 };
 
@@ -64,15 +94,32 @@ struct when_awaiter {
   template <class Promise>
     requires requires(Promise& p) { p.get_executor(); }
   bool await_suspend(std::coroutine_handle<Promise> h) {
-    std::scoped_lock lk{st->m};
-    if (st->remaining.load(std::memory_order_relaxed) == 0) {
+    if (st->remaining.load(std::memory_order_acquire) == 0) {
       return false;
     }
-    
-    IOCORO_ENSURE(!st->waiter, "when_all/when_any: multiple awaiters are not supported");
-    st->waiter = h;
-    st->ex = h.promise().get_executor();
-    IOCORO_ENSURE(st->ex, "when_all/when_any: empty executor");
+
+    auto ex = h.promise().get_executor();
+    IOCORO_ENSURE(ex, "when_all/when_any: empty executor");
+    {
+      std::scoped_lock lk{st->m};
+      st->ex = ex;
+    }
+
+    void* expected = nullptr;
+    void* desired = h.address();
+    IOCORO_ENSURE(desired != when_state_base::done_sentinel(),
+                 "when_all/when_any: invalid coroutine address");
+
+    if (!st->waiter_addr.compare_exchange_strong(expected, desired,
+                                                 std::memory_order_acq_rel,
+                                                 std::memory_order_acquire)) {
+      // Either already completed (sentinel) or multiple awaiters (non-null).
+      if (expected == when_state_base::done_sentinel()) {
+        return false;
+      }
+      IOCORO_ENSURE(false, "when_all/when_any: multiple awaiters are not supported");
+    }
+
     return true;
   }
 

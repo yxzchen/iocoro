@@ -16,7 +16,9 @@ enum class fd_event_kind : std::uint8_t { read, write };
 struct event_handle {
   enum class kind : std::uint8_t { none, timer, fd };
 
-  io_context_impl* impl = nullptr;
+  // Weak reference for safe cancellation. The control block is owned by
+  // io_context_impl (via shared_ptr) and any executors/objects that keep it alive.
+  std::weak_ptr<io_context_impl> impl{};
   kind type = kind::none;
 
   int fd = -1;
@@ -28,10 +30,13 @@ struct event_handle {
 
   static constexpr std::uint64_t invalid_token = 0;
 
-  static auto make_fd(io_context_impl* impl_, int fd_, fd_event_kind kind_, std::uint64_t token_)
+  static auto make_fd(std::weak_ptr<io_context_impl> impl_,
+                      int fd_,
+                      fd_event_kind kind_,
+                      std::uint64_t token_)
     noexcept -> event_handle {
     event_handle out;
-    out.impl = impl_;
+    out.impl = std::move(impl_);
     out.type = kind::fd;
     out.fd = fd_;
     out.fd_kind = kind_;
@@ -39,11 +44,11 @@ struct event_handle {
     return out;
   }
 
-  static auto make_timer(io_context_impl* impl_,
+  static auto make_timer(std::weak_ptr<io_context_impl> impl_,
                          std::uint32_t index,
                          std::uint32_t generation) noexcept -> event_handle {
     event_handle out;
-    out.impl = impl_;
+    out.impl = std::move(impl_);
     out.type = kind::timer;
     out.timer_index = index;
     out.timer_generation = generation;
@@ -54,10 +59,10 @@ struct event_handle {
 
   auto valid() const noexcept -> bool {
     if (type == kind::fd) {
-      return impl != nullptr && fd >= 0 && token != invalid_token;
+      return !impl.expired() && fd >= 0 && token != invalid_token;
     }
     if (type == kind::timer) {
-      return impl != nullptr && timer_generation != 0;
+      return !impl.expired() && timer_generation != 0;
     }
     return false;
   }

@@ -56,18 +56,14 @@ auto write_with_timeout(ip::tcp::socket& socket,
 }
 
 auto connect_expected(ip::tcp::socket& socket, ip::tcp::endpoint const& ep)
-  -> awaitable<expected<void, std::error_code>> {
-  auto ec = co_await socket.async_connect(ep);
-  if (ec) {
-    co_return unexpected(ec);
-  }
-  co_return expected<void, std::error_code>{};
+  -> awaitable<void_result> {
+  co_return co_await socket.async_connect(ep);
 }
 
 auto connect_with_timeout(ip::tcp::socket& socket,
                           ip::tcp::endpoint const& ep,
                           std::chrono::steady_clock::duration timeout)
-  -> awaitable<expected<void, std::error_code>> {
+  -> awaitable<void_result> {
   auto ex = co_await this_coro::io_executor;
 
   steady_timer timer(ex);
@@ -80,7 +76,7 @@ auto connect_with_timeout(ip::tcp::socket& socket,
   }
 
   socket.cancel();
-  co_return unexpected(error::timed_out);
+  co_return fail(error::timed_out);
 }
 
 auto resolve_with_timeout(ip::tcp::resolver& resolver,
@@ -165,8 +161,8 @@ TEST(timeout_examples, read_timeout_ms) {
       throw std::runtime_error("invalid endpoint");
     }
 
-    auto ec = co_await socket.async_connect(*ep);
-    if (ec) {
+    auto cr = co_await socket.async_connect(*ep);
+    if (!cr) {
       co_return;
     }
 
@@ -195,8 +191,8 @@ TEST(timeout_examples, write_timeout_ms) {
       throw std::runtime_error("invalid endpoint");
     }
 
-    auto ec = co_await socket.async_connect(*ep);
-    if (ec) {
+    auto cr = co_await socket.async_connect(*ep);
+    if (!cr) {
       co_return;
     }
 

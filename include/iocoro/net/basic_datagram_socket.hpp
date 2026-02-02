@@ -140,7 +140,7 @@ class basic_datagram_socket {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  void close() noexcept { handle_.close(); }
+  auto close() noexcept -> std::error_code { return handle_.close(); }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }

@@ -2,6 +2,7 @@
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/reactor_backend.hpp>
 #include <iocoro/detail/reactor_types.hpp>
+#include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/error.hpp>
 
 #ifdef IOCORO_USE_URING
@@ -46,6 +47,10 @@ inline auto io_context_impl::is_stopped() const noexcept -> bool {
 }
 
 inline auto io_context_impl::run() -> std::size_t {
+  IOCORO_ENSURE(!running_.exchange(true, std::memory_order_acq_rel),
+               "io_context_impl::run(): concurrent event loops are not supported");
+  auto running_guard =
+    detail::make_scope_exit([this]() noexcept { running_.store(false, std::memory_order_release); });
   set_thread_id();
 
   std::size_t count = 0;
@@ -61,6 +66,10 @@ inline auto io_context_impl::run() -> std::size_t {
 }
 
 inline auto io_context_impl::run_one() -> std::size_t {
+  IOCORO_ENSURE(!running_.exchange(true, std::memory_order_acq_rel),
+               "io_context_impl::run_one(): concurrent event loops are not supported");
+  auto running_guard =
+    detail::make_scope_exit([this]() noexcept { running_.store(false, std::memory_order_release); });
   set_thread_id();
 
   std::size_t count = process_posted();
@@ -80,6 +89,10 @@ inline auto io_context_impl::run_one() -> std::size_t {
 }
 
 inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
+  IOCORO_ENSURE(!running_.exchange(true, std::memory_order_acq_rel),
+               "io_context_impl::run_for(): concurrent event loops are not supported");
+  auto running_guard =
+    detail::make_scope_exit([this]() noexcept { running_.store(false, std::memory_order_release); });
   set_thread_id();
 
   auto const deadline = std::chrono::steady_clock::now() + timeout;
@@ -121,19 +134,49 @@ inline void io_context_impl::dispatch(unique_function<void()> f) {
   }
 }
 
+inline void io_context_impl::schedule_reactor_callback(unique_function<void()> f) noexcept {
+  // If the event loop is not active, there is no reactor thread to process
+  // posted callbacks. Execute inline to avoid leaking callback ownership.
+  if (!running_.load(std::memory_order_acquire)) {
+    if (f) {
+      f();
+    }
+    return;
+  }
+
+  // If we are already on the reactor thread, execute inline to preserve
+  // relative ordering and reduce latency.
+  if (running_in_this_thread()) {
+    if (f) {
+      f();
+    }
+    return;
+  }
+
+  // Otherwise, hand off to the reactor thread.
+  post(std::move(f));
+}
+
+inline void io_context_impl::schedule_abort(reactor_op_ptr op, std::error_code ec) noexcept {
+  if (!op) {
+    return;
+  }
+  schedule_reactor_callback([op = std::move(op), ec]() mutable noexcept {
+    op->vt->on_abort(op->block, ec);
+  });
+}
+
 inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point expiry,
                                        reactor_op_ptr op) -> event_handle {
   auto token = timers_.add_timer(expiry, std::move(op));
-  auto h = event_handle::make_timer(this, token.index, token.generation);
+  auto h = event_handle::make_timer(weak_from_this(), token.index, token.generation);
   wakeup();
   return h;
 }
 
 inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint32_t generation) noexcept {
   auto res = timers_.cancel(timer_registry::timer_token{index, generation});
-  if (res.op) {
-    res.op->vt->on_abort(res.op->block, error::operation_aborted);
-  }
+  schedule_abort(std::move(res.op), error::operation_aborted);
   if (res.cancelled) {
     wakeup();
   }
@@ -141,26 +184,22 @@ inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint32_t gen
 
 inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> event_handle {
   auto result = fd_registry_.register_read(fd, std::move(op));
-  if (result.replaced) {
-    result.replaced->vt->on_abort(result.replaced->block, error::operation_aborted);
-  }
+  schedule_abort(std::move(result.replaced), error::operation_aborted);
   wakeup();
   if (result.token == 0) {
     return event_handle::invalid_handle();
   }
-  return event_handle::make_fd(this, fd, detail::fd_event_kind::read, result.token);
+  return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::read, result.token);
 }
 
 inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> event_handle {
   auto result = fd_registry_.register_write(fd, std::move(op));
-  if (result.replaced) {
-    result.replaced->vt->on_abort(result.replaced->block, error::operation_aborted);
-  }
+  schedule_abort(std::move(result.replaced), error::operation_aborted);
   wakeup();
   if (result.token == 0) {
     return event_handle::invalid_handle();
   }
-  return event_handle::make_fd(this, fd, detail::fd_event_kind::write, result.token);
+  return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::write, result.token);
 }
 
 inline auto io_context_impl::arm_fd_interest(int fd) noexcept -> std::error_code {
@@ -185,12 +224,8 @@ inline void io_context_impl::disarm_fd_interest(int fd) noexcept {
 
 inline void io_context_impl::deregister_fd(int fd) {
   auto removed = fd_registry_.deregister(fd);
-  if (removed.read) {
-    removed.read->vt->on_abort(removed.read->block, error::operation_aborted);
-  }
-  if (removed.write) {
-    removed.write->vt->on_abort(removed.write->block, error::operation_aborted);
-  }
+  schedule_abort(std::move(removed.read), error::operation_aborted);
+  schedule_abort(std::move(removed.write), error::operation_aborted);
   wakeup();
 }
 
@@ -201,9 +236,7 @@ inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,
     return;
   }
 
-  if (result.removed) {
-    result.removed->vt->on_abort(result.removed->block, error::operation_aborted);
-  }
+  schedule_abort(std::move(result.removed), error::operation_aborted);
   wakeup();
 }
 
@@ -232,10 +265,14 @@ inline void io_context_impl::remove_work_guard() noexcept {
 }
 
 inline auto io_context_impl::process_timers() -> std::size_t {
+  IOCORO_ENSURE(running_in_this_thread(),
+               "io_context_impl::process_timers(): must run on io_context thread");
   return timers_.process_expired(is_stopped());
 }
 
 inline auto io_context_impl::process_posted() -> std::size_t {
+  IOCORO_ENSURE(running_in_this_thread(),
+               "io_context_impl::process_posted(): must run on io_context thread");
   return posted_.process(is_stopped());
 }
 
@@ -262,6 +299,8 @@ inline auto io_context_impl::has_work() -> bool {
 
 inline auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
   -> std::size_t {
+  IOCORO_ENSURE(running_in_this_thread(),
+               "io_context_impl::process_events(): must run on io_context thread");
   backend_->wait(max_wait, backend_events_);
   std::size_t count = 0;
 
@@ -303,7 +342,11 @@ inline void event_handle::cancel() const noexcept {
   if (!valid()) {
     return;
   }
-  impl->cancel_event(*this);
+  auto s = impl.lock();
+  if (!s) {
+    return;
+  }
+  s->cancel_event(*this);
 }
 
 }  // namespace iocoro::detail

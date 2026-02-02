@@ -5,6 +5,7 @@
 #include <iocoro/socket_option.hpp>
 
 #include <memory>
+#include <system_error>
 
 namespace iocoro::detail {
 
@@ -47,7 +48,7 @@ class socket_handle_base {
   void cancel_read() noexcept { impl_->cancel_read(); }
   void cancel_write() noexcept { impl_->cancel_write(); }
 
-  void close() noexcept { impl_->close(); }
+  auto close() noexcept -> std::error_code { return impl_->close(); }
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {

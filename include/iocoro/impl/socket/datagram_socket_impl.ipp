@@ -22,7 +22,7 @@ inline void datagram_socket_impl::cancel_write() noexcept {
   base_.cancel_write();
 }
 
-inline void datagram_socket_impl::close() noexcept {
+inline auto datagram_socket_impl::close() noexcept -> std::error_code {
   {
     std::scoped_lock lk{mtx_};
     send_op_.cancel();
@@ -32,7 +32,7 @@ inline void datagram_socket_impl::close() noexcept {
     std::memset(&connected_addr_, 0, sizeof(connected_addr_));
     // NOTE: do not touch active flags here; their owner is the coroutine.
   }
-  base_.close();
+  return base_.close();
 }
 
 inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len)

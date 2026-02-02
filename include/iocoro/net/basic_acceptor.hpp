@@ -91,9 +91,7 @@ class basic_acceptor {
     if (!r) {
       co_return unexpected(r.error());
     }
-    // Temporarily construct IO executor from io_context_impl to create socket.
-    auto* ctx_impl = handle_.get_io_context_impl();
-    socket s{any_io_executor{io_context::executor_type{*ctx_impl}}};
+    socket s{handle_.get_executor()};
     if (auto ec = s.assign(*r)) {
       co_return unexpected(ec);
     }
@@ -104,7 +102,7 @@ class basic_acceptor {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  void close() noexcept { handle_.close(); }
+  auto close() noexcept -> std::error_code { return handle_.close(); }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }

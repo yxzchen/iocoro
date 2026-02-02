@@ -53,7 +53,7 @@ class acceptor_impl {
 
   void cancel_write() noexcept { IOCORO_UNREACHABLE(); }
 
-  void close() noexcept;
+  auto close() noexcept -> std::error_code;
 
   template <class Option>
   auto set_option(Option const& opt) -> std::error_code {

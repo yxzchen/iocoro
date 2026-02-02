@@ -24,8 +24,8 @@ class io_context {
   /// Internal executor type bound to this io_context.
   class executor_type {
    public:
-    executor_type() noexcept : impl_{nullptr} {}
-    explicit executor_type(detail::io_context_impl& impl) noexcept : impl_{&impl} {}
+    executor_type() noexcept = default;
+    explicit executor_type(std::shared_ptr<detail::io_context_impl> impl) noexcept : impl_(std::move(impl)) {}
 
     executor_type(executor_type const&) noexcept = default;
     auto operator=(executor_type const&) noexcept -> executor_type& = default;
@@ -55,7 +55,7 @@ class io_context {
     explicit operator bool() const noexcept { return impl_ != nullptr; }
 
     friend auto operator==(executor_type const& a, executor_type const& b) noexcept -> bool {
-      return a.impl_ == b.impl_;
+      return a.impl_.get() == b.impl_.get();
     }
 
     friend auto operator!=(executor_type const& a, executor_type const& b) noexcept -> bool {
@@ -85,11 +85,11 @@ class io_context {
       return *impl_;
     }
 
-    // Non-owning pointer. The associated io_context_impl must outlive this executor.
-    detail::io_context_impl* impl_;
+    // Shared ownership for lifetime safety.
+    std::shared_ptr<detail::io_context_impl> impl_{};
   };
 
-  io_context() : impl_(std::make_unique<detail::io_context_impl>()) {}
+  io_context() : impl_(std::make_shared<detail::io_context_impl>()) {}
   ~io_context() = default;
 
   io_context(io_context const&) = delete;
@@ -107,11 +107,11 @@ class io_context {
 
   /// Get an IO-capable executor associated with this io_context
   auto get_executor() noexcept -> any_io_executor {
-    return any_io_executor{executor_type{*impl_}};
+    return any_io_executor{executor_type{impl_}};
   }
 
  private:
-  std::unique_ptr<detail::io_context_impl> impl_;
+  std::shared_ptr<detail::io_context_impl> impl_;
 };
 
 }  // namespace iocoro
@@ -127,7 +127,7 @@ struct executor_traits<iocoro::io_context::executor_type> {
 
   static auto io_context(iocoro::io_context::executor_type const& ex) noexcept
     -> io_context_impl* {
-    return ex.impl_;
+    return ex.impl_.get();
   }
 };
 

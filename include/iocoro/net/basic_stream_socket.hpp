@@ -5,6 +5,7 @@
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/expected.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/result.hpp>
 #include <iocoro/shutdown.hpp>
 #include <iocoro/error.hpp>
 
@@ -50,15 +51,19 @@ class basic_stream_socket {
   basic_stream_socket(basic_stream_socket&&) = default;
   auto operator=(basic_stream_socket&&) -> basic_stream_socket& = default;
 
-  auto async_connect(endpoint const& ep) -> awaitable<std::error_code> {
+  auto async_connect(endpoint const& ep) -> awaitable<void_result> {
     // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
     if (!handle_.impl().is_open()) {
       auto ec = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
       if (ec) {
-        co_return ec;
+        co_return fail(ec);
       }
     }
-    co_return co_await handle_.impl().async_connect(ep.data(), ep.size());
+    auto ec = co_await handle_.impl().async_connect(ep.data(), ep.size());
+    if (ec) {
+      co_return fail(ec);
+    }
+    co_return ok();
   }
 
   auto async_read_some(std::span<std::byte> buffer)
@@ -94,7 +99,7 @@ class basic_stream_socket {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  void close() noexcept { handle_.close(); }
+  auto close() noexcept -> std::error_code { return handle_.close(); }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }
