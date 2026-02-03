@@ -1,0 +1,66 @@
+#include <iocoro/iocoro.hpp>
+#include <iocoro/ip.hpp>
+
+#include <cstdint>
+#include <iostream>
+#include <string>
+
+namespace {
+
+using iocoro::ip::tcp;
+
+auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::awaitable<void> {
+  auto accepted = co_await acceptor.async_accept();
+  if (!accepted) {
+    ctx.stop();
+    co_return;
+  }
+
+  auto socket = std::move(*accepted);
+  std::string buffer(4096, '\0');
+  auto buf = iocoro::net::buffer(buffer);
+
+  auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
+  if (!r) {
+    ctx.stop();
+    co_return;
+  }
+
+  auto const n = *r;
+  auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.substr(0, n)));
+  if (!w) {
+    ctx.stop();
+    co_return;
+  }
+
+  ctx.stop();
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+  std::uint16_t port = 55555;
+  if (argc == 2) {
+    port = static_cast<std::uint16_t>(std::stoi(argv[1]));
+  }
+
+  iocoro::io_context ctx;
+  tcp::acceptor acceptor{ctx};
+
+  auto ep = tcp::endpoint{iocoro::ip::address_v4::loopback(), port};
+  auto lr = acceptor.listen(ep);
+  if (!lr) {
+    std::cerr << "tcp_echo_server: listen failed\n";
+    return 1;
+  }
+
+  std::cout << "tcp_echo_server: listening on " << ep.to_string() << "\n";
+
+  auto ex = ctx.get_executor();
+  auto guard = iocoro::make_work_guard(ctx);
+  iocoro::co_spawn(ex, server_once(ctx, acceptor), iocoro::detached);
+
+  ctx.run();
+  return 0;
+}
+

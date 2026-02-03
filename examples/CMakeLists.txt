@@ -9,6 +9,7 @@ macro(make_example EXE_NAME)
 endmacro()
 
 make_example(hello_io_context)
-make_example(tcp_echo)
+make_example(tcp_echo_server)
+make_example(tcp_echo_client)
 make_example(switch_executor)
 
