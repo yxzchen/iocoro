@@ -36,6 +36,17 @@ auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::aw
     co_return;
   }
 
+  for (;;) {
+    auto rr = co_await socket.async_read_some(buf);
+    if (!rr) {
+      std::cerr << "tcp_echo_server: read_some failed: " << rr.error().message() << "\n";
+      break;
+    }
+    if (*rr == 0) {
+      break;
+    }
+  }
+
   ctx.stop();
 }
 
