@@ -5,9 +5,9 @@
 
 #include "test_util.hpp"
 
-#include <array>
-#include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
+#include <array>
 
 TEST(datagram_socket_impl_test, receive_without_open_returns_not_open) {
   iocoro::io_context ctx;
@@ -16,11 +16,10 @@ TEST(datagram_socket_impl_test, receive_without_open_returns_not_open) {
   std::array<std::byte, 4> buf{};
   sockaddr_storage src{};
   socklen_t len = sizeof(src);
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      co_return co_await impl.async_receive_from(std::span{buf},
-                                                 reinterpret_cast<sockaddr*>(&src), &len);
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_receive_from(std::span{buf}, reinterpret_cast<sockaddr*>(&src),
+                                               &len);
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -37,11 +36,10 @@ TEST(datagram_socket_impl_test, receive_without_bind_returns_not_bound) {
   std::array<std::byte, 4> buf{};
   sockaddr_storage src{};
   socklen_t len = sizeof(src);
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      co_return co_await impl.async_receive_from(std::span{buf},
-                                                 reinterpret_cast<sockaddr*>(&src), &len);
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_receive_from(std::span{buf}, reinterpret_cast<sockaddr*>(&src),
+                                               &len);
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -61,12 +59,10 @@ TEST(datagram_socket_impl_test, send_empty_buffer_returns_zero) {
   dest.sin_port = htons(0);
 
   std::array<std::byte, 1> empty{};
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      co_return co_await impl.async_send_to(std::span<std::byte const>{empty}.first(0),
-                                            reinterpret_cast<sockaddr const*>(&dest),
-                                            sizeof(dest));
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_send_to(std::span<std::byte const>{empty}.first(0),
+                                          reinterpret_cast<sockaddr const*>(&dest), sizeof(dest));
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);
@@ -90,11 +86,10 @@ TEST(datagram_socket_impl_test, receive_empty_buffer_returns_invalid_argument) {
   std::array<std::byte, 1> empty{};
   sockaddr_storage src{};
   socklen_t len = sizeof(src);
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      co_return co_await impl.async_receive_from(std::span{empty}.first(0),
-                                                 reinterpret_cast<sockaddr*>(&src), &len);
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_receive_from(std::span{empty}.first(0),
+                                               reinterpret_cast<sockaddr*>(&src), &len);
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);

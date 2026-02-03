@@ -19,4 +19,3 @@ TEST(resolver_test, resolve_with_custom_thread_pool) {
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);
 }
-

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <iocoro/awaitable.hpp>
+#include <iocoro/any_executor.hpp>
 #include <iocoro/any_io_executor.hpp>
+#include <iocoro/awaitable.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/any_executor.hpp>
-#include <iocoro/this_coro.hpp>
-#include <iocoro/socket_option.hpp>
 #include <iocoro/result.hpp>
+#include <iocoro/socket_option.hpp>
+#include <iocoro/this_coro.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -204,12 +204,11 @@ class socket_impl_base {
 
     auto orig_ex = co_await this_coro::executor;
     co_await this_coro::switch_to(ex_);
-    auto r = co_await detail::operation_awaiter{
-      [this, fh](detail::reactor_op_ptr rop) mutable {
-        auto h = ctx_impl_->register_fd_read(fh.fd, std::move(rop));
-        set_read_handle(fh, h);
-        return h;
-      }};
+    auto r = co_await detail::operation_awaiter{[this, fh](detail::reactor_op_ptr rop) mutable {
+      auto h = ctx_impl_->register_fd_read(fh.fd, std::move(rop));
+      set_read_handle(fh, h);
+      return h;
+    }};
     co_await this_coro::switch_to(orig_ex);
     co_return r;
   }
@@ -223,12 +222,11 @@ class socket_impl_base {
 
     auto orig_ex = co_await this_coro::executor;
     co_await this_coro::switch_to(ex_);
-    auto r = co_await detail::operation_awaiter{
-      [this, fh](detail::reactor_op_ptr rop) mutable {
-        auto h = ctx_impl_->register_fd_write(fh.fd, std::move(rop));
-        set_write_handle(fh, h);
-        return h;
-      }};
+    auto r = co_await detail::operation_awaiter{[this, fh](detail::reactor_op_ptr rop) mutable {
+      auto h = ctx_impl_->register_fd_write(fh.fd, std::move(rop));
+      set_write_handle(fh, h);
+      return h;
+    }};
     co_await this_coro::switch_to(orig_ex);
     co_return r;
   }

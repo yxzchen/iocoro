@@ -7,8 +7,8 @@
 #include <system_error>
 
 // Native socket APIs for endpoint conversion.
-#include <sys/socket.h>
 #include <fcntl.h>
+#include <sys/socket.h>
 
 namespace iocoro::detail::socket {
 

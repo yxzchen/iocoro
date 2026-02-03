@@ -29,8 +29,7 @@ auto echo(tcp::socket socket) -> iocoro::awaitable<void> {
       if (n == 0) {
         co_return;
       }
-      auto w = co_await iocoro::io::async_write(
-        socket, std::span<std::byte const>(data.data(), n));
+      auto w = co_await iocoro::io::async_write(socket, std::span<std::byte const>(data.data(), n));
       if (!w) {
         co_return;
       }

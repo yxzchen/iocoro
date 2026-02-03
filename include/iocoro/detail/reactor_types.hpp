@@ -30,11 +30,8 @@ struct event_handle {
 
   static constexpr std::uint64_t invalid_token = 0;
 
-  static auto make_fd(std::weak_ptr<io_context_impl> impl_,
-                      int fd_,
-                      fd_event_kind kind_,
-                      std::uint64_t token_)
-    noexcept -> event_handle {
+  static auto make_fd(std::weak_ptr<io_context_impl> impl_, int fd_, fd_event_kind kind_,
+                      std::uint64_t token_) noexcept -> event_handle {
     event_handle out;
     out.impl = std::move(impl_);
     out.type = kind::fd;
@@ -44,8 +41,7 @@ struct event_handle {
     return out;
   }
 
-  static auto make_timer(std::weak_ptr<io_context_impl> impl_,
-                         std::uint32_t index,
+  static auto make_timer(std::weak_ptr<io_context_impl> impl_, std::uint32_t index,
                          std::uint64_t generation) noexcept -> event_handle {
     event_handle out;
     out.impl = std::move(impl_);
@@ -140,7 +136,8 @@ inline reactor_vtable const* reactor_vtable_for() noexcept {
 
 template <typename State, typename... Args>
 inline auto make_reactor_op(Args&&... args) -> reactor_op_ptr {
-  auto* block = new reactor_op_block<State>{reactor_vtable_for<State>(), std::forward<Args>(args)...};
+  auto* block =
+    new reactor_op_block<State>{reactor_vtable_for<State>(), std::forward<Args>(args)...};
   auto* op = new reactor_op{block->vt, block};
   return reactor_op_ptr{op};
 }

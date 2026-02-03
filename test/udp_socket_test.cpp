@@ -20,25 +20,24 @@ TEST(udp_socket_test, basic_send_receive) {
   auto ep2 = s2.local_endpoint();
   ASSERT_TRUE(ep2);
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      std::array<std::byte, 4> out{};
-      std::memcpy(out.data(), "ping", out.size());
-      std::array<std::byte, 4> in{};
-      iocoro::ip::udp::endpoint src{};
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    std::array<std::byte, 4> out{};
+    std::memcpy(out.data(), "ping", out.size());
+    std::array<std::byte, 4> in{};
+    iocoro::ip::udp::endpoint src{};
 
-      auto send_r = co_await s1.async_send_to(std::span<std::byte const>{out}, *ep2);
-      if (!send_r) {
-        co_return iocoro::unexpected(send_r.error());
-      }
+    auto send_r = co_await s1.async_send_to(std::span<std::byte const>{out}, *ep2);
+    if (!send_r) {
+      co_return iocoro::unexpected(send_r.error());
+    }
 
-      auto recv_r = co_await s2.async_receive_from(std::span{in}, src);
-      if (!recv_r) {
-        co_return iocoro::unexpected(recv_r.error());
-      }
+    auto recv_r = co_await s2.async_receive_from(std::span{in}, src);
+    if (!recv_r) {
+      co_return iocoro::unexpected(recv_r.error());
+    }
 
-      co_return *recv_r;
-    }());
+    co_return *recv_r;
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);
@@ -58,11 +57,10 @@ TEST(udp_socket_test, send_empty_buffer_returns_zero) {
   auto ep2 = s2.local_endpoint();
   ASSERT_TRUE(ep2);
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      std::array<std::byte, 1> empty{};
-      co_return co_await s1.async_send_to(std::span<std::byte const>{empty}.first(0), *ep2);
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    std::array<std::byte, 1> empty{};
+    co_return co_await s1.async_send_to(std::span<std::byte const>{empty}.first(0), *ep2);
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);
@@ -76,12 +74,11 @@ TEST(udp_socket_test, receive_empty_buffer_returns_invalid_argument) {
   auto r1 = s1.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
   ASSERT_TRUE(r1) << r1.error().message();
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      std::array<std::byte, 1> empty{};
-      iocoro::ip::udp::endpoint src{};
-      co_return co_await s1.async_receive_from(std::span{empty}.first(0), src);
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    std::array<std::byte, 1> empty{};
+    iocoro::ip::udp::endpoint src{};
+    co_return co_await s1.async_receive_from(std::span{empty}.first(0), src);
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);

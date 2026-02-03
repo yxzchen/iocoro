@@ -1,10 +1,10 @@
 #pragma once
 
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
-#include <iocoro/any_io_executor.hpp>
-#include <iocoro/io_context.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/io_context.hpp>
 #include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/acceptor_impl.hpp>
@@ -12,9 +12,9 @@
 #include <iocoro/net/basic_stream_socket.hpp>
 
 #include <concepts>
-#include <utility>
 #include <functional>
 #include <system_error>
+#include <utility>
 
 namespace iocoro::net {
 
@@ -103,9 +103,7 @@ class basic_acceptor {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  auto close() noexcept -> result<void> {
-    return handle_.close();
-  }
+  auto close() noexcept -> result<void> { return handle_.close(); }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }

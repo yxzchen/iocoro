@@ -1,7 +1,7 @@
 #include <iocoro/detail/socket/socket_impl_base.hpp>
 
-#include <iocoro/detail/socket_utils.hpp>
 #include <iocoro/any_executor.hpp>
+#include <iocoro/detail/socket_utils.hpp>
 
 #include <unistd.h>
 

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/result.hpp>
-#include <iocoro/any_io_executor.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -59,16 +59,13 @@ concept io_executor_stream = requires(Stream& s) {
 template <class Stream>
 concept async_read_stream =
   io_executor_stream<Stream> && requires(Stream& s, std::span<std::byte> rbuf) {
-    requires std::same_as<decltype(s.async_read_some(rbuf)),
-                          awaitable<result<std::size_t>>>;
+    requires std::same_as<decltype(s.async_read_some(rbuf)), awaitable<result<std::size_t>>>;
   };
 
 template <class Stream>
 concept async_write_stream =
-  io_executor_stream<Stream> &&
-  requires(Stream& s, std::span<std::byte const> wbuf) {
-    requires std::same_as<decltype(s.async_write_some(wbuf)),
-                          awaitable<result<std::size_t>>>;
+  io_executor_stream<Stream> && requires(Stream& s, std::span<std::byte const> wbuf) {
+    requires std::same_as<decltype(s.async_write_some(wbuf)), awaitable<result<std::size_t>>>;
   };
 
 template <class Stream>

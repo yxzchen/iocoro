@@ -4,22 +4,21 @@
 
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <vector>
 #include <variant>
+#include <vector>
 
 namespace iocoro::test {
 
 using namespace std::chrono_literals;
 
-auto read_some_with_timeout(ip::tcp::socket& socket,
-                            std::span<std::byte> buf,
+auto read_some_with_timeout(ip::tcp::socket& socket, std::span<std::byte> buf,
                             std::chrono::steady_clock::duration timeout)
   -> awaitable<result<std::size_t>> {
   auto ex = co_await this_coro::io_executor;
@@ -27,8 +26,7 @@ auto read_some_with_timeout(ip::tcp::socket& socket,
   steady_timer timer(ex);
   timer.expires_after(timeout);
 
-  auto [index, result] =
-    co_await (socket.async_read_some(buf) || timer.async_wait(use_awaitable));
+  auto [index, result] = co_await (socket.async_read_some(buf) || timer.async_wait(use_awaitable));
 
   if (index == 0U) {
     co_return std::get<0>(result);
@@ -37,8 +35,7 @@ auto read_some_with_timeout(ip::tcp::socket& socket,
   co_return unexpected(error::timed_out);
 }
 
-auto write_with_timeout(ip::tcp::socket& socket,
-                        std::span<std::byte const> buf,
+auto write_with_timeout(ip::tcp::socket& socket, std::span<std::byte const> buf,
                         std::chrono::steady_clock::duration timeout)
   -> awaitable<result<std::size_t>> {
   auto ex = co_await this_coro::io_executor;
@@ -60,10 +57,8 @@ auto connect_expected(ip::tcp::socket& socket, ip::tcp::endpoint const& ep)
   co_return co_await socket.async_connect(ep);
 }
 
-auto connect_with_timeout(ip::tcp::socket& socket,
-                          ip::tcp::endpoint const& ep,
-                          std::chrono::steady_clock::duration timeout)
-  -> awaitable<result<void>> {
+auto connect_with_timeout(ip::tcp::socket& socket, ip::tcp::endpoint const& ep,
+                          std::chrono::steady_clock::duration timeout) -> awaitable<result<void>> {
   auto ex = co_await this_coro::io_executor;
 
   steady_timer timer(ex);
@@ -79,9 +74,7 @@ auto connect_with_timeout(ip::tcp::socket& socket,
   co_return fail(error::timed_out);
 }
 
-auto resolve_with_timeout(ip::tcp::resolver& resolver,
-                          std::string host,
-                          std::string service,
+auto resolve_with_timeout(ip::tcp::resolver& resolver, std::string host, std::string service,
                           std::chrono::steady_clock::duration timeout)
   -> awaitable<result<ip::tcp::resolver::results_type>> {
   auto ex = co_await this_coro::io_executor;
@@ -89,9 +82,8 @@ auto resolve_with_timeout(ip::tcp::resolver& resolver,
   steady_timer timer(ex);
   timer.expires_after(timeout);
 
-  auto [index, result] =
-    co_await (resolver.async_resolve(std::move(host), std::move(service)) ||
-              timer.async_wait(use_awaitable));
+  auto [index, result] = co_await (resolver.async_resolve(std::move(host), std::move(service)) ||
+                                   timer.async_wait(use_awaitable));
 
   if (index == 0U) {
     co_return std::get<0>(result);
@@ -108,9 +100,7 @@ TEST(timeout_examples, resolve_timeout_microseconds) {
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
     thread_pool pool{1};
-    pool.get_executor().post([] {
-      std::this_thread::sleep_for(5ms);
-    });
+    pool.get_executor().post([] { std::this_thread::sleep_for(5ms); });
     ip::tcp::resolver resolver(pool.get_executor());
 
     auto r = co_await resolve_with_timeout(resolver, "example.com", "80", 1us);

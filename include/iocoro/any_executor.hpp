@@ -54,11 +54,17 @@ class any_executor {
   }
 
   void post(detail::unique_function<void()> fn) const noexcept { storage_.post(std::move(fn)); }
-  void dispatch(detail::unique_function<void()> fn) const noexcept { storage_.dispatch(std::move(fn)); }
+  void dispatch(detail::unique_function<void()> fn) const noexcept {
+    storage_.dispatch(std::move(fn));
+  }
 
   auto capabilities() const noexcept -> executor_capability { return storage_.capabilities(); }
-  auto supports_io() const noexcept -> bool { return has_capability(capabilities(), executor_capability::io); }
-  auto io_context_ptr() const noexcept -> detail::io_context_impl* { return storage_.io_context_ptr(); }
+  auto supports_io() const noexcept -> bool {
+    return has_capability(capabilities(), executor_capability::io);
+  }
+  auto io_context_ptr() const noexcept -> detail::io_context_impl* {
+    return storage_.io_context_ptr();
+  }
 
   explicit operator bool() const noexcept { return static_cast<bool>(storage_); }
 

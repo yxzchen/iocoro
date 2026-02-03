@@ -2,8 +2,8 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/result.hpp>
 #include <iocoro/io/stream_concepts.hpp>
+#include <iocoro/result.hpp>
 
 #include <cstddef>
 #include <span>
@@ -26,8 +26,7 @@ namespace iocoro::io {
 /// Destroying the buffer while the operation is in progress results in
 /// undefined behavior (use-after-free).
 template <async_write_stream Stream>
-auto async_write(Stream& s, std::span<std::byte const> buf)
-  -> awaitable<result<std::size_t>> {
+auto async_write(Stream& s, std::span<std::byte const> buf) -> awaitable<result<std::size_t>> {
   auto const wanted = buf.size();
 
   while (!buf.empty()) {

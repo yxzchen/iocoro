@@ -1,14 +1,14 @@
 #pragma once
 
+#include <iocoro/any_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/any_executor.hpp>
-#include <iocoro/any_io_executor.hpp>
 #include <iocoro/result.hpp>
 
-#include <iocoro/detail/socket/socket_impl_base.hpp>
 #include <iocoro/detail/socket/op_state.hpp>
+#include <iocoro/detail/socket/socket_impl_base.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -44,7 +44,9 @@ class acceptor_impl {
 
   ~acceptor_impl() = default;
 
-  auto get_io_context_impl() const noexcept -> io_context_impl* { return base_.get_io_context_impl(); }
+  auto get_io_context_impl() const noexcept -> io_context_impl* {
+    return base_.get_io_context_impl();
+  }
   auto native_handle() const noexcept -> int { return base_.native_handle(); }
   auto is_open() const noexcept -> bool { return base_.is_open(); }
 

@@ -176,8 +176,7 @@ namespace iocoro::detail {
 
 template <>
 struct executor_traits<thread_pool::executor_type> {
-  static auto capabilities(thread_pool::executor_type const& ex) noexcept
-    -> executor_capability {
+  static auto capabilities(thread_pool::executor_type const& ex) noexcept -> executor_capability {
     (void)ex;
     return executor_capability::none;
   }

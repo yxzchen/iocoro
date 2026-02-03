@@ -54,19 +54,18 @@ TEST(local_stream_test, accept_and_exchange_data) {
     (void)::close(fd);
   });
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      auto accepted = co_await acc.async_accept();
-      if (!accepted) {
-        co_return iocoro::unexpected(accepted.error());
-      }
-      std::array<std::byte, 4> in{};
-      auto rd = co_await iocoro::io::async_read(*accepted, std::span{in});
-      if (!rd) {
-        co_return iocoro::unexpected(rd.error());
-      }
-      co_return *rd;
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    auto accepted = co_await acc.async_accept();
+    if (!accepted) {
+      co_return iocoro::unexpected(accepted.error());
+    }
+    std::array<std::byte, 4> in{};
+    auto rd = co_await iocoro::io::async_read(*accepted, std::span{in});
+    if (!rd) {
+      co_return iocoro::unexpected(rd.error());
+    }
+    co_return *rd;
+  }());
 
   client.join();
   iocoro::test::unlink_path(path);

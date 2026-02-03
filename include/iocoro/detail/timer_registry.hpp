@@ -192,19 +192,15 @@ inline auto timer_registry::empty() const -> bool {
 
 inline auto timer_registry::push_heap(std::uint32_t index) -> void {
   heap_.push_back(index);
-  std::push_heap(
-    heap_.begin(), heap_.end(),
-    [this](std::uint32_t a, std::uint32_t b) {
-      return nodes_[a].expiry > nodes_[b].expiry;
-    });
+  std::push_heap(heap_.begin(), heap_.end(), [this](std::uint32_t a, std::uint32_t b) {
+    return nodes_[a].expiry > nodes_[b].expiry;
+  });
 }
 
 inline auto timer_registry::pop_heap() -> std::uint32_t {
-  std::pop_heap(
-    heap_.begin(), heap_.end(),
-    [this](std::uint32_t a, std::uint32_t b) {
-      return nodes_[a].expiry > nodes_[b].expiry;
-    });
+  std::pop_heap(heap_.begin(), heap_.end(), [this](std::uint32_t a, std::uint32_t b) {
+    return nodes_[a].expiry > nodes_[b].expiry;
+  });
   auto const idx = heap_.back();
   heap_.pop_back();
   return idx;

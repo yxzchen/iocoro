@@ -10,8 +10,11 @@ namespace iocoro {
 template <class T>
 using result = expected<T, std::error_code>;
 
-[[nodiscard]] inline auto ok() noexcept -> result<void> { return {}; }
-[[nodiscard]] inline auto fail(std::error_code ec) noexcept -> result<void> { return unexpected(ec); }
+[[nodiscard]] inline auto ok() noexcept -> result<void> {
+  return {};
+}
+[[nodiscard]] inline auto fail(std::error_code ec) noexcept -> result<void> {
+  return unexpected(ec);
+}
 
 }  // namespace iocoro
-

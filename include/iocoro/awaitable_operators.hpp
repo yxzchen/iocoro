@@ -99,8 +99,8 @@ auto when_or_run_one(std::shared_ptr<when_or_state<A, B>> st) -> awaitable<void>
 /// - Requests stop on the non-winning awaitable (best-effort).
 /// - If the first completion throws, rethrows the exception.
 template <class A, class B>
-auto operator||(awaitable<A> a, awaitable<B> b)
-  -> awaitable<std::pair<std::size_t, std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
+auto operator||(awaitable<A> a, awaitable<B> b) -> awaitable<
+  std::pair<std::size_t, std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
   auto fallback_ex = co_await this_coro::executor;
   IOCORO_ENSURE(fallback_ex, "operator||: requires a bound executor");
 
@@ -109,17 +109,13 @@ auto operator||(awaitable<A> a, awaitable<B> b)
   auto ex_a = st->task_a.get_executor();
   detail::spawn_task<void>(
     detail::spawn_context{ex_a ? ex_a : fallback_ex},
-    [st]() mutable -> awaitable<void> {
-      return detail::when_or_run_one<0, A, A, B>(st);
-    },
+    [st]() mutable -> awaitable<void> { return detail::when_or_run_one<0, A, A, B>(st); },
     detail::detached_completion<void>{});
 
   auto ex_b = st->task_b.get_executor();
   detail::spawn_task<void>(
     detail::spawn_context{ex_b ? ex_b : fallback_ex},
-    [st]() mutable -> awaitable<void> {
-      return detail::when_or_run_one<1, B, A, B>(st);
-    },
+    [st]() mutable -> awaitable<void> { return detail::when_or_run_one<1, B, A, B>(st); },
     detail::detached_completion<void>{});
 
   co_await detail::await_when(st);

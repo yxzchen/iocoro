@@ -61,7 +61,8 @@ class any_executor_storage {
     }
   }
 
-  friend auto operator==(any_executor_storage const& a, any_executor_storage const& b) noexcept -> bool {
+  friend auto operator==(any_executor_storage const& a, any_executor_storage const& b) noexcept
+    -> bool {
     if (!a.ptr_ && !b.ptr_) {
       return true;
     }
@@ -74,7 +75,8 @@ class any_executor_storage {
     return a.vtable_->equals(a.ptr_, b.ptr_);
   }
 
-  friend auto operator!=(any_executor_storage const& a, any_executor_storage const& b) noexcept -> bool {
+  friend auto operator!=(any_executor_storage const& a, any_executor_storage const& b) noexcept
+    -> bool {
     return !(a == b);
   }
 
@@ -185,20 +187,20 @@ class any_executor_storage {
 
   template <class Ex>
   static constexpr bool fits_inline =
-      sizeof(Ex) <= inline_size && alignof(Ex) <= inline_align &&
-      std::is_nothrow_move_constructible_v<Ex> && std::is_nothrow_copy_constructible_v<Ex>;
+    sizeof(Ex) <= inline_size && alignof(Ex) <= inline_align &&
+    std::is_nothrow_move_constructible_v<Ex> && std::is_nothrow_copy_constructible_v<Ex>;
 
   template <class Ex>
   static inline constexpr vtable vtable_for{
-      .post = &post_impl<Ex>,
-      .dispatch = &dispatch_impl<Ex>,
-      .equals = &equals_impl<Ex>,
-      .target = &target_impl<Ex>,
-      .capabilities = &capabilities_impl<Ex>,
-      .io_context = &io_context_impl_fn<Ex>,
-      .destroy_inline = &destroy_inline_impl<Ex>,
-      .copy_inline = &copy_inline_impl<Ex>,
-      .move_inline = &move_inline_impl<Ex>,
+    .post = &post_impl<Ex>,
+    .dispatch = &dispatch_impl<Ex>,
+    .equals = &equals_impl<Ex>,
+    .target = &target_impl<Ex>,
+    .capabilities = &capabilities_impl<Ex>,
+    .io_context = &io_context_impl_fn<Ex>,
+    .destroy_inline = &destroy_inline_impl<Ex>,
+    .copy_inline = &copy_inline_impl<Ex>,
+    .move_inline = &move_inline_impl<Ex>,
   };
 
   void ensure_impl() const noexcept { IOCORO_ENSURE(ptr_, "any_executor_storage: empty"); }
@@ -261,10 +263,8 @@ class any_executor_storage {
   void* ptr_{};
   vtable const* vtable_{};
   bool is_inline_{false};
-
 };
 
 }  // namespace detail
 
 }  // namespace iocoro
-

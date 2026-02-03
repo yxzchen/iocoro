@@ -5,24 +5,23 @@
 
 #include "test_util.hpp"
 
+#include <sys/socket.h>
+#include <unistd.h>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
-#include <sys/socket.h>
-#include <unistd.h>
 
 TEST(stream_socket_impl_test, read_without_open_returns_not_open) {
   iocoro::io_context ctx;
   iocoro::detail::socket::stream_socket_impl impl{ctx.get_executor()};
 
   std::array<std::byte, 4> buf{};
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      co_return co_await impl.async_read_some(std::span{buf});
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_read_some(std::span{buf});
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -37,10 +36,9 @@ TEST(stream_socket_impl_test, read_without_connect_returns_not_connected) {
   ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
   std::array<std::byte, 4> buf{};
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      co_return co_await impl.async_read_some(std::span{buf});
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_read_some(std::span{buf});
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -68,8 +66,8 @@ TEST(stream_socket_impl_test, concurrent_reads_return_busy_and_cancel_aborts) {
   std::optional<iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr>> r1;
   std::optional<iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr>> r2;
 
-  auto on_done =
-    [&](auto& slot, iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr> r) {
+  auto on_done = [&](auto& slot,
+                     iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr> r) {
     slot = std::move(r);
     if (done.fetch_add(1) + 1 == 2) {
       std::scoped_lock lk{m};

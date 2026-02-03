@@ -32,9 +32,8 @@ class unique_function<R(Args...)> {
   ~unique_function() { reset(); }
 
   template <typename F>
-    requires (!std::is_same_v<std::decay_t<F>, unique_function>) &&
-             (std::is_invocable_r_v<R, F&, Args...> ||
-              std::is_invocable_r_v<R, F const&, Args...>)
+    requires(!std::is_same_v<std::decay_t<F>, unique_function>) &&
+            (std::is_invocable_r_v<R, F&, Args...> || std::is_invocable_r_v<R, F const&, Args...>)
   unique_function(F&& f) {
     using functor = std::decay_t<F>;
     if constexpr (fits_inline<functor>) {
@@ -111,15 +110,14 @@ class unique_function<R(Args...)> {
   };
 
   template <typename F>
-  static constexpr bool fits_inline =
-      sizeof(F) <= inline_size && alignof(F) <= inline_align &&
-      std::is_nothrow_move_constructible_v<F>;
+  static constexpr bool fits_inline = sizeof(F) <= inline_size && alignof(F) <= inline_align &&
+                                      std::is_nothrow_move_constructible_v<F>;
 
   template <typename F>
   static inline constexpr vtable vtable_for{
-      .invoke = &invoke_impl<F>,
-      .destroy = &destroy_impl<F>,
-      .move_inline = &move_inline_impl<F>,
+    .invoke = &invoke_impl<F>,
+    .destroy = &destroy_impl<F>,
+    .move_inline = &move_inline_impl<F>,
   };
 
   void reset() noexcept {
@@ -163,5 +161,3 @@ class unique_function<R(Args...)> {
 #endif
 
 }  // namespace iocoro::detail
-
-

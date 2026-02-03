@@ -67,9 +67,7 @@ struct awaitable_promise_base {
     }
   }
 
-  auto get_stop_token() const noexcept -> std::stop_token {
-    return stop_source_.get_token();
-  }
+  auto get_stop_token() const noexcept -> std::stop_token { return stop_source_.get_token(); }
 
   void inherit_stop_token(std::stop_token parent) {
     if (!parent.stop_possible() || parent_stop_cb_) {
@@ -83,22 +81,16 @@ struct awaitable_promise_base {
       parent, unique_function<void()>{[this]() { request_stop(); }});
   }
 
-  void request_stop() noexcept {
-    stop_source_.request_stop();
-  }
+  void request_stop() noexcept { stop_source_.request_stop(); }
 
-  auto stop_requested() const noexcept -> bool {
-    return stop_source_.stop_requested();
-  }
+  auto stop_requested() const noexcept -> bool { return stop_source_.stop_requested(); }
 
   void detach() noexcept {
     IOCORO_ENSURE(ex_, "awaitable_promise: detach() requires executor");
     detached_ = true;
   }
 
-  void set_continuation(std::coroutine_handle<> h) noexcept {
-    continuation_ = h;
-  }
+  void set_continuation(std::coroutine_handle<> h) noexcept { continuation_ = h; }
 
   void resume_continuation() noexcept {
     if (!continuation_) {
@@ -135,9 +127,7 @@ struct awaitable_promise_base {
     struct awaiter {
       any_executor ex;
       bool await_ready() noexcept { return true; }
-      auto await_resume() noexcept -> any_io_executor {
-        return to_io_executor(ex);
-      }
+      auto await_resume() noexcept -> any_io_executor { return to_io_executor(ex); }
       void await_suspend(std::coroutine_handle<>) noexcept {}
     };
     return awaiter{ex_};
@@ -204,4 +194,3 @@ struct awaitable_promise<void> final : awaitable_promise_base {
 };
 
 }  // namespace iocoro::detail
-

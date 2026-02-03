@@ -1,7 +1,7 @@
 #pragma once
 
-#include <iocoro/awaitable.hpp>
 #include <iocoro/any_executor.hpp>
+#include <iocoro/awaitable.hpp>
 
 namespace iocoro {
 

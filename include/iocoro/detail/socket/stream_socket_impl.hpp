@@ -1,9 +1,9 @@
 #pragma once
 
 #include <iocoro/error.hpp>
+#include <iocoro/io_context.hpp>
 #include <iocoro/result.hpp>
 #include <iocoro/shutdown.hpp>
-#include <iocoro/io_context.hpp>
 
 #include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/detail/socket/op_state.hpp>
@@ -150,12 +150,10 @@ class stream_socket_impl {
   auto async_connect(sockaddr const* addr, socklen_t len) -> awaitable<result<void>>;
 
   /// Read at most `size` bytes into `data`.
-  auto async_read_some(std::span<std::byte> buffer)
-    -> awaitable<result<std::size_t>>;
+  auto async_read_some(std::span<std::byte> buffer) -> awaitable<result<std::size_t>>;
 
   /// Write at most `size` bytes from `data`.
-  auto async_write_some(std::span<std::byte const> buffer)
-    -> awaitable<result<std::size_t>>;
+  auto async_write_some(std::span<std::byte const> buffer) -> awaitable<result<std::size_t>>;
 
   auto shutdown(shutdown_type what) -> result<void>;
 

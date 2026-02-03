@@ -24,14 +24,14 @@ enum class executor_capability : std::uint8_t {
 
 inline constexpr auto operator|(executor_capability lhs, executor_capability rhs) noexcept
   -> executor_capability {
-  return static_cast<executor_capability>(
-    static_cast<std::uint8_t>(lhs) | static_cast<std::uint8_t>(rhs));
+  return static_cast<executor_capability>(static_cast<std::uint8_t>(lhs) |
+                                          static_cast<std::uint8_t>(rhs));
 }
 
 inline constexpr auto operator&(executor_capability lhs, executor_capability rhs) noexcept
   -> executor_capability {
-  return static_cast<executor_capability>(
-    static_cast<std::uint8_t>(lhs) & static_cast<std::uint8_t>(rhs));
+  return static_cast<executor_capability>(static_cast<std::uint8_t>(lhs) &
+                                          static_cast<std::uint8_t>(rhs));
 }
 
 inline constexpr auto has_capability(executor_capability caps, executor_capability flag) noexcept
@@ -66,4 +66,3 @@ struct executor_traits {
 }  // namespace detail
 
 }  // namespace iocoro
-

@@ -41,8 +41,7 @@ auto server_once(tcp::acceptor& acceptor) -> iocoro::awaitable<void> {
   }
 
   auto const n = *r;
-  auto w = co_await iocoro::io::async_write(
-    socket, std::span<std::byte const>(span.data(), n));
+  auto w = co_await iocoro::io::async_write(socket, std::span<std::byte const>(span.data(), n));
   if (!w) {
     co_return;
   }
@@ -57,8 +56,7 @@ auto client_once(iocoro::io_context& ctx, tcp::endpoint ep) -> iocoro::awaitable
 
   std::string msg = "ping\n";
   auto w = co_await iocoro::io::async_write(
-    socket,
-    std::span<std::byte const>(reinterpret_cast<std::byte const*>(msg.data()), msg.size()));
+    socket, std::span<std::byte const>(reinterpret_cast<std::byte const*>(msg.data()), msg.size()));
   if (!w) {
     co_return;
   }
@@ -72,8 +70,7 @@ auto client_once(iocoro::io_context& ctx, tcp::endpoint ep) -> iocoro::awaitable
   }
 
   auto const n = *r;
-  std::cout << "tcp_echo: received: "
-            << std::string_view(buffer.data(), n);
+  std::cout << "tcp_echo: received: " << std::string_view(buffer.data(), n);
 
   ctx.stop();
 }
@@ -106,4 +103,3 @@ int main() {
   ctx.run();
   return 0;
 }
-

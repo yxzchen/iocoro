@@ -48,8 +48,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto add_timer(std::chrono::duration<Rep, Period> d, reactor_op_ptr op) -> event_handle {
     return add_timer(std::chrono::steady_clock::now() + d, std::move(op));
   }
-  auto add_timer(std::chrono::steady_clock::time_point expiry,
-                 reactor_op_ptr op) -> event_handle;
+  auto add_timer(std::chrono::steady_clock::time_point expiry, reactor_op_ptr op) -> event_handle;
 
   /// Cancel a timer registration.
   ///
@@ -74,7 +73,6 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto running_in_this_thread() const noexcept -> bool;
 
  private:
-
   // Opaque per-thread identity token.
   // Only valid for equality comparison within the process lifetime.
   static auto this_thread_token() noexcept -> std::uintptr_t;

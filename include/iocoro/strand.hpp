@@ -50,9 +50,8 @@ class strand_executor {
     IOCORO_ENSURE(state_->base, "strand_executor::dispatch: empty base executor");
 
     auto const cur_any = detail::get_current_executor();
-    auto const* cur = cur_any
-      ? detail::any_executor_access::target<strand_executor>(cur_any)
-      : nullptr;
+    auto const* cur =
+      cur_any ? detail::any_executor_access::target<strand_executor>(cur_any) : nullptr;
     if (cur != nullptr && (*cur == *this)) {
       f();
       return;
@@ -65,7 +64,9 @@ class strand_executor {
     }
   }
 
-  explicit operator bool() const noexcept { return state_ != nullptr && static_cast<bool>(state_->base); }
+  explicit operator bool() const noexcept {
+    return state_ != nullptr && static_cast<bool>(state_->base);
+  }
 
   friend auto operator==(strand_executor const& a, strand_executor const& b) noexcept -> bool {
     return a.state_.get() == b.state_.get();
@@ -154,7 +155,9 @@ class strand_executor {
 };
 
 /// Create a strand executor wrapping an existing any_executor.
-inline auto make_strand(any_executor base) -> strand_executor { return strand_executor{std::move(base)}; }
+inline auto make_strand(any_executor base) -> strand_executor {
+  return strand_executor{std::move(base)};
+}
 
 /// Create a strand executor wrapping a concrete executor.
 template <executor Ex>
@@ -184,5 +187,3 @@ struct executor_traits<strand_executor> {
 };
 
 }  // namespace iocoro::detail
-
-

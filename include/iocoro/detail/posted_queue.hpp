@@ -74,13 +74,9 @@ class posted_queue {
 
   void add_work_guard() noexcept { work_guard_.add(); }
 
-  auto remove_work_guard() noexcept -> std::size_t {
-    return work_guard_.remove();
-  }
+  auto remove_work_guard() noexcept -> std::size_t { return work_guard_.remove(); }
 
-  auto work_guard_count() const noexcept -> std::size_t {
-    return work_guard_.count();
-  }
+  auto work_guard_count() const noexcept -> std::size_t { return work_guard_.count(); }
 
   auto has_work() const -> bool {
     if (work_guard_.has_work()) {

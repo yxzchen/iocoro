@@ -4,15 +4,18 @@
 
 namespace iocoro {
 
-inline auto thread_pool::get_executor() noexcept -> executor_type { return executor_type{this}; }
+inline auto thread_pool::get_executor() noexcept -> executor_type {
+  return executor_type{this};
+}
 
-inline auto thread_pool::size() const noexcept -> std::size_t { return n_threads_; }
+inline auto thread_pool::size() const noexcept -> std::size_t {
+  return n_threads_;
+}
 
 inline void thread_pool::set_exception_handler(exception_handler_t handler) noexcept {
   if (handler) {
-    on_task_exception_.store(
-      std::make_shared<exception_handler_t>(std::move(handler)),
-      std::memory_order_release);
+    on_task_exception_.store(std::make_shared<exception_handler_t>(std::move(handler)),
+                             std::memory_order_release);
   } else {
     on_task_exception_.store(nullptr, std::memory_order_release);
   }

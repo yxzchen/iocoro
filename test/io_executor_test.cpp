@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include <iocoro/any_io_executor.hpp>
 #include <iocoro/any_executor.hpp>
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/strand.hpp>
 
