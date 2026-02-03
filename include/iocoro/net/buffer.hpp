@@ -96,7 +96,11 @@ class mutable_buffer {
 };
 
 inline constexpr const_buffer::const_buffer(mutable_buffer const& b) noexcept
-    : data_(static_cast<std::byte const*>(b.as_span().data())), size_(b.as_span().size()) {}
+    : data_(), size_() {
+  auto const sp = b.as_span();
+  data_ = static_cast<std::byte const*>(sp.data());
+  size_ = sp.size();
+}
 
 // Buffer arithmetic (Boost.Asio-style).
 inline constexpr auto operator+(const_buffer b, std::size_t n) noexcept -> const_buffer {

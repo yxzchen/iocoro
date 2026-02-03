@@ -66,7 +66,7 @@ inline auto error_category() -> std::error_category const& {
 
 }  // namespace detail
 
-auto make_error_code(error e) -> std::error_code {
+inline auto make_error_code(error e) -> std::error_code {
   return {static_cast<int>(e), detail::error_category()};
 }
 

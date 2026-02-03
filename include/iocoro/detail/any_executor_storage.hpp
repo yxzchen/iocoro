@@ -178,7 +178,7 @@ class any_executor_storage {
     std::destroy_at(ptr);
   }
 
-  static constexpr std::size_t inline_size = 3 * sizeof(void*);
+  static constexpr std::size_t inline_size = 4 * sizeof(void*);
   static constexpr std::size_t inline_align = alignof(std::max_align_t);
   struct alignas(inline_align) inline_storage {
     std::byte data[inline_size];
