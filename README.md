@@ -45,7 +45,7 @@ int main() {
 }
 ```
 
-## Networking support (development stage)
+## Networking support
 
 Networking is experimental; APIs and semantics may change.
 
