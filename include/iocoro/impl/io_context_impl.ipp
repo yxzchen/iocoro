@@ -358,7 +358,33 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
   -> std::size_t {
   IOCORO_ENSURE(running_in_this_thread(),
                 "io_context_impl::process_events(): must run on io_context thread");
-  backend_->wait(max_wait, backend_events_);
+  try {
+    backend_->wait(max_wait, backend_events_);
+  } catch (...) {
+    // Backend failure is treated as a fatal internal error for this io_context instance.
+    // Abort all in-flight reactor operations so awaiters can observe an error rather than
+    // hanging indefinitely.
+    auto const ec = make_error_code(error::internal_error);
+
+    auto drained = fd_registry_.drain_all();
+    for (int fd : drained.fds) {
+      backend_->remove_fd_interest(fd);
+    }
+    for (auto& op : drained.ops) {
+      abort_op(std::move(op), ec);
+    }
+
+    auto timer_ops = timers_.drain_all();
+    for (auto& op : timer_ops) {
+      abort_op(std::move(op), ec);
+    }
+
+    // Best-effort: execute posted resumptions once before stopping the loop.
+    (void)process_posted();
+
+    stopped_.store(true, std::memory_order_release);
+    return 0;
+  }
   std::size_t count = 0;
 
   auto process_one = [&](reactor_op_ptr& op, bool is_error, std::error_code ec) -> void {

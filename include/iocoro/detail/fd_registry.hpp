@@ -57,6 +57,16 @@ class fd_registry {
 
   auto empty() const -> bool;
 
+  struct drain_all_result {
+    std::vector<int> fds{};
+    std::vector<reactor_op_ptr> ops{};
+  };
+
+  // Drain all registered operations (read+write) and clear the registry.
+  //
+  // NOTE: fd_registry is reactor-thread-only; callers must ensure serialization.
+  auto drain_all() noexcept -> drain_all_result;
+
  private:
   struct fd_ops {
     reactor_op_ptr read_op;
@@ -255,6 +265,38 @@ inline void fd_registry::trim_tail(std::size_t fd_index) {
   if (operations_.size() > max_active_fd_ + 1) {
     operations_.resize(max_active_fd_ + 1);
   }
+}
+
+inline auto fd_registry::drain_all() noexcept -> drain_all_result {
+  drain_all_result out{};
+  if (operations_.empty()) {
+    return out;
+  }
+
+  out.fds.reserve(operations_.size());
+  out.ops.reserve(active_count_);
+
+  for (std::size_t i = 0; i < operations_.size(); ++i) {
+    auto& ops = operations_[i];
+    bool const had_any = static_cast<bool>(ops.read_op) || static_cast<bool>(ops.write_op);
+    if (had_any) {
+      out.fds.push_back(static_cast<int>(i));
+    }
+    if (ops.read_op) {
+      out.ops.push_back(std::move(ops.read_op));
+      ops.read_token = invalid_token;
+    }
+    if (ops.write_op) {
+      out.ops.push_back(std::move(ops.write_op));
+      ops.write_token = invalid_token;
+    }
+  }
+
+  operations_.clear();
+  next_token_ = 1;
+  active_count_ = 0;
+  max_active_fd_ = 0;
+  return out;
 }
 
 }  // namespace iocoro::detail
