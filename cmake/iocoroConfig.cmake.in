@@ -6,25 +6,27 @@ find_dependency(Threads)
 
 include("${CMAKE_CURRENT_LIST_DIR}/iocoroTargets.cmake")
 
-if(NOT TARGET liburing::liburing)
-  find_path(_iocoro_liburing_include_dir NAMES liburing.h)
-  find_library(_iocoro_liburing_library NAMES uring)
+if(DEFINED IOCORO_ENABLE_URING AND IOCORO_ENABLE_URING)
+  if(NOT TARGET liburing::liburing)
+    find_path(_iocoro_liburing_include_dir NAMES liburing.h)
+    find_library(_iocoro_liburing_library NAMES uring)
 
-  if(_iocoro_liburing_include_dir AND _iocoro_liburing_library)
-    add_library(liburing::liburing UNKNOWN IMPORTED)
-    set_target_properties(liburing::liburing PROPERTIES
-      IMPORTED_LOCATION "${_iocoro_liburing_library}"
-      INTERFACE_INCLUDE_DIRECTORIES "${_iocoro_liburing_include_dir}"
-    )
+    if(_iocoro_liburing_include_dir AND _iocoro_liburing_library)
+      add_library(liburing::liburing UNKNOWN IMPORTED)
+      set_target_properties(liburing::liburing PROPERTIES
+        IMPORTED_LOCATION "${_iocoro_liburing_library}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_iocoro_liburing_include_dir}"
+      )
+    endif()
   endif()
-endif()
 
-if(TARGET liburing::liburing)
-  set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_LINK_LIBRARIES liburing::liburing)
-  set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS IOCORO_BACKEND_URING)
-  message(STATUS "iocoro: liburing found - io_uring support enabled")
-else()
-  message(STATUS "iocoro: liburing not found - using epoll")
+  if(TARGET liburing::liburing)
+    set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_LINK_LIBRARIES liburing::liburing)
+    set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS IOCORO_BACKEND_URING)
+    message(STATUS "iocoro: IOCORO_ENABLE_URING=ON and liburing found - io_uring enabled")
+  else()
+    message(STATUS "iocoro: IOCORO_ENABLE_URING=ON but liburing not found - using epoll")
+  endif()
 endif()
 
 check_required_components(iocoro)

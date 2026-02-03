@@ -2,7 +2,7 @@ find_package(GTest REQUIRED)
 
 macro(make_test TEST_NAME)
   add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
-  target_compile_options(${TEST_NAME} PRIVATE -fcoroutines)
+  target_compile_options(${TEST_NAME} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
   target_link_libraries(${TEST_NAME} PRIVATE
     iocoro
     GTest::gtest
@@ -27,6 +27,7 @@ make_test(async_read_test)
 make_test(async_write_test)
 make_test(async_read_until_test)
 make_test(timeout_test)
+make_test(this_coro_stop_token_test)
 make_test(thread_pool_test)
 make_test(strand_test)
 make_test(switch_to_test)

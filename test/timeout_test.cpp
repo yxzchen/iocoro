@@ -123,4 +123,35 @@ TEST(timeout_examples, write_timeout_ms) {
   EXPECT_TRUE(timed_out);
 }
 
+TEST(timeout_examples, stop_returns_operation_aborted) {
+  iocoro::io_context ctx;
+
+  std::stop_source stop_src{};
+  auto aborted_ec = make_error_code(error::operation_aborted);
+
+  auto task = [&]() -> awaitable<void> {
+    auto ex = co_await this_coro::io_executor;
+
+    steady_timer t(ex);
+    t.expires_after(24h);
+
+    auto r = co_await with_timeout(t.async_wait(use_awaitable), 24h);
+    if (r) {
+      ADD_FAILURE() << "expected operation_aborted, got success";
+    } else {
+      EXPECT_EQ(r.error(), aborted_ec);
+    }
+    co_return;
+  };
+
+  std::jthread stopper{[&]() {
+    std::this_thread::sleep_for(1ms);
+    stop_src.request_stop();
+  }};
+
+  auto r = iocoro::test::sync_wait(
+    ctx, iocoro::co_spawn(ctx.get_executor(), stop_src.get_token(), task(), iocoro::use_awaitable));
+  ASSERT_TRUE(r);
+}
+
 }  // namespace iocoro::test

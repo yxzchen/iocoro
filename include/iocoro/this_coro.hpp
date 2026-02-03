@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iocoro/any_executor.hpp>
+#include <stop_token>
 #include <utility>
 
 namespace iocoro::this_coro {
@@ -15,6 +16,10 @@ inline constexpr executor_t executor{};
 /// Awaitable token yielding the current coroutine's bound IO executor (`any_io_executor`).
 struct io_executor_t {};
 inline constexpr io_executor_t io_executor{};
+
+/// Awaitable token yielding the current coroutine's stop token (`std::stop_token`).
+struct stop_token_t {};
+inline constexpr stop_token_t stop_token{};
 
 struct switch_to_t {
   any_executor ex;

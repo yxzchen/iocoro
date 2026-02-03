@@ -47,6 +47,11 @@ inline constexpr bool is_result_with_error_code_v =
 template <class T, class Rep, class Period>
   requires detail::is_result_with_error_code_v<T>
 auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -> awaitable<T> {
+  auto parent_stop = co_await this_coro::stop_token;
+  if (parent_stop.stop_requested()) {
+    co_return unexpected(error::operation_aborted);
+  }
+
   auto io_ex = co_await this_coro::io_executor;
   IOCORO_ENSURE(io_ex, "with_timeout: requires a bound IO executor");
 
@@ -59,6 +64,15 @@ auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -
   if (index == 0U) {
     timer.cancel();
     co_return std::get<0>(v);
+  }
+
+  // Timer completed first: distinguish natural expiry from cancellation due to stop.
+  auto const& timer_res = std::get<1>(v);
+  if (!timer_res) {
+    if (timer_res.error() == make_error_code(error::operation_aborted) && parent_stop.stop_requested()) {
+      co_return unexpected(error::operation_aborted);
+    }
+    co_return unexpected(timer_res.error());
   }
 
   co_return unexpected(error::timed_out);

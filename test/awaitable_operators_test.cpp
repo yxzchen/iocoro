@@ -203,12 +203,14 @@ TEST(awaitable_operators, operator_or_ignores_loser_exception_after_winner_compl
     EXPECT_EQ(index, 0U);
     EXPECT_EQ(std::get<0>(result), 7);
     completed->store(true);
+    co_await iocoro::co_sleep(50ms);
     co_return;
   };
 
   auto r = iocoro::test::sync_wait(ctx, task());
   ASSERT_TRUE(r);
   EXPECT_TRUE(completed->load());
+  pool.join();
 }
 
 TEST(awaitable_operators, operator_or_does_not_join_loser) {
