@@ -21,6 +21,54 @@
 - **Stop/cancellation propagation (via `std::stop_token`)**: promise owns a stop token and supports requesting stop (details evolve with the project).
 - **Core I/O building blocks**: `io_context`, timers, sockets, and basic async algorithms (development-stage semantics).
 
+## Minimal example (copy-paste)
+
+This is the smallest runnable shape: create an `io_context`, spawn a coroutine, and run the event loop.
+This snippet may change as the project evolves.
+
+```cpp
+#include <iocoro/iocoro.hpp>
+
+#include <chrono>
+#include <iostream>
+
+using namespace std::chrono_literals;
+
+auto main_task() -> iocoro::awaitable<void> {
+  std::cout << "hello from iocoro\n";
+  co_await iocoro::co_sleep(50ms);
+  std::cout << "done\n";
+}
+
+int main() {
+  iocoro::io_context ctx;
+
+  iocoro::co_spawn(ctx.get_executor(), main_task(), iocoro::detached);
+  ctx.run();
+  return 0;
+}
+```
+
+## Networking support (development stage)
+
+Networking support is still evolving; exact APIs and semantics may change.
+
+- **IP layer**
+  - IPv4/IPv6 addresses and typed endpoints.
+  - TCP: `iocoro::ip::tcp::{acceptor,socket}`.
+  - UDP: `iocoro::ip::udp::{socket}`.
+  - Resolver: `iocoro::ip::{tcp,udp}::resolver`.
+
+- **Local (AF_UNIX) layer**
+  - Local stream and datagram endpoints and sockets under `iocoro::local::*`.
+
+- **Async I/O algorithms**
+  - Stream-oriented helpers such as `iocoro::io::async_read`, `async_write`, `async_read_until` for supported stream types.
+
+- **Backend notes**
+  - Linux uses an epoll-based backend by default.
+  - An io_uring backend is optional when `liburing` is available and enabled via defining `IOCORO_ENABLE_URING`.
+
 ## Quick start
 
 Examples may change as the implementation evolves.
