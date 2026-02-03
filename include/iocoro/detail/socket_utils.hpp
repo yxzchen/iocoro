@@ -5,6 +5,7 @@
 
 #include <cerrno>
 #include <system_error>
+#include <utility>
 
 // Native socket APIs for endpoint conversion.
 #include <fcntl.h>
@@ -12,26 +13,39 @@
 
 namespace iocoro::detail::socket {
 
+inline auto retry_fcntl(int fd, int cmd, long arg) noexcept -> int {
+  for (;;) {
+    int const r = ::fcntl(fd, cmd, arg);
+    if (r >= 0) {
+      return r;
+    }
+    if (errno == EINTR) {
+      continue;
+    }
+    return r;
+  }
+}
+
 inline auto set_nonblocking(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFL, 0);
+  int flags = retry_fcntl(fd, F_GETFL, 0);
   if (flags < 0) {
     return false;
   }
   if ((flags & O_NONBLOCK) != 0) {
     return true;
   }
-  return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+  return retry_fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
 inline auto set_cloexec(int fd) noexcept -> bool {
-  int flags = ::fcntl(fd, F_GETFD, 0);
+  int flags = retry_fcntl(fd, F_GETFD, 0);
   if (flags < 0) {
     return false;
   }
   if ((flags & FD_CLOEXEC) != 0) {
     return true;
   }
-  return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
+  return retry_fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
 }
 
 template <class Endpoint>
