@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <mutex>
 #include <system_error>
 #include <utility>
@@ -22,7 +23,7 @@ namespace iocoro {
 /// Semantics:
 /// - Each `async_wait()` creates a new timer registration in the underlying `io_context`.
 /// - `cancel()` cancels the current pending registration (if any).
-/// - Updating expiry affects subsequent waits; it does not mutate an already-started wait.
+/// - Updating expiry cancels the current pending wait (if any) and affects subsequent waits.
 class steady_timer {
  public:
   using clock = std::chrono::steady_clock;
@@ -30,10 +31,7 @@ class steady_timer {
   using duration = clock::duration;
 
   explicit steady_timer(any_io_executor ex, time_point at) noexcept
-      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(at) {
-    IOCORO_ENSURE(ex_, "steady_timer: requires a non-empty IO executor");
-    IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
-  }
+      : st_(std::make_shared<shared_state>(std::move(ex), at)) {}
 
   explicit steady_timer(any_io_executor ex) noexcept : steady_timer(std::move(ex), clock::now()) {}
 
@@ -45,20 +43,27 @@ class steady_timer {
   steady_timer(steady_timer&&) = delete;
   auto operator=(steady_timer&&) -> steady_timer& = delete;
 
-  ~steady_timer() noexcept { cancel(); }
+  ~steady_timer() noexcept {
+    if (st_) {
+      st_->close();
+    }
+  }
 
-  auto expiry() const noexcept -> time_point { return expiry_; }
+  auto expiry() const noexcept -> time_point {
+    IOCORO_ENSURE(st_ != nullptr, "steady_timer: missing state");
+    return st_->expiry();
+  }
 
   /// Set the timer expiry time.
   void expires_at(time_point at) noexcept {
-    expiry_ = at;
-    cancel();
+    IOCORO_ENSURE(st_ != nullptr, "steady_timer: missing state");
+    st_->expires_at(at);
   }
 
   /// Set the timer expiry time relative to now.
   void expires_after(duration d) noexcept {
-    expiry_ = clock::now() + d;
-    cancel();
+    IOCORO_ENSURE(st_ != nullptr, "steady_timer: missing state");
+    st_->expires_after(d);
   }
 
   /// Wait until expiry as an awaitable.
@@ -66,49 +71,112 @@ class steady_timer {
   /// Returns:
   /// - `ok()` on successful timer expiry.
   auto async_wait(use_awaitable_t) -> awaitable<result<void>> {
-    auto* timer = this;
+    IOCORO_ENSURE(st_ != nullptr, "steady_timer: missing state");
+    auto st = st_;
+    auto const expiry_snapshot = st->expiry();
     // IMPORTANT: timer registration mutates reactor-owned state; do it on the reactor thread.
     // NOTE: If we are already on that thread, avoid an extra hop (keeps run_one()-style
     // loops deterministic w.r.t. register/cancel ordering).
-    co_await this_coro::on(any_executor{ex_});
+    co_await this_coro::on(any_executor{st->ex});
     auto r = co_await detail::operation_awaiter{
-      [timer](detail::reactor_op_ptr rop) { return timer->register_timer(std::move(rop)); }};
+      [st, expiry_snapshot](detail::reactor_op_ptr rop) {
+        return st->register_timer(expiry_snapshot, std::move(rop));
+      }};
     co_return r;
   }
 
   /// Cancel the pending timer operation.
   void cancel() noexcept {
-    auto h = take_handle();
-    if (h) {
-      h.cancel();
+    if (st_) {
+      st_->cancel();
     }
   }
 
  private:
-  auto register_timer(detail::reactor_op_ptr rop) noexcept
-    -> detail::io_context_impl::event_handle {
-    // SAFETY: `handle_` is the only cancellation hook we have. Hold `mtx_` across both
-    // "cancel old handle" and "store new handle" so that `cancel()` cannot observe a
-    // partially-registered operation (window between add_timer() and handle_ assignment).
-    std::scoped_lock lk{mtx_};
-    if (handle_) {
-      handle_.cancel();
+  struct shared_state {
+    explicit shared_state(any_io_executor ex_, time_point at) noexcept
+        : ex(std::move(ex_)), ctx_impl(ex.io_context_ptr()), expiry_(at) {
+      IOCORO_ENSURE(ex, "steady_timer: requires a non-empty IO executor");
+      IOCORO_ENSURE(ctx_impl != nullptr, "steady_timer: missing io_context_impl");
     }
-    auto h = ctx_impl_->add_timer(expiry(), std::move(rop));
-    handle_ = h;
-    return h;
-  }
 
-  auto take_handle() noexcept -> detail::io_context_impl::event_handle {
-    std::scoped_lock lk{mtx_};
-    return std::exchange(handle_, detail::io_context_impl::event_handle::invalid_handle());
-  }
+    auto expiry() const noexcept -> time_point {
+      std::scoped_lock lk{mtx};
+      return expiry_;
+    }
 
-  any_io_executor ex_{};
-  detail::io_context_impl* ctx_impl_;
-  time_point expiry_{clock::now()};
-  mutable std::mutex mtx_{};
-  detail::io_context_impl::event_handle handle_{};
+    void expires_at(time_point at) noexcept {
+      detail::io_context_impl::event_handle h{};
+      {
+        std::scoped_lock lk{mtx};
+        expiry_ = at;
+        h = std::exchange(handle, detail::io_context_impl::event_handle::invalid_handle());
+      }
+      if (h) {
+        h.cancel();
+      }
+    }
+
+    void expires_after(duration d) noexcept { expires_at(clock::now() + d); }
+
+    void cancel() noexcept {
+      auto h = take_handle();
+      if (h) {
+        h.cancel();
+      }
+    }
+
+    void close() noexcept {
+      detail::io_context_impl::event_handle h{};
+      {
+        std::scoped_lock lk{mtx};
+        closed = true;
+        h = std::exchange(handle, detail::io_context_impl::event_handle::invalid_handle());
+      }
+      if (h) {
+        h.cancel();
+      }
+    }
+
+    auto register_timer(time_point expiry_snapshot, detail::reactor_op_ptr rop) noexcept
+      -> detail::io_context_impl::event_handle {
+      detail::io_context_impl::event_handle old{};
+      detail::io_context_impl::event_handle h{};
+      {
+        // SAFETY: `handle` is the only cancellation hook we have. Hold `mtx` across both
+        // "cancel old handle" and "store new handle" so that `cancel()` cannot observe a
+        // partially-registered operation (window between add_timer() and handle assignment).
+        std::scoped_lock lk{mtx};
+        if (closed) {
+          rop->vt->on_abort(rop->block, make_error_code(error::operation_aborted));
+          return detail::io_context_impl::event_handle::invalid_handle();
+        }
+        old = std::exchange(handle, detail::io_context_impl::event_handle::invalid_handle());
+        h = ctx_impl->add_timer(expiry_snapshot, std::move(rop));
+        handle = h;
+      }
+      if (old) {
+        old.cancel();
+      }
+      return h;
+    }
+
+    any_io_executor ex{};
+    detail::io_context_impl* ctx_impl{};
+
+   private:
+    auto take_handle() noexcept -> detail::io_context_impl::event_handle {
+      std::scoped_lock lk{mtx};
+      return std::exchange(handle, detail::io_context_impl::event_handle::invalid_handle());
+    }
+
+    mutable std::mutex mtx{};
+    time_point expiry_{clock::now()};
+    bool closed{false};
+    detail::io_context_impl::event_handle handle{};
+  };
+
+  std::shared_ptr<shared_state> st_{};
 };
 
 }  // namespace iocoro
