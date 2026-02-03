@@ -12,6 +12,7 @@ using iocoro::ip::tcp;
 auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::awaitable<void> {
   auto accepted = co_await acceptor.async_accept();
   if (!accepted) {
+    std::cerr << "tcp_echo_server: accept failed: " << accepted.error().message() << "\n";
     ctx.stop();
     co_return;
   }
@@ -22,6 +23,7 @@ auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::aw
 
   auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
   if (!r) {
+    std::cerr << "tcp_echo_server: read_until failed: " << r.error().message() << "\n";
     ctx.stop();
     co_return;
   }
@@ -29,6 +31,7 @@ auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::aw
   auto const n = *r;
   auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.substr(0, n)));
   if (!w) {
+    std::cerr << "tcp_echo_server: write failed: " << w.error().message() << "\n";
     ctx.stop();
     co_return;
   }
@@ -50,7 +53,7 @@ int main(int argc, char* argv[]) {
   auto ep = tcp::endpoint{iocoro::ip::address_v4::loopback(), port};
   auto lr = acceptor.listen(ep);
   if (!lr) {
-    std::cerr << "tcp_echo_server: listen failed\n";
+    std::cerr << "tcp_echo_server: listen failed: " << lr.error().message() << "\n";
     return 1;
   }
 

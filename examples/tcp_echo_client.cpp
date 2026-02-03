@@ -13,7 +13,7 @@ auto client_once(iocoro::io_context& ctx, tcp::endpoint ep) -> iocoro::awaitable
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
-    std::cerr << "tcp_echo_client: connect failed\n";
+    std::cerr << "tcp_echo_client: connect failed: " << cr.error().message() << "\n";
     ctx.stop();
     co_return;
   }
@@ -21,7 +21,7 @@ auto client_once(iocoro::io_context& ctx, tcp::endpoint ep) -> iocoro::awaitable
   std::string msg = "ping\n";
   auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(msg));
   if (!w) {
-    std::cerr << "tcp_echo_client: write failed\n";
+    std::cerr << "tcp_echo_client: write failed: " << w.error().message() << "\n";
     ctx.stop();
     co_return;
   }
@@ -30,7 +30,7 @@ auto client_once(iocoro::io_context& ctx, tcp::endpoint ep) -> iocoro::awaitable
   auto buf = iocoro::net::buffer(buffer);
   auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
   if (!r) {
-    std::cerr << "tcp_echo_client: read failed\n";
+    std::cerr << "tcp_echo_client: read_until failed: " << r.error().message() << "\n";
     ctx.stop();
     co_return;
   }
