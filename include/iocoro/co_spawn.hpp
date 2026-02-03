@@ -5,6 +5,8 @@
 #include <iocoro/detail/spawn.hpp>
 #include <iocoro/traits/awaitable_result.hpp>
 
+#include <stop_token>
+
 namespace iocoro {
 
 /// Extract the value type `T` from a callable returning `iocoro::awaitable<T>`.
@@ -38,10 +40,16 @@ namespace detail {
 
 template <typename F, typename Completion>
   requires awaitable_factory<std::remove_cvref_t<F>>
-void spawn_with_completion(any_executor ex, F&& f, Completion&& completion) {
+void spawn_with_completion(spawn_context ctx, F&& f, Completion&& completion) {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
-  auto ctx = spawn_context{std::move(ex)};
   spawn_task<value_type>(std::move(ctx), std::forward<F>(f), std::forward<Completion>(completion));
+}
+
+template <typename F, typename Completion>
+  requires awaitable_factory<std::remove_cvref_t<F>>
+void spawn_with_completion(any_executor ex, F&& f, Completion&& completion) {
+  spawn_with_completion(spawn_context{std::move(ex)}, std::forward<F>(f),
+                        std::forward<Completion>(completion));
 }
 
 }  // namespace detail
@@ -51,6 +59,14 @@ template <typename F>
 void co_spawn(any_executor ex, F&& f, detached_t) {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
   detail::spawn_with_completion(std::move(ex), std::forward<F>(f),
+                                detail::detached_completion<value_type>{});
+}
+
+template <typename F>
+  requires awaitable_factory<std::remove_cvref_t<F>>
+void co_spawn(any_executor ex, std::stop_token stop_token, F&& f, detached_t) {
+  using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
+  detail::spawn_with_completion(detail::spawn_context{std::move(ex), stop_token}, std::forward<F>(f),
                                 detail::detached_completion<value_type>{});
 }
 
@@ -70,6 +86,18 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   return detail::await_result<value_type>(std::move(st));
 }
 
+template <typename F>
+  requires awaitable_factory<std::remove_cvref_t<F>>
+auto co_spawn(any_executor ex, std::stop_token stop_token, F&& f, use_awaitable_t)
+  -> awaitable<awaitable_factory_result_t<std::remove_cvref_t<F>>> {
+  using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
+
+  auto st = std::make_shared<detail::spawn_result_state<value_type>>();
+  detail::spawn_with_completion(detail::spawn_context{std::move(ex), stop_token}, std::forward<F>(f),
+                                detail::result_state_completion<value_type>{st});
+  return detail::await_result<value_type>(std::move(st));
+}
+
 /// Start a factory on `ex` and invoke `completion` when done.
 ///
 /// `completion` is invoked with:
@@ -84,11 +112,27 @@ void co_spawn(any_executor ex, F&& f, Completion&& completion) {
                                 std::forward<Completion>(completion));
 }
 
+template <typename F, typename Completion>
+  requires awaitable_factory<std::remove_cvref_t<F>> &&
+           completion_callback_for<std::remove_cvref_t<Completion>,
+                                   awaitable_factory_result_t<std::remove_cvref_t<F>>>
+void co_spawn(any_executor ex, std::stop_token stop_token, F&& f, Completion&& completion) {
+  detail::spawn_with_completion(detail::spawn_context{std::move(ex), stop_token}, std::forward<F>(f),
+                                std::forward<Completion>(completion));
+}
+
 /// Convenience overload: treat an `awaitable<T>` as a factory and forward.
 template <typename T, typename Token>
 auto co_spawn(any_executor ex, awaitable<T> a, Token&& token) {
   return co_spawn(
     ex, [a = std::move(a)]() mutable -> awaitable<T> { return std::move(a); },
+    std::forward<Token>(token));
+}
+
+template <typename T, typename Token>
+auto co_spawn(any_executor ex, std::stop_token stop_token, awaitable<T> a, Token&& token) {
+  return co_spawn(
+    std::move(ex), stop_token, [a = std::move(a)]() mutable -> awaitable<T> { return std::move(a); },
     std::forward<Token>(token));
 }
 

@@ -133,6 +133,16 @@ struct awaitable_promise_base {
     return awaiter{ex_};
   }
 
+  auto await_transform(this_coro::stop_token_t) noexcept {
+    struct awaiter {
+      std::stop_token token;
+      bool await_ready() noexcept { return true; }
+      auto await_resume() noexcept -> std::stop_token { return token; }
+      void await_suspend(std::coroutine_handle<>) noexcept {}
+    };
+    return awaiter{get_stop_token()};
+  }
+
   auto await_transform(this_coro::switch_to_t t) noexcept {
     struct awaiter {
       awaitable_promise_base* self;

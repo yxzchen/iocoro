@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stop_token>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -24,12 +25,18 @@ using spawn_expected = expected<T, std::exception_ptr>;
 
 struct spawn_context {
   any_executor ex{};
+  std::stop_token stop_token{};
 };
 
 template <typename Promise>
 void init_spawned_promise(Promise& promise, spawn_context ctx) noexcept {
   if (ctx.ex) {
     promise.set_executor(std::move(ctx.ex));
+  }
+  if (ctx.stop_token.stop_possible()) {
+    if constexpr (requires { promise.inherit_stop_token(ctx.stop_token); }) {
+      promise.inherit_stop_token(ctx.stop_token);
+    }
   }
   IOCORO_ENSURE(promise.get_executor(), "co_spawn: requires executor");
 }
