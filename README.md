@@ -21,10 +21,9 @@
 - **Stop/cancellation propagation (via `std::stop_token`)**: promise owns a stop token and supports requesting stop (details evolve with the project).
 - **Core I/O building blocks**: `io_context`, timers, sockets, and basic async algorithms (development-stage semantics).
 
-## Minimal example (copy-paste)
+## Minimal example
 
 This is the smallest runnable shape: create an `io_context`, spawn a coroutine, and run the event loop.
-This snippet may change as the project evolves.
 
 ```cpp
 #include <iocoro/iocoro.hpp>
