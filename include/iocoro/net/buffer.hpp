@@ -13,7 +13,8 @@ namespace iocoro::net {
 class const_buffer {
  public:
   constexpr const_buffer() noexcept = default;
-  constexpr const_buffer(std::byte const* data, std::size_t size) noexcept : data_(data), size_(size) {}
+  constexpr const_buffer(std::byte const* data, std::size_t size) noexcept
+      : data_(data), size_(size) {}
 
   constexpr auto data() const noexcept -> std::byte const* { return data_; }
   constexpr auto size() const noexcept -> std::size_t { return size_; }
@@ -132,4 +133,3 @@ inline auto buffer(std::vector<std::byte> const& v) noexcept -> const_buffer {
 }
 
 }  // namespace iocoro::net
-

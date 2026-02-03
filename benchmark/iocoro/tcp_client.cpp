@@ -30,9 +30,7 @@ auto example(iocoro::io_context& ctx, tcp::endpoint ep, std::string msg, int n)
 
     std::vector<std::byte> buffer(1024);
     for (int i = 0; i < n; ++i) {
-      auto w = co_await iocoro::io::async_write(
-        socket,
-        iocoro::net::buffer(msg));
+      auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(msg));
       if (!w) {
         throw std::runtime_error("write failed");
       }

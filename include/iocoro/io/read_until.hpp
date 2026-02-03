@@ -136,8 +136,8 @@ auto async_read_until(Stream& s, std::span<std::byte> buf, char delim, std::size
 
 /// Convenience overload for single-character delimiters.
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, net::mutable_buffer buf, char delim,
-                      std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
+auto async_read_until(Stream& s, net::mutable_buffer buf, char delim, std::size_t initial_size = 0)
+  -> awaitable<result<std::size_t>> {
   co_return co_await async_read_until(s, buf.as_span(), delim, initial_size);
 }
 

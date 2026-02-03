@@ -31,9 +31,9 @@
 #include <iocoro/when_any.hpp>
 
 // Networking
-#include <iocoro/net/buffer.hpp>
 #include <iocoro/net/basic_acceptor.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
+#include <iocoro/net/buffer.hpp>
 #include <iocoro/net/protocol.hpp>
 #include <iocoro/shutdown.hpp>
 #include <iocoro/socket_option.hpp>
