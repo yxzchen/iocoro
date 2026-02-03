@@ -3,9 +3,15 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/spawn.hpp>
+#include <iocoro/expected.hpp>
 #include <iocoro/traits/awaitable_result.hpp>
 
+#include <concepts>
+#include <functional>
+#include <memory>
 #include <stop_token>
+#include <type_traits>
+#include <utility>
 
 namespace iocoro {
 
@@ -76,7 +82,7 @@ void co_spawn(any_executor ex, std::stop_token stop_token, F&& f, detached_t) {
 /// coroutine is stopped or destroyed; it only controls how the result is delivered.
 template <typename F>
   requires awaitable_factory<std::remove_cvref_t<F>>
-auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
+[[nodiscard]] auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   -> awaitable<awaitable_factory_result_t<std::remove_cvref_t<F>>> {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
@@ -88,7 +94,7 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
 
 template <typename F>
   requires awaitable_factory<std::remove_cvref_t<F>>
-auto co_spawn(any_executor ex, std::stop_token stop_token, F&& f, use_awaitable_t)
+[[nodiscard]] auto co_spawn(any_executor ex, std::stop_token stop_token, F&& f, use_awaitable_t)
   -> awaitable<awaitable_factory_result_t<std::remove_cvref_t<F>>> {
   using value_type = awaitable_factory_result_t<std::remove_cvref_t<F>>;
 
