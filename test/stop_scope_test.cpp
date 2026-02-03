@@ -31,7 +31,7 @@ TEST(stop_scope_test, bind_stop_token_propagates_stop_into_awaitable) {
 
   auto aborted_ec = iocoro::make_error_code(iocoro::error::operation_aborted);
 
-  auto task = iocoro::bind_stop_token(scope.get_token(), [&]() -> iocoro::awaitable<void> {
+  auto body = [&]() -> iocoro::awaitable<void> {
     iocoro::notify_event ev{};
     auto w = co_await ev.async_wait(iocoro::use_awaitable);
     if (w) {
@@ -40,7 +40,8 @@ TEST(stop_scope_test, bind_stop_token_propagates_stop_into_awaitable) {
       EXPECT_EQ(w.error(), aborted_ec);
     }
     co_return;
-  }());
+  };
+  auto task = iocoro::bind_stop_token(scope.get_token(), body());
 
   std::jthread stopper{[&]() {
     std::this_thread::sleep_for(1ms);
