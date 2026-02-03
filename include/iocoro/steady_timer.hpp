@@ -11,7 +11,9 @@
 
 #include <chrono>
 #include <cstddef>
+#include <mutex>
 #include <system_error>
+#include <utility>
 
 namespace iocoro {
 
@@ -28,18 +30,27 @@ class steady_timer {
   using duration = clock::duration;
 
   explicit steady_timer(any_io_executor ex) noexcept
-      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now()) {}
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now()) {
+    IOCORO_ENSURE(ex_, "steady_timer: requires a non-empty IO executor");
+    IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
+  }
   explicit steady_timer(any_io_executor ex, time_point at) noexcept
-      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(at) {}
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(at) {
+    IOCORO_ENSURE(ex_, "steady_timer: requires a non-empty IO executor");
+    IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
+  }
   explicit steady_timer(any_io_executor ex, duration after) noexcept
-      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now() + after) {}
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now() + after) {
+    IOCORO_ENSURE(ex_, "steady_timer: requires a non-empty IO executor");
+    IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
+  }
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
   steady_timer(steady_timer&&) = delete;
   auto operator=(steady_timer&&) -> steady_timer& = delete;
 
-  ~steady_timer() { cancel(); }
+  ~steady_timer() noexcept { cancel(); }
 
   auto expiry() const noexcept -> time_point { return expiry_; }
 
@@ -65,6 +76,7 @@ class steady_timer {
     // NOTE: If we are already on that thread, avoid an extra hop (keeps run_one()-style
     // loops deterministic w.r.t. register/cancel ordering).
     auto orig_ex = co_await this_coro::executor;
+    IOCORO_ENSURE(orig_ex, "steady_timer::async_wait: requires a bound executor");
     co_await this_coro::switch_to(ex_);
     auto r = co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) { return timer->register_timer(std::move(rop)); }};
@@ -79,8 +91,6 @@ class steady_timer {
       h.cancel();
     }
   }
-
-  time_point expiry() { return expiry_; }
 
  private:
   auto register_timer(detail::reactor_op_ptr rop) noexcept
