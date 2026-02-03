@@ -65,33 +65,59 @@ class notify_event {
 
  private:
   struct wait_state {
-    std::coroutine_handle<> h{};
     any_executor ex{};
-    std::error_code ec{};
-    std::atomic<bool> done{false};
-    std::atomic<bool> suspended{false};
+    // Completion outcome:
+    // 0 = pending
+    // 1 = success
+    // 2 = operation_aborted
+    std::atomic<int> outcome{0};
+
+    // Waiter address handshake (similar to when_state_base):
+    // - nullptr: no waiter published yet
+    // - done_sentinel(): completion published
+    // - else: coroutine address to resume
+    std::atomic<void*> waiter_addr{nullptr};
+
     std::shared_ptr<std::stop_callback<detail::unique_function<void()>>> stop_cb{};
   };
+
+  static auto done_sentinel() noexcept -> void* {
+    // Coroutine frame addresses are at least pointer-aligned; reserve 1.
+    return reinterpret_cast<void*>(static_cast<std::uintptr_t>(1));
+  }
 
   static void complete(std::shared_ptr<wait_state> st, std::error_code ec) noexcept {
     if (!st) {
       return;
     }
-    if (st->done.exchange(true, std::memory_order_acq_rel)) {
-      return;
-    }
-    st->ec = ec;
 
-    // If the waiter did not actually suspend (await_ready/await_suspend returned false),
-    // do not schedule resumption; the coroutine will continue inline.
-    if (!st->suspended.load(std::memory_order_acquire)) {
+    int const out = ec ? 2 : 1;
+    int expected = 0;
+    if (!st->outcome.compare_exchange_strong(expected, out, std::memory_order_release,
+                                             std::memory_order_relaxed)) {
+      // Already completed.
       return;
     }
 
-    auto h = std::exchange(st->h, std::coroutine_handle<>{});
-    if (!h) {
-      return;
+    void* addr = st->waiter_addr.load(std::memory_order_acquire);
+    for (;;) {
+      if (addr == done_sentinel()) {
+        return;
+      }
+      if (addr == nullptr) {
+        if (st->waiter_addr.compare_exchange_weak(addr, done_sentinel(), std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
+          return;
+        }
+        continue;
+      }
+      if (st->waiter_addr.compare_exchange_weak(addr, done_sentinel(), std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
+        break;
+      }
     }
+
+    auto h = std::coroutine_handle<>::from_address(addr);
     auto ex = st->ex;
     IOCORO_ENSURE(ex, "notify_event: empty executor");
     ex.post([h]() mutable noexcept { h.resume(); });
@@ -117,7 +143,8 @@ class notify_event {
       std::scoped_lock lk{ev->m_};
       if (ev->tickets_ > 0) {
         --ev->tickets_;
-        st->done.store(true, std::memory_order_release);
+        st->outcome.store(1, std::memory_order_release);
+        st->waiter_addr.store(done_sentinel(), std::memory_order_release);
         return true;
       }
       return false;
@@ -126,7 +153,6 @@ class notify_event {
     template <class Promise>
       requires requires(Promise& p) { p.get_executor(); }
     bool await_suspend(std::coroutine_handle<Promise> h) noexcept {
-      st->h = h;
       st->ex = h.promise().get_executor();
       IOCORO_ENSURE(st->ex, "notify_event: empty executor");
 
@@ -135,18 +161,9 @@ class notify_event {
         token = h.promise().get_stop_token();
       }
       if (token.stop_requested()) {
-        st->ec = make_error_code(error::operation_aborted);
-        st->done.store(true, std::memory_order_release);
+        st->outcome.store(2, std::memory_order_release);
+        st->waiter_addr.store(done_sentinel(), std::memory_order_release);
         return false;
-      }
-
-      {
-        std::scoped_lock lk{ev->m_};
-        if (ev->tickets_ > 0) {
-          --ev->tickets_;
-          st->done.store(true, std::memory_order_release);
-          return false;
-        }
       }
 
       if (token.stop_possible()) {
@@ -168,19 +185,31 @@ class notify_event {
         std::scoped_lock lk{ev->m_};
         if (ev->tickets_ > 0) {
           --ev->tickets_;
-          st->done.store(true, std::memory_order_release);
+          st->outcome.store(1, std::memory_order_release);
+          st->waiter_addr.store(done_sentinel(), std::memory_order_release);
           return false;
         }
-        if (st->done.load(std::memory_order_acquire)) {
-          // Stop may have happened while constructing stop callback.
+        if (st->outcome.load(std::memory_order_acquire) != 0) {
           return false;
         }
         ev->waiters_.push_back(st);
       }
 
-      st->suspended.store(true, std::memory_order_release);
-      if (st->done.load(std::memory_order_acquire)) {
-        // Stop may have happened after enqueuing but before `suspended` was published.
+      void* expected = nullptr;
+      void* desired = h.address();
+      IOCORO_ENSURE(desired != done_sentinel(), "notify_event: invalid coroutine address");
+      if (!st->waiter_addr.compare_exchange_strong(expected, desired, std::memory_order_acq_rel,
+                                                   std::memory_order_acquire)) {
+        // Either already completed (sentinel) or multiple awaiters (non-null).
+        if (expected == done_sentinel()) {
+          ev->remove_waiter(st.get());
+          return false;
+        }
+        IOCORO_ENSURE(false, "notify_event: multiple awaiters are not supported");
+      }
+
+      // If completion won the race before we published the waiter address, do not suspend.
+      if (st->outcome.load(std::memory_order_acquire) != 0) {
         ev->remove_waiter(st.get());
         return false;
       }
@@ -189,8 +218,9 @@ class notify_event {
     }
 
     auto await_resume() noexcept -> result<void> {
-      if (st->ec) {
-        return unexpected(st->ec);
+      auto const out = st->outcome.load(std::memory_order_acquire);
+      if (out == 2) {
+        return unexpected(make_error_code(error::operation_aborted));
       }
       return ok();
     }
