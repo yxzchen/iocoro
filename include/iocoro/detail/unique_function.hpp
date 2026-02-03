@@ -102,7 +102,7 @@ class unique_function<R(Args...)> {
     std::destroy_at(src_ptr);
   }
 
-  static constexpr std::size_t inline_size = 3 * sizeof(void*);
+  static constexpr std::size_t inline_size = 4 * sizeof(void*);
   static constexpr std::size_t inline_align = alignof(std::max_align_t);
   struct alignas(inline_align) inline_storage {
     std::byte data[inline_size];
