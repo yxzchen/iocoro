@@ -30,35 +30,8 @@
 #include <algorithm>
 #include <chrono>
 #include <utility>
-#include <cerrno>
-#include <poll.h>
 
 namespace iocoro::detail {
-
-namespace {
-
-inline bool poll_ready(int fd, short events) noexcept {
-  pollfd pfd{};
-  pfd.fd = fd;
-  pfd.events = events;
-
-  for (;;) {
-    int const r = ::poll(&pfd, 1, 0);
-    if (r >= 0) {
-      if (r == 0) {
-        return false;
-      }
-      short const ready_mask = static_cast<short>(events | POLLERR | POLLHUP | POLLNVAL);
-      return (pfd.revents & ready_mask) != 0;
-    }
-    if (errno == EINTR) {
-      continue;
-    }
-    return false;
-  }
-}
-
-}  // namespace
 
 inline auto io_context_impl::this_thread_token() noexcept -> std::uintptr_t {
   static thread_local int tls_anchor = 0;
@@ -258,12 +231,6 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> even
   auto result = fd_registry_.register_read(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
   wakeup();
-  if (result.token != 0 && poll_ready(fd, POLLIN)) {
-    auto ready = fd_registry_.take_ready(fd, true, false);
-    if (ready.read) {
-      ready.read->vt->on_complete(ready.read->block);
-    }
-  }
   if (result.token == 0) {
     return event_handle::invalid_handle();
   }
@@ -278,12 +245,6 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   auto result = fd_registry_.register_write(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
   wakeup();
-  if (result.token != 0 && poll_ready(fd, POLLOUT)) {
-    auto ready = fd_registry_.take_ready(fd, false, true);
-    if (ready.write) {
-      ready.write->vt->on_complete(ready.write->block);
-    }
-  }
   if (result.token == 0) {
     return event_handle::invalid_handle();
   }
