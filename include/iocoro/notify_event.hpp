@@ -64,7 +64,7 @@ class notify_event {
     any_executor ex{};
     std::error_code ec{};
     std::atomic<bool> done{false};
-    std::unique_ptr<std::stop_callback<detail::unique_function<void()>>> stop_cb{};
+    std::shared_ptr<std::stop_callback<detail::unique_function<void()>>> stop_cb{};
   };
 
   static void complete(std::shared_ptr<wait_state> st, std::error_code ec) noexcept {
@@ -75,7 +75,6 @@ class notify_event {
       return;
     }
     st->ec = ec;
-    st->stop_cb.reset();
 
     auto h = std::exchange(st->h, std::coroutine_handle<>{});
     if (!h) {
@@ -144,7 +143,7 @@ class notify_event {
         auto weak = std::weak_ptr<wait_state>{st};
         auto* owner = ev;
         st->stop_cb =
-          std::make_unique<std::stop_callback<detail::unique_function<void()>>>(
+          std::make_shared<std::stop_callback<detail::unique_function<void()>>>(
             token, detail::unique_function<void()>{[weak, owner]() mutable {
               auto st = weak.lock();
               if (!st) {
