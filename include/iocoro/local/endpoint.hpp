@@ -23,12 +23,15 @@ namespace iocoro::local {
 /// - `from_native()` is allowed to fail and returns an error_code (not UB).
 class endpoint {
  public:
-  endpoint() noexcept = default;
+  endpoint() noexcept {
+    addr_.sun_family = AF_UNIX;
+    std::memset(addr_.sun_path, 0, sizeof(addr_.sun_path));
+  }
 
   /// Create a pathname endpoint (e.g. "/tmp/app.sock").
   ///
   /// Returns invalid_argument if the path is empty or doesn't fit.
-  static auto from_path(std::string_view path) noexcept -> result<endpoint> {
+  [[nodiscard]] static auto from_path(std::string_view path) noexcept -> result<endpoint> {
     if (path.empty()) {
       return unexpected(error::invalid_argument);
     }
@@ -52,7 +55,7 @@ class endpoint {
   ///
   /// `name` is the bytes after the leading NUL.
   /// Returns invalid_argument if name is empty or doesn't fit.
-  static auto from_abstract(std::string_view name) noexcept -> result<endpoint> {
+  [[nodiscard]] static auto from_abstract(std::string_view name) noexcept -> result<endpoint> {
     if (name.empty()) {
       return unexpected(error::invalid_argument);
     }
@@ -78,7 +81,8 @@ class endpoint {
   /// - invalid_argument if addr is null or len == 0
   /// - unsupported_address_family if family != AF_UNIX
   /// - invalid_endpoint if len is not a valid sockaddr_un length
-  static auto from_native(sockaddr const* addr, socklen_t len) noexcept -> result<endpoint> {
+  [[nodiscard]] static auto from_native(sockaddr const* addr, socklen_t len) noexcept
+    -> result<endpoint> {
     if (addr == nullptr || len == 0) {
       return unexpected(error::invalid_argument);
     }
@@ -116,9 +120,13 @@ class endpoint {
   /// Returns:
   /// - invalid_argument if `addr` is null or `len == 0`
   /// - invalid_endpoint if `len < size()`
-  auto to_native(sockaddr* addr, socklen_t len) const noexcept -> result<socklen_t> {
+  [[nodiscard]] auto to_native(sockaddr* addr, socklen_t len) const noexcept -> result<socklen_t> {
     if (addr == nullptr || len == 0) {
       return unexpected(error::invalid_argument);
+    }
+    auto const min_len = offsetof(sockaddr_un, sun_path) + 1;
+    if (static_cast<std::size_t>(size_) < min_len) {
+      return unexpected(error::invalid_endpoint);
     }
     if (static_cast<std::size_t>(len) < static_cast<std::size_t>(size_)) {
       return unexpected(error::invalid_endpoint);
@@ -127,11 +135,11 @@ class endpoint {
     return size_;
   }
 
-  auto data() const noexcept -> sockaddr const* {
+  [[nodiscard]] auto data() const noexcept -> sockaddr const* {
     return reinterpret_cast<sockaddr const*>(&addr_);
   }
-  auto size() const noexcept -> socklen_t { return size_; }
-  auto family() const noexcept -> int { return AF_UNIX; }
+  [[nodiscard]] auto size() const noexcept -> socklen_t { return size_; }
+  [[nodiscard]] auto family() const noexcept -> int { return AF_UNIX; }
 
  private:
   sockaddr_un addr_{};
