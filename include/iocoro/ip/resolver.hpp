@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <system_error>
