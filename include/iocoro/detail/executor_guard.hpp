@@ -23,7 +23,7 @@ struct executor_guard {
   template <executor Ex>
   explicit executor_guard(Ex ex) noexcept : executor_guard(any_executor{std::move(ex)}) {}
 
-  ~executor_guard() { current_executor = prev; }
+  ~executor_guard() noexcept { current_executor = prev; }
 
   executor_guard(executor_guard const&) = delete;
   auto operator=(executor_guard const&) -> executor_guard& = delete;

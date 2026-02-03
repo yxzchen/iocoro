@@ -43,7 +43,7 @@ class work_guard {
   }
 
   /// Releases the work token (if owned).
-  ~work_guard() { reset(); }
+  ~work_guard() noexcept { reset(); }
 
   auto get_executor() const noexcept -> executor_type { return executor_; }
 
