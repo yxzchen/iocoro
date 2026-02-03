@@ -99,8 +99,8 @@ class backend_epoll final : public backend_interface {
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   }
 
-  auto wait(std::optional<std::chrono::milliseconds> timeout,
-            std::vector<backend_event>& out) -> void override {
+  auto wait(std::optional<std::chrono::milliseconds> timeout, std::vector<backend_event>& out)
+    -> void override {
     int timeout_ms = -1;
     if (timeout.has_value()) {
       timeout_ms = static_cast<int>(timeout->count());
@@ -176,7 +176,7 @@ class backend_epoll final : public backend_interface {
  private:
   int epoll_fd_ = -1;
   int eventfd_ = -1;
- std::atomic<bool> wakeup_pending_{false};
+  std::atomic<bool> wakeup_pending_{false};
 };
 
 inline auto make_backend() -> std::unique_ptr<backend_interface> {

@@ -8,6 +8,7 @@
 #include <iocoro/error.hpp>
 #include <iocoro/result.hpp>
 #include <iocoro/this_coro.hpp>
+
 #include <chrono>
 #include <cstddef>
 #include <system_error>
@@ -31,9 +32,7 @@ class steady_timer {
   explicit steady_timer(any_io_executor ex, time_point at) noexcept
       : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(at) {}
   explicit steady_timer(any_io_executor ex, duration after) noexcept
-      : ex_(std::move(ex)),
-        ctx_impl_(ex_.io_context_ptr()),
-        expiry_(clock::now() + after) {}
+      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now() + after) {}
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
@@ -68,9 +67,7 @@ class steady_timer {
     auto orig_ex = co_await this_coro::executor;
     co_await this_coro::switch_to(ex_);
     auto r = co_await detail::operation_awaiter{
-      [timer](detail::reactor_op_ptr rop) {
-        return timer->register_timer(std::move(rop));
-      }};
+      [timer](detail::reactor_op_ptr rop) { return timer->register_timer(std::move(rop)); }};
     co_await this_coro::switch_to(orig_ex);
     co_return r;
   }
@@ -86,7 +83,8 @@ class steady_timer {
   time_point expiry() { return expiry_; }
 
  private:
-  auto register_timer(detail::reactor_op_ptr rop) noexcept -> detail::io_context_impl::event_handle {
+  auto register_timer(detail::reactor_op_ptr rop) noexcept
+    -> detail::io_context_impl::event_handle {
     // SAFETY: `handle_` is the only cancellation hook we have. Hold `mtx_` across both
     // "cancel old handle" and "store new handle" so that `cancel()` cannot observe a
     // partially-registered operation (window between add_timer() and handle_ assignment).

@@ -34,7 +34,8 @@ class io_context {
   class executor_type {
    public:
     executor_type() noexcept = default;
-    explicit executor_type(std::shared_ptr<detail::io_context_impl> impl) noexcept : impl_(std::move(impl)) {}
+    explicit executor_type(std::shared_ptr<detail::io_context_impl> impl) noexcept
+        : impl_(std::move(impl)) {}
 
     executor_type(executor_type const&) noexcept = default;
     auto operator=(executor_type const&) noexcept -> executor_type& = default;
@@ -130,9 +131,7 @@ class io_context {
   /// Return an IO-capable executor associated with this context.
   ///
   /// Posting or dispatching through this executor schedules work onto this `io_context`.
-  auto get_executor() noexcept -> any_io_executor {
-    return any_io_executor{executor_type{impl_}};
-  }
+  auto get_executor() noexcept -> any_io_executor { return any_io_executor{executor_type{impl_}}; }
 
  private:
   std::shared_ptr<detail::io_context_impl> impl_;
@@ -149,8 +148,7 @@ struct executor_traits<iocoro::io_context::executor_type> {
     return ex ? executor_capability::io : executor_capability::none;
   }
 
-  static auto io_context(iocoro::io_context::executor_type const& ex) noexcept
-    -> io_context_impl* {
+  static auto io_context(iocoro::io_context::executor_type const& ex) noexcept -> io_context_impl* {
     return ex.impl_.get();
   }
 };

@@ -2,8 +2,8 @@
 
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
-#include <iocoro/result.hpp>
 #include <iocoro/io/stream_concepts.hpp>
+#include <iocoro/result.hpp>
 
 #include <cstddef>
 #include <span>
@@ -25,8 +25,7 @@ namespace iocoro::io {
 /// Destroying the buffer while the operation is in progress results in
 /// undefined behavior (use-after-free).
 template <async_read_stream Stream>
-auto async_read(Stream& s, std::span<std::byte> buf)
-  -> awaitable<result<std::size_t>> {
+auto async_read(Stream& s, std::span<std::byte> buf) -> awaitable<result<std::size_t>> {
   auto const wanted = buf.size();
 
   while (!buf.empty()) {

@@ -1,10 +1,10 @@
 #pragma once
 
+#include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/socket_handle_base.hpp>
-#include <iocoro/any_io_executor.hpp>
-#include <iocoro/io_context.hpp>
 #include <iocoro/error.hpp>
+#include <iocoro/io_context.hpp>
 #include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/datagram_socket_impl.hpp>
@@ -77,14 +77,15 @@ class basic_datagram_socket {
     if (!handle_.impl().is_open()) {
       open_r = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
     }
-    return open_r.and_then([&] { return handle_.impl().connect(remote_ep.data(), remote_ep.size()); });
+    return open_r.and_then(
+      [&] { return handle_.impl().connect(remote_ep.data(), remote_ep.size()); });
   }
 
   /// Send a datagram to the specified destination.
   ///
   /// The entire buffer is sent as a single datagram (message boundary preserved).
   auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
-      -> awaitable<result<std::size_t>> {
+    -> awaitable<result<std::size_t>> {
     co_return co_await handle_.impl().async_send_to(buffer, destination.data(), destination.size());
   }
 
@@ -94,7 +95,7 @@ class basic_datagram_socket {
   /// The entire message is received in one operation (message boundary preserved).
   /// If the buffer is too small, an error is returned (message_size).
   auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source)
-      -> awaitable<result<std::size_t>> {
+    -> awaitable<result<std::size_t>> {
     sockaddr_storage ss{};
     socklen_t len = sizeof(ss);
 
@@ -141,9 +142,7 @@ class basic_datagram_socket {
 
   auto native_handle() const noexcept -> int { return handle_.native_handle(); }
 
-  auto close() noexcept -> result<void> {
-    return handle_.close();
-  }
+  auto close() noexcept -> result<void> { return handle_.close(); }
   auto is_open() const noexcept -> bool { return handle_.is_open(); }
 
   void cancel() noexcept { handle_.cancel(); }

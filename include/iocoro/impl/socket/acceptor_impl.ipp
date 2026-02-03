@@ -1,6 +1,6 @@
+#include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/detail/socket/acceptor_impl.hpp>
 #include <iocoro/detail/socket_utils.hpp>
-#include <iocoro/detail/scope_guard.hpp>
 
 namespace iocoro::detail::socket {
 

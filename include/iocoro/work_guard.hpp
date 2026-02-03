@@ -1,7 +1,7 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
 #include <iocoro/any_io_executor.hpp>
+#include <iocoro/assert.hpp>
 #include <iocoro/io_context.hpp>
 
 namespace iocoro {

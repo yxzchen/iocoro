@@ -3,8 +3,8 @@
 #include <iocoro/strand.hpp>
 #include <iocoro/thread_pool.hpp>
 
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>

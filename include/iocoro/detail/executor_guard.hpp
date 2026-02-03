@@ -1,7 +1,7 @@
 #pragma once
 
-#include <iocoro/assert.hpp>
 #include <iocoro/any_executor.hpp>
+#include <iocoro/assert.hpp>
 
 #include <coroutine>
 
@@ -9,7 +9,9 @@ namespace iocoro::detail {
 
 inline thread_local any_executor current_executor{};
 
-inline auto get_current_executor() noexcept -> any_executor { return current_executor; }
+inline auto get_current_executor() noexcept -> any_executor {
+  return current_executor;
+}
 
 struct executor_guard {
   any_executor prev;

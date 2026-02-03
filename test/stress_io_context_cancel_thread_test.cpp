@@ -38,7 +38,8 @@ struct record_abort_thread_state {
 
 }  // namespace
 
-TEST(stress_io_context_cancel_thread, cancel_timer_from_foreign_thread_does_not_invoke_abort_inline) {
+TEST(stress_io_context_cancel_thread,
+     cancel_timer_from_foreign_thread_does_not_invoke_abort_inline) {
   // This test encodes the intended v2 invariant:
   // cancellation callbacks must execute on the reactor thread (the thread calling run()).
   //
@@ -76,4 +77,3 @@ TEST(stress_io_context_cancel_thread, cancel_timer_from_foreign_thread_does_not_
   EXPECT_EQ(abort_tid.load(std::memory_order_relaxed), run_tid);
   EXPECT_EQ(complete_calls.load(std::memory_order_relaxed), 0);
 }
-

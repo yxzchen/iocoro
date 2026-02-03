@@ -1,16 +1,16 @@
 #pragma once
 
+#include <atomic>
+#include <coroutine>
+#include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
-#include <iocoro/error.hpp>
-#include <iocoro/result.hpp>
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/unique_function.hpp>
-#include <iocoro/any_executor.hpp>
-#include <coroutine>
+#include <iocoro/error.hpp>
+#include <iocoro/result.hpp>
 #include <memory>
 #include <stop_token>
 #include <system_error>
-#include <atomic>
 
 namespace iocoro::detail {
 
@@ -80,9 +80,7 @@ struct operation_awaiter {
 
     auto handle = register_op(make_reactor_op<op_state>(st));
 
-    if constexpr (requires {
-                    h.promise().get_stop_token();
-                  }) {
+    if constexpr (requires { h.promise().get_stop_token(); }) {
       auto token = h.promise().get_stop_token();
       if (token.stop_requested()) {
         handle.cancel();

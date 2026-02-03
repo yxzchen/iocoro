@@ -5,21 +5,20 @@
 
 #include "test_util.hpp"
 
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <netinet/in.h>
-#include <sys/socket.h>
 
 TEST(acceptor_impl_test, async_accept_without_open_returns_not_open) {
   iocoro::io_context ctx;
   iocoro::detail::socket::acceptor_impl acc{ctx.get_executor()};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
-      co_return co_await acc.async_accept();
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
+    co_return co_await acc.async_accept();
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -33,10 +32,9 @@ TEST(acceptor_impl_test, async_accept_without_listen_returns_not_listening) {
   auto ec = acc.open(AF_INET, SOCK_STREAM, 0);
   ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
-      co_return co_await acc.async_accept();
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
+    co_return co_await acc.async_accept();
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -67,9 +65,7 @@ TEST(acceptor_impl_test, cancel_read_aborts_pending_accept) {
 
   iocoro::co_spawn(
     ctx.get_executor(),
-    [&]() -> iocoro::awaitable<iocoro::result<int>> {
-      co_return co_await acc.async_accept();
-    },
+    [&]() -> iocoro::awaitable<iocoro::result<int>> { co_return co_await acc.async_accept(); },
     [&](iocoro::expected<iocoro::result<int>, std::exception_ptr> r) {
       result = std::move(r);
       std::scoped_lock lk{m};

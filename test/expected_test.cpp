@@ -9,7 +9,7 @@ TEST(expected_test, value_and_error_basic) {
   EXPECT_TRUE(ok);
   EXPECT_EQ(*ok, 42);
 
-  iocoro::expected<int, int> err{ iocoro::unexpected<int>{7} };
+  iocoro::expected<int, int> err{iocoro::unexpected<int>{7}};
   EXPECT_FALSE(err);
   EXPECT_EQ(err.error(), 7);
 }

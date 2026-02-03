@@ -34,19 +34,18 @@ TEST(when_any_test, variadic_returns_first_completed) {
 TEST(when_any_test, container_returns_first_completed_with_index) {
   iocoro::io_context ctx;
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, int>> {
-      std::vector<iocoro::awaitable<int>> tasks;
-      tasks.emplace_back([]() -> iocoro::awaitable<int> {
-        co_await iocoro::co_sleep(std::chrono::milliseconds{2});
-        co_return 1;
-      }());
-      tasks.emplace_back([]() -> iocoro::awaitable<int> {
-        co_await iocoro::co_sleep(std::chrono::milliseconds{1});
-        co_return 2;
-      }());
-      co_return co_await iocoro::when_any(std::move(tasks));
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, int>> {
+    std::vector<iocoro::awaitable<int>> tasks;
+    tasks.emplace_back([]() -> iocoro::awaitable<int> {
+      co_await iocoro::co_sleep(std::chrono::milliseconds{2});
+      co_return 1;
     }());
+    tasks.emplace_back([]() -> iocoro::awaitable<int> {
+      co_await iocoro::co_sleep(std::chrono::milliseconds{1});
+      co_return 2;
+    }());
+    co_return co_await iocoro::when_any(std::move(tasks));
+  }());
 
   ASSERT_TRUE(r);
   EXPECT_EQ(r->first, 1U);
@@ -56,18 +55,17 @@ TEST(when_any_test, container_returns_first_completed_with_index) {
 TEST(when_any_test, variadic_rethrows_exception_if_first) {
   iocoro::io_context ctx;
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<void> {
-      auto bad = []() -> iocoro::awaitable<void> {
-        throw std::runtime_error{"boom"};
-        co_return;
-      }();
-      auto slow = []() -> iocoro::awaitable<void> {
-        co_await iocoro::co_sleep(std::chrono::milliseconds{5});
-        co_return;
-      }();
-      co_await iocoro::when_any(std::move(bad), std::move(slow));
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<void> {
+    auto bad = []() -> iocoro::awaitable<void> {
+      throw std::runtime_error{"boom"};
+      co_return;
+    }();
+    auto slow = []() -> iocoro::awaitable<void> {
+      co_await iocoro::co_sleep(std::chrono::milliseconds{5});
+      co_return;
+    }();
+    co_await iocoro::when_any(std::move(bad), std::move(slow));
+  }());
 
   ASSERT_FALSE(r);
   ASSERT_TRUE(r.error());
@@ -104,12 +102,11 @@ TEST(when_any_test, variadic_void_returns_monostate) {
 TEST(when_any_test, container_single_element_returns_index_zero) {
   iocoro::io_context ctx;
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, int>> {
-      std::vector<iocoro::awaitable<int>> tasks;
-      tasks.emplace_back([]() -> iocoro::awaitable<int> { co_return 9; }());
-      co_return co_await iocoro::when_any(std::move(tasks));
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<std::pair<std::size_t, int>> {
+    std::vector<iocoro::awaitable<int>> tasks;
+    tasks.emplace_back([]() -> iocoro::awaitable<int> { co_return 9; }());
+    co_return co_await iocoro::when_any(std::move(tasks));
+  }());
 
   ASSERT_TRUE(r);
   EXPECT_EQ(r->first, 0U);

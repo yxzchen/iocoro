@@ -6,14 +6,14 @@
 #include <iocoro/io_context.hpp>
 #include <iocoro/work_guard.hpp>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <atomic>
 #include <exception>
-#include <netinet/in.h>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <utility>
 
 namespace iocoro::test {
@@ -89,7 +89,9 @@ inline auto make_temp_path(std::string_view prefix) -> std::string {
          std::to_string(id);
 }
 
-inline void unlink_path(std::string const& path) noexcept { (void)::unlink(path.c_str()); }
+inline void unlink_path(std::string const& path) noexcept {
+  (void)::unlink(path.c_str());
+}
 
 template <class T>
 auto sync_wait(iocoro::io_context& ctx, iocoro::awaitable<T> a)

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/result.hpp>
 #include <iocoro/ip/address.hpp>
+#include <iocoro/result.hpp>
 
 #include <compare>
 #include <cstdint>
@@ -42,8 +42,7 @@ class endpoint_storage {
   auto to_string() const -> std::string;
 
   static auto from_string(std::string const& s) -> result<endpoint_storage>;
-  static auto from_native(sockaddr const* addr, socklen_t len)
-    -> result<endpoint_storage>;
+  static auto from_native(sockaddr const* addr, socklen_t len) -> result<endpoint_storage>;
 
   /// Copy the native sockaddr representation into the user-provided buffer.
   ///
@@ -54,8 +53,7 @@ class endpoint_storage {
   /// Returns:
   /// - invalid_argument if `addr` is null or `len == 0`
   /// - invalid_endpoint if `len < size()`
-  auto to_native(sockaddr* addr, socklen_t len) const noexcept
-    -> result<socklen_t>;
+  auto to_native(sockaddr* addr, socklen_t len) const noexcept -> result<socklen_t>;
 
   /// Lexicographical ordering for endpoints.
   ///

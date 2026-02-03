@@ -5,11 +5,11 @@
 // NOTE: Name/service resolution is inherently IP-specific, so it lives under `iocoro::ip`.
 
 #include <iocoro/any_executor.hpp>
-#include <iocoro/awaitable.hpp>
 #include <iocoro/assert.hpp>
+#include <iocoro/awaitable.hpp>
+#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/result.hpp>
-#include <iocoro/detail/unique_function.hpp>
 #include <iocoro/thread_pool.hpp>
 
 #include <atomic>
@@ -53,8 +53,7 @@ class resolver {
   /// - `service` may be a service name or numeric port; empty is forwarded as nullptr.
   ///
   /// Returns `std::error_code` originating from `getaddrinfo()` on failure.
-  auto async_resolve(std::string host, std::string service)
-    -> awaitable<result<results_type>> {
+  auto async_resolve(std::string host, std::string service) -> awaitable<result<results_type>> {
     auto pool_ex = pool_ex_ ? *pool_ex_ : get_default_executor();
     co_return co_await resolve_awaiter{std::move(pool_ex), std::move(host), std::move(service)};
   }
@@ -127,9 +126,7 @@ struct resolver<Protocol>::resolve_awaiter {
     auto st = state;
     auto weak_state = std::weak_ptr<result_state>{st};
 
-    if constexpr (requires {
-                    h.promise().get_stop_token();
-                  }) {
+    if constexpr (requires { h.promise().get_stop_token(); }) {
       auto token = h.promise().get_stop_token();
       if (token.stop_requested()) {
         if (!st->done.exchange(true)) {
@@ -155,51 +152,48 @@ struct resolver<Protocol>::resolve_awaiter {
       }
     }
 
-    pool_ex.post(
-      [st, host_copy = std::move(host_copy), service_copy = std::move(service_copy)]() {
-        result<results_type> res{};
-        try {
-          addrinfo hints;
-          std::memset(&hints, 0, sizeof(hints));
-          hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6.
-          hints.ai_socktype = Protocol::type();
-          hints.ai_protocol = Protocol::protocol();
+    pool_ex.post([st, host_copy = std::move(host_copy), service_copy = std::move(service_copy)]() {
+      result<results_type> res{};
+      try {
+        addrinfo hints;
+        std::memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6.
+        hints.ai_socktype = Protocol::type();
+        hints.ai_protocol = Protocol::protocol();
 
-          addrinfo* result_list = nullptr;
-          int const ret = ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
-                                        service_copy.empty() ? nullptr : service_copy.c_str(),
-                                        &hints, &result_list);
+        addrinfo* result_list = nullptr;
+        int const ret = ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
+                                      service_copy.empty() ? nullptr : service_copy.c_str(), &hints,
+                                      &result_list);
 
-          if (ret != 0) {
-            res = unexpected(std::error_code(ret, addrinfo_error_category()));
-          } else {
-            results_type endpoints;
-            for (auto* ai = result_list; ai != nullptr; ai = ai->ai_next) {
-              auto ep_result = endpoint::from_native(ai->ai_addr, ai->ai_addrlen);
-              if (ep_result) {
-                endpoints.push_back(std::move(*ep_result));
-              }
+        if (ret != 0) {
+          res = unexpected(std::error_code(ret, addrinfo_error_category()));
+        } else {
+          results_type endpoints;
+          for (auto* ai = result_list; ai != nullptr; ai = ai->ai_next) {
+            auto ep_result = endpoint::from_native(ai->ai_addr, ai->ai_addrlen);
+            if (ep_result) {
+              endpoints.push_back(std::move(*ep_result));
             }
-            ::freeaddrinfo(result_list);
-            res = std::move(endpoints);
           }
-        } catch (...) {
-          res = unexpected(error::internal_error);
+          ::freeaddrinfo(result_list);
+          res = std::move(endpoints);
         }
+      } catch (...) {
+        res = unexpected(error::internal_error);
+      }
 
-        if (st->done.exchange(true)) {
-          return;
-        }
+      if (st->done.exchange(true)) {
+        return;
+      }
 
-        st->res = std::move(res);
-        st->stop_cb.reset();
-        st->ex.post([st]() { st->continuation.resume(); });
-      });
+      st->res = std::move(res);
+      st->stop_cb.reset();
+      st->ex.post([st]() { st->continuation.resume(); });
+    });
   }
 
-  auto await_resume() -> result<results_type> {
-    return std::move(state->res);
-  }
+  auto await_resume() -> result<results_type> { return std::move(state->res); }
 };
 
 }  // namespace iocoro::ip

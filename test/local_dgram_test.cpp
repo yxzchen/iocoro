@@ -28,25 +28,24 @@ TEST(local_dgram_test, send_and_receive_between_endpoints) {
   auto r2 = s2.bind(*ep2);
   ASSERT_TRUE(r2) << r2.error().message();
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      std::array<std::byte, 4> out{};
-      std::memcpy(out.data(), "ping", out.size());
-      std::array<std::byte, 4> in{};
-      iocoro::local::endpoint src{};
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    std::array<std::byte, 4> out{};
+    std::memcpy(out.data(), "ping", out.size());
+    std::array<std::byte, 4> in{};
+    iocoro::local::endpoint src{};
 
-      auto send_r = co_await s1.async_send_to(std::span<std::byte const>{out}, *ep2);
-      if (!send_r) {
-        co_return iocoro::unexpected(send_r.error());
-      }
+    auto send_r = co_await s1.async_send_to(std::span<std::byte const>{out}, *ep2);
+    if (!send_r) {
+      co_return iocoro::unexpected(send_r.error());
+    }
 
-      auto recv_r = co_await s2.async_receive_from(std::span{in}, src);
-      if (!recv_r) {
-        co_return iocoro::unexpected(recv_r.error());
-      }
+    auto recv_r = co_await s2.async_receive_from(std::span{in}, src);
+    if (!recv_r) {
+      co_return iocoro::unexpected(recv_r.error());
+    }
 
-      co_return *recv_r;
-    }());
+    co_return *recv_r;
+  }());
 
   iocoro::test::unlink_path(path1);
   iocoro::test::unlink_path(path2);

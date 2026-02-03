@@ -8,7 +8,7 @@ namespace iocoro::detail {
 namespace {
 
 [[noreturn]] void fail_impl(char const* kind, char const* expr, char const* msg, char const* file,
-                       int line, char const* func) noexcept {
+                            int line, char const* func) noexcept {
   if (msg) {
     std::fprintf(stderr,
                  "[iocoro] %s failure\n"

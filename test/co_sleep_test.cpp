@@ -10,10 +10,9 @@
 TEST(co_sleep_test, co_sleep_resumes_via_timer_and_executor) {
   iocoro::io_context ctx;
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<void> {
-      co_await iocoro::co_sleep(ctx.get_executor(), std::chrono::milliseconds{1});
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(ctx.get_executor(), std::chrono::milliseconds{1});
+  }());
 
   ASSERT_TRUE(r);
 }
@@ -21,10 +20,9 @@ TEST(co_sleep_test, co_sleep_resumes_via_timer_and_executor) {
 TEST(co_sleep_test, co_sleep_uses_current_executor) {
   iocoro::io_context ctx;
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<void> {
-      co_await iocoro::co_sleep(std::chrono::milliseconds{1});
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(std::chrono::milliseconds{1});
+  }());
 
   ASSERT_TRUE(r);
 }
@@ -32,10 +30,9 @@ TEST(co_sleep_test, co_sleep_uses_current_executor) {
 TEST(co_sleep_test, co_sleep_zero_duration_completes) {
   iocoro::io_context ctx;
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<void> {
-      co_await iocoro::co_sleep(ctx.get_executor(), std::chrono::milliseconds{0});
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<void> {
+    co_await iocoro::co_sleep(ctx.get_executor(), std::chrono::milliseconds{0});
+  }());
 
   ASSERT_TRUE(r);
 }

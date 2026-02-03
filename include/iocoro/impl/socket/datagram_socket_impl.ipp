@@ -35,8 +35,7 @@ inline auto datagram_socket_impl::close() noexcept -> result<void> {
   return base_.close();
 }
 
-inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len)
-    -> result<void> {
+inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     return fail(error::not_open);
@@ -57,8 +56,7 @@ inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len)
   return ok();
 }
 
-inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
-    -> result<void> {
+inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len) -> result<void> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     return fail(error::not_open);
@@ -81,10 +79,9 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len)
   return ok();
 }
 
-inline auto datagram_socket_impl::async_send_to(
-    std::span<std::byte const> buffer,
-    sockaddr const* dest_addr,
-    socklen_t dest_len) -> awaitable<result<std::size_t>> {
+inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffer,
+                                                sockaddr const* dest_addr, socklen_t dest_len)
+  -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);
@@ -155,10 +152,9 @@ inline auto datagram_socket_impl::async_send_to(
   }
 }
 
-inline auto datagram_socket_impl::async_receive_from(
-    std::span<std::byte> buffer,
-    sockaddr* src_addr,
-    socklen_t* src_len) -> awaitable<result<std::size_t>> {
+inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer,
+                                                     sockaddr* src_addr, socklen_t* src_len)
+  -> awaitable<result<std::size_t>> {
   auto const fd = base_.native_handle();
   if (fd < 0) {
     co_return unexpected(error::not_open);

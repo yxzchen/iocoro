@@ -24,9 +24,9 @@
 #include <iocoro/work_guard.hpp>
 
 // Timers & composition
+#include <iocoro/awaitable_operators.hpp>
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/awaitable_operators.hpp>
 #include <iocoro/when_all.hpp>
 #include <iocoro/when_any.hpp>
 

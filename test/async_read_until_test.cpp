@@ -25,8 +25,7 @@ struct mock_read_stream {
 
   auto get_executor() const noexcept -> iocoro::any_io_executor { return ex; }
 
-  auto async_read_some(std::span<std::byte> buf)
-    -> iocoro::awaitable<iocoro::result<std::size_t>> {
+  auto async_read_some(std::span<std::byte> buf) -> iocoro::awaitable<iocoro::result<std::size_t>> {
     if (pos >= data.size()) {
       co_return iocoro::result<std::size_t>(0);
     }
@@ -47,10 +46,9 @@ TEST(async_read_until_test, finds_multibyte_delimiter_across_chunks_and_may_over
   mock_read_stream s{.data = "abc\r\nrest", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::array<std::byte, 1024> buf{};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      return iocoro::io::async_read_until(s, std::span{buf}, "\r\n");
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    return iocoro::io::async_read_until(s, std::span{buf}, "\r\n");
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);
@@ -70,10 +68,9 @@ TEST(async_read_until_test, completes_immediately_if_delimiter_already_present) 
   std::string_view initial = "hello\n";
   std::memcpy(buf.data(), initial.data(), initial.size());
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      return iocoro::io::async_read_until(s, std::span{buf}, '\n', initial.size());
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    return iocoro::io::async_read_until(s, std::span{buf}, '\n', initial.size());
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);
@@ -87,10 +84,9 @@ TEST(async_read_until_test, returns_message_size_if_not_found_within_max_size) {
   mock_read_stream s{.data = "abcdef", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::array<std::byte, 4> buf{};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      return iocoro::io::async_read_until(s, std::span{buf}, '\n');
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    return iocoro::io::async_read_until(s, std::span{buf}, '\n');
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -105,10 +101,9 @@ TEST(async_read_until_test, returns_eof_if_stream_ends_before_delimiter) {
   mock_read_stream s{.data = "abc", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::array<std::byte, 1024> buf{};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      return iocoro::io::async_read_until(s, std::span{buf}, '\n');
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    return iocoro::io::async_read_until(s, std::span{buf}, '\n');
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -121,10 +116,9 @@ TEST(async_read_until_test, empty_delimiter_returns_invalid_argument) {
   mock_read_stream s{.data = "abc", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::array<std::byte, 4> buf{};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      return iocoro::io::async_read_until(s, std::span{buf}, std::string_view{});
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    return iocoro::io::async_read_until(s, std::span{buf}, std::string_view{});
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -137,10 +131,9 @@ TEST(async_read_until_test, invalid_initial_size_returns_invalid_argument) {
   mock_read_stream s{.data = "abc", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::array<std::byte, 4> buf{};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      return iocoro::io::async_read_until(s, std::span{buf}, '\n', buf.size() + 1);
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    return iocoro::io::async_read_until(s, std::span{buf}, '\n', buf.size() + 1);
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(*r);
@@ -153,10 +146,9 @@ TEST(async_read_until_test, delimiter_at_buffer_end_is_detected) {
   mock_read_stream s{.data = "abc\n", .pos = 0, .max_chunk = 2, .ex = ctx.get_executor()};
   std::array<std::byte, 4> buf{};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      return iocoro::io::async_read_until(s, std::span{buf}, '\n');
-    }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    return iocoro::io::async_read_until(s, std::span{buf}, '\n');
+  }());
 
   ASSERT_TRUE(r);
   ASSERT_TRUE(*r);

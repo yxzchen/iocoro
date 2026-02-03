@@ -1,10 +1,10 @@
 #pragma once
 
+#include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/completion_token.hpp>
 #include <iocoro/detail/unique_function.hpp>
-#include <iocoro/any_executor.hpp>
 #include <iocoro/expected.hpp>
 
 #include <atomic>
@@ -207,9 +207,7 @@ struct spawn_result_awaiter {
     st->waiter = h;
     auto ex = h.promise().get_executor();
     IOCORO_ENSURE(ex, "co_spawn(use_awaitable): empty executor");
-    st->resume = [ex, h]() mutable {
-      ex.post([h]() mutable { h.resume(); });
-    };
+    st->resume = [ex, h]() mutable { ex.post([h]() mutable { h.resume(); }); };
     return true;
   }
 

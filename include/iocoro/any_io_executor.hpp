@@ -23,7 +23,7 @@ class any_io_executor {
   explicit any_io_executor(any_executor ex) noexcept : storage_(ex.storage_) {
     if (storage_) {
       IOCORO_ENSURE(has_capability(storage_.capabilities(), executor_capability::io),
-                   "any_io_executor: requires IO-capable executor");
+                    "any_io_executor: requires IO-capable executor");
       impl_ = storage_.io_context_ptr();
       IOCORO_ENSURE(impl_ != nullptr, "any_io_executor: missing io_context_impl");
     }
@@ -36,7 +36,9 @@ class any_io_executor {
   void post(detail::unique_function<void()> f) const noexcept { storage_.post(std::move(f)); }
 
   /// Execute inline when permitted; otherwise schedule like `post()`.
-  void dispatch(detail::unique_function<void()> f) const noexcept { storage_.dispatch(std::move(f)); }
+  void dispatch(detail::unique_function<void()> f) const noexcept {
+    storage_.dispatch(std::move(f));
+  }
 
   auto capabilities() const noexcept -> executor_capability { return storage_.capabilities(); }
 

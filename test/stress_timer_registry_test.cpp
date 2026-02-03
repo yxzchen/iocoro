@@ -55,9 +55,9 @@ TEST(stress_timer_registry, stale_generation_does_not_cancel_new_timer_in_same_s
 
   // Use a near-future expiry so that process_expired() can recycle the node quickly
   // after cancellation, enabling slot reuse.
-  auto tok1 = reg.add_timer(
-    std::chrono::steady_clock::now() + std::chrono::milliseconds{1},
-    iocoro::detail::make_reactor_op<single_call_state>(single_call_state{&complete, &abort, &done1}));
+  auto tok1 = reg.add_timer(std::chrono::steady_clock::now() + std::chrono::milliseconds{1},
+                            iocoro::detail::make_reactor_op<single_call_state>(
+                              single_call_state{&complete, &abort, &done1}));
 
   auto cr1 = reg.cancel(tok1);
   ASSERT_TRUE(cr1.cancelled);
@@ -72,9 +72,9 @@ TEST(stress_timer_registry, stale_generation_does_not_cancel_new_timer_in_same_s
   }
 
   // Reuse the freed slot by adding another timer.
-  auto tok2 = reg.add_timer(
-    std::chrono::steady_clock::now() + std::chrono::milliseconds{1},
-    iocoro::detail::make_reactor_op<single_call_state>(single_call_state{&complete, &abort, &done2}));
+  auto tok2 = reg.add_timer(std::chrono::steady_clock::now() + std::chrono::milliseconds{1},
+                            iocoro::detail::make_reactor_op<single_call_state>(
+                              single_call_state{&complete, &abort, &done2}));
   ASSERT_NE(tok2.generation, tok1.generation);
 
   // Cancelling with stale generation must not affect the new timer.

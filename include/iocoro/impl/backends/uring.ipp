@@ -30,7 +30,9 @@ auto pack_fd(int fd, std::uint64_t tag, std::uint32_t gen = 0) noexcept -> std::
          (static_cast<std::uint64_t>(static_cast<std::uint32_t>(fd)) << fd_shift) | (tag & 0x3ULL);
 }
 
-auto unpack_tag(std::uint64_t data) noexcept -> std::uint64_t { return (data & 0x3ULL); }
+auto unpack_tag(std::uint64_t data) noexcept -> std::uint64_t {
+  return (data & 0x3ULL);
+}
 auto unpack_fd(std::uint64_t data) noexcept -> int {
   return static_cast<int>((data >> fd_shift) & 0xFFFFFFFFULL);
 }
@@ -150,8 +152,8 @@ class backend_uring final : public backend_interface {
     wakeup();
   }
 
-  auto wait(std::optional<std::chrono::milliseconds> timeout,
-            std::vector<backend_event>& out) -> void override {
+  auto wait(std::optional<std::chrono::milliseconds> timeout, std::vector<backend_event>& out)
+    -> void override {
     out.clear();
 
     // Drain any interest updates recorded by other threads.

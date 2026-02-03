@@ -93,7 +93,9 @@ inline auto endpoint_storage::data() noexcept -> sockaddr* {
   return reinterpret_cast<sockaddr*>(&storage_);
 }
 
-inline auto endpoint_storage::size() const noexcept -> socklen_t { return size_; }
+inline auto endpoint_storage::size() const noexcept -> socklen_t {
+  return size_;
+}
 
 inline auto endpoint_storage::family() const noexcept -> int {
   return static_cast<int>(storage_.ss_family);
@@ -119,8 +121,7 @@ inline auto endpoint_storage::to_string() const -> std::string {
   return addr_str + ":" + std::to_string(port());
 }
 
-inline auto endpoint_storage::from_string(std::string const& s)
-  -> result<endpoint_storage> {
+inline auto endpoint_storage::from_string(std::string const& s) -> result<endpoint_storage> {
   if (s.empty()) {
     return unexpected(error::invalid_argument);
   }

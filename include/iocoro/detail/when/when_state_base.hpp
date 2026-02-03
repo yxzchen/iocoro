@@ -5,8 +5,8 @@
 
 #include <atomic>
 #include <coroutine>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <mutex>
 #include <utility>
@@ -31,9 +31,7 @@ struct when_state_base {
     return reinterpret_cast<void*>(static_cast<std::uintptr_t>(1));
   }
 
-  explicit when_state_base(std::size_t n) {
-    remaining.store(n, std::memory_order_relaxed);
-  }
+  explicit when_state_base(std::size_t n) { remaining.store(n, std::memory_order_relaxed); }
 
   void set_exception(std::exception_ptr ep) noexcept {
     std::scoped_lock lk{m};
@@ -52,16 +50,14 @@ struct when_state_base {
         return;
       }
       if (addr == nullptr) {
-        if (waiter_addr.compare_exchange_weak(addr, done_sentinel(),
-                                             std::memory_order_acq_rel,
-                                             std::memory_order_acquire)) {
+        if (waiter_addr.compare_exchange_weak(addr, done_sentinel(), std::memory_order_acq_rel,
+                                              std::memory_order_acquire)) {
           return;
         }
         continue;
       }
-      if (waiter_addr.compare_exchange_weak(addr, done_sentinel(),
-                                           std::memory_order_acq_rel,
-                                           std::memory_order_acquire)) {
+      if (waiter_addr.compare_exchange_weak(addr, done_sentinel(), std::memory_order_acq_rel,
+                                            std::memory_order_acquire)) {
         break;
       }
     }
@@ -87,9 +83,7 @@ struct when_awaiter {
 
   std::shared_ptr<State> st;
 
-  bool await_ready() const noexcept {
-    return (st->remaining.load(std::memory_order_relaxed) == 0);
-  }
+  bool await_ready() const noexcept { return (st->remaining.load(std::memory_order_relaxed) == 0); }
 
   template <class Promise>
     requires requires(Promise& p) { p.get_executor(); }
@@ -108,10 +102,9 @@ struct when_awaiter {
     void* expected = nullptr;
     void* desired = h.address();
     IOCORO_ENSURE(desired != when_state_base::done_sentinel(),
-                 "when_all/when_any: invalid coroutine address");
+                  "when_all/when_any: invalid coroutine address");
 
-    if (!st->waiter_addr.compare_exchange_strong(expected, desired,
-                                                 std::memory_order_acq_rel,
+    if (!st->waiter_addr.compare_exchange_strong(expected, desired, std::memory_order_acq_rel,
                                                  std::memory_order_acquire)) {
       // Either already completed (sentinel) or multiple awaiters (non-null).
       if (expected == when_state_base::done_sentinel()) {

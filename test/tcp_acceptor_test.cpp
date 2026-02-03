@@ -37,20 +37,19 @@ TEST(tcp_acceptor_test, open_bind_listen_accept_and_exchange_data) {
     (void)::close(fd);
   });
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      auto accepted = co_await acc.async_accept();
-      if (!accepted) {
-        co_return iocoro::unexpected(accepted.error());
-      }
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    auto accepted = co_await acc.async_accept();
+    if (!accepted) {
+      co_return iocoro::unexpected(accepted.error());
+    }
 
-      std::array<std::byte, 4> in{};
-      auto rd = co_await iocoro::io::async_read(*accepted, std::span{in});
-      if (!rd) {
-        co_return iocoro::unexpected(rd.error());
-      }
-      co_return *rd;
-    }());
+    std::array<std::byte, 4> in{};
+    auto rd = co_await iocoro::io::async_read(*accepted, std::span{in});
+    if (!rd) {
+      co_return iocoro::unexpected(rd.error());
+    }
+    co_return *rd;
+  }());
 
   client.join();
 
@@ -85,21 +84,20 @@ TEST(tcp_acceptor_test, accepts_multiple_connections_sequentially) {
     }
   });
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      for (int i = 0; i < 2; ++i) {
-        auto accepted = co_await acc.async_accept();
-        if (!accepted) {
-          co_return iocoro::unexpected(accepted.error());
-        }
-        std::array<std::byte, 4> in{};
-        auto rd = co_await iocoro::io::async_read(*accepted, std::span{in});
-        if (!rd) {
-          co_return iocoro::unexpected(rd.error());
-        }
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    for (int i = 0; i < 2; ++i) {
+      auto accepted = co_await acc.async_accept();
+      if (!accepted) {
+        co_return iocoro::unexpected(accepted.error());
       }
-      co_return 4U;
-    }());
+      std::array<std::byte, 4> in{};
+      auto rd = co_await iocoro::io::async_read(*accepted, std::span{in});
+      if (!rd) {
+        co_return iocoro::unexpected(rd.error());
+      }
+    }
+    co_return 4U;
+  }());
 
   client.join();
 

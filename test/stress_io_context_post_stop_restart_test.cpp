@@ -66,4 +66,3 @@ TEST(stress_io_context, concurrent_post_and_stop_restart_does_not_deadlock) {
 
   EXPECT_EQ(executed.load(std::memory_order_relaxed), posted.load(std::memory_order_relaxed));
 }
-

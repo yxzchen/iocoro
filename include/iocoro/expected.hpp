@@ -37,16 +37,14 @@ template <class E>
 class bad_expected_access : public std::exception {
  public:
   explicit bad_expected_access(E e) : err_(std::move(e)) {}
-  
+
   auto error() const& -> E const& { return err_; }
   auto error() & -> E& { return err_; }
   auto error() const&& -> E const&& { return std::move(err_); }
   auto error() && -> E&& { return std::move(err_); }
-  
-  const char* what() const noexcept override {
-    return "bad expected access";
-  }
-  
+
+  const char* what() const noexcept override { return "bad expected access"; }
+
  private:
   E err_;
 };
@@ -117,22 +115,26 @@ class expected {
   constexpr explicit operator bool() const noexcept { return has_value(); }
 
   constexpr T& value() & {
-    if (!has_value()) throw_bad_expected_access();
+    if (!has_value())
+      throw_bad_expected_access();
     return std::get<0>(storage_);
   }
 
   constexpr T const& value() const& {
-    if (!has_value()) throw_bad_expected_access();
+    if (!has_value())
+      throw_bad_expected_access();
     return std::get<0>(storage_);
   }
 
   constexpr T&& value() && {
-    if (!has_value()) throw_bad_expected_access();
+    if (!has_value())
+      throw_bad_expected_access();
     return std::move(std::get<0>(storage_));
   }
 
   constexpr T const&& value() const&& {
-    if (!has_value()) throw_bad_expected_access();
+    if (!has_value())
+      throw_bad_expected_access();
     return std::move(std::get<0>(storage_));
   }
 
@@ -282,15 +284,15 @@ class expected {
  private:
   std::variant<T, E> storage_;
 
-  [[noreturn]] void throw_bad_expected_access() const {
-    throw bad_expected_access<E>(error());
-  }
+  [[noreturn]] void throw_bad_expected_access() const { throw bad_expected_access<E>(error()); }
 };
 
 template <class T, class E>
 constexpr bool operator==(expected<T, E> const& lhs, expected<T, E> const& rhs) {
-  if (lhs.has_value() != rhs.has_value()) return false;
-  if (lhs.has_value()) return *lhs == *rhs;
+  if (lhs.has_value() != rhs.has_value())
+    return false;
+  if (lhs.has_value())
+    return *lhs == *rhs;
   return lhs.error() == rhs.error();
 }
 
@@ -386,11 +388,13 @@ class expected<void, E> {
   constexpr explicit operator bool() const noexcept { return has_value(); }
 
   constexpr void value() const& {
-    if (!has_value()) throw_bad_expected_access();
+    if (!has_value())
+      throw_bad_expected_access();
   }
 
   constexpr void value() && {
-    if (!has_value()) throw_bad_expected_access();
+    if (!has_value())
+      throw_bad_expected_access();
   }
 
   constexpr E& error() & noexcept { return std::get<1>(storage_); }
@@ -454,9 +458,7 @@ class expected<void, E> {
  private:
   std::variant<std::monostate, E> storage_;
 
-  [[noreturn]] void throw_bad_expected_access() const {
-    throw bad_expected_access<E>(error());
-  }
+  [[noreturn]] void throw_bad_expected_access() const { throw bad_expected_access<E>(error()); }
 };
 
 #endif

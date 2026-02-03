@@ -1,8 +1,8 @@
 #pragma once
 
 #include <iocoro/error.hpp>
-#include <iocoro/result.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/result.hpp>
 
 #include <iocoro/detail/scope_guard.hpp>
 #include <iocoro/detail/socket/op_state.hpp>
@@ -113,10 +113,8 @@ class datagram_socket_impl {
   /// - The entire buffer is sent as a single datagram (message boundary preserved).
   /// - If the socket is connected, the destination MUST match the connected endpoint.
   /// - Returns the number of bytes sent (should equal buffer size for datagram sockets).
-  auto async_send_to(
-      std::span<std::byte const> buffer,
-      sockaddr const* dest_addr,
-      socklen_t dest_len) -> awaitable<result<std::size_t>>;
+  auto async_send_to(std::span<std::byte const> buffer, sockaddr const* dest_addr,
+                     socklen_t dest_len) -> awaitable<result<std::size_t>>;
 
   /// Receive a datagram and retrieve the source endpoint.
   ///
@@ -125,16 +123,14 @@ class datagram_socket_impl {
   /// - The entire message is received in one operation (message boundary preserved).
   /// - If the buffer is too small, an error (message_size) is returned.
   /// - src_len must be initialized to the size of the src_addr buffer before calling.
-  auto async_receive_from(
-      std::span<std::byte> buffer,
-      sockaddr* src_addr,
-      socklen_t* src_len) -> awaitable<result<std::size_t>>;
+  auto async_receive_from(std::span<std::byte> buffer, sockaddr* src_addr, socklen_t* src_len)
+    -> awaitable<result<std::size_t>>;
 
  private:
   enum class dgram_state : std::uint8_t {
-    idle,       // Socket opened but not bound.
-    bound,      // Socket bound to a local address.
-    connected   // Socket connected to a remote peer.
+    idle,      // Socket opened but not bound.
+    bound,     // Socket bound to a local address.
+    connected  // Socket connected to a remote peer.
   };
 
   socket_impl_base base_;
@@ -148,7 +144,6 @@ class datagram_socket_impl {
   // Store the connected endpoint for validation.
   sockaddr_storage connected_addr_{};
   socklen_t connected_addr_len_{0};
-
 };
 
 }  // namespace iocoro::detail::socket

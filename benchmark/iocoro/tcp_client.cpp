@@ -30,8 +30,8 @@ auto example(iocoro::io_context& ctx, tcp::endpoint ep, std::string msg, int n)
     std::vector<std::byte> buffer(1024);
     for (int i = 0; i < n; ++i) {
       auto w = co_await iocoro::io::async_write(
-        socket, std::span<std::byte const>(
-                  reinterpret_cast<std::byte const*>(msg.data()), msg.size()));
+        socket,
+        std::span<std::byte const>(reinterpret_cast<std::byte const*>(msg.data()), msg.size()));
       if (!w) {
         throw std::runtime_error("write failed");
       }

@@ -42,28 +42,27 @@ TEST(tcp_socket_test, connect_and_exchange_data) {
   iocoro::ip::tcp::socket sock{ctx};
   iocoro::ip::tcp::endpoint ep{iocoro::ip::address_v4::loopback(), port};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-      auto cr = co_await sock.async_connect(ep);
-      if (!cr) {
-        co_return iocoro::unexpected(cr.error());
-      }
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    auto cr = co_await sock.async_connect(ep);
+    if (!cr) {
+      co_return iocoro::unexpected(cr.error());
+    }
 
-      std::array<std::byte, 4> out{};
-      std::memcpy(out.data(), "ping", out.size());
-      auto wr = co_await iocoro::io::async_write(sock, std::span<std::byte const>{out});
-      if (!wr) {
-        co_return iocoro::unexpected(wr.error());
-      }
+    std::array<std::byte, 4> out{};
+    std::memcpy(out.data(), "ping", out.size());
+    auto wr = co_await iocoro::io::async_write(sock, std::span<std::byte const>{out});
+    if (!wr) {
+      co_return iocoro::unexpected(wr.error());
+    }
 
-      std::array<std::byte, 4> in{};
-      auto rd = co_await iocoro::io::async_read(sock, std::span{in});
-      if (!rd) {
-        co_return iocoro::unexpected(rd.error());
-      }
+    std::array<std::byte, 4> in{};
+    auto rd = co_await iocoro::io::async_read(sock, std::span{in});
+    if (!rd) {
+      co_return iocoro::unexpected(rd.error());
+    }
 
-      co_return *rd;
-    }());
+    co_return *rd;
+  }());
 
   server.join();
 
@@ -82,8 +81,9 @@ TEST(tcp_socket_test, connect_to_closed_port_returns_error) {
   iocoro::ip::tcp::socket sock{ctx};
   iocoro::ip::tcp::endpoint ep{iocoro::ip::address_v4::loopback(), port};
 
-  auto r = iocoro::test::sync_wait(
-    ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> { co_return co_await sock.async_connect(ep); }());
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
+    co_return co_await sock.async_connect(ep);
+  }());
 
   ASSERT_TRUE(r);
   EXPECT_FALSE(static_cast<bool>(*r));

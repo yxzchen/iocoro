@@ -1,9 +1,9 @@
 #pragma once
 
+#include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/when/when_state_base.hpp>
-#include <iocoro/any_executor.hpp>
 
 #include <coroutine>
 #include <cstddef>
@@ -23,8 +23,7 @@ struct when_any_variadic_state : when_state_base {
   std::size_t completed_index{0};
   values_variant result{};
 
-  explicit when_any_variadic_state()
-      : when_state_base(1) {}
+  explicit when_any_variadic_state() : when_state_base(1) {}
 
   template <std::size_t I, class V>
   void set_value(V&& v) {
@@ -41,8 +40,7 @@ struct when_any_container_state : when_state_base {
   std::size_t completed_index{0};
   std::optional<value_t> result{};
 
-  explicit when_any_container_state()
-      : when_state_base(1) {}
+  explicit when_any_container_state() : when_state_base(1) {}
 
   void set_value(std::size_t i, value_t v) {
     static_assert(!std::is_void_v<T>);

@@ -2,8 +2,8 @@
 
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/io_context.hpp>
-#include <iocoro/socket_option.hpp>
 #include <iocoro/result.hpp>
+#include <iocoro/socket_option.hpp>
 
 #include <memory>
 #include <system_error>

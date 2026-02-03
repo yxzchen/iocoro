@@ -6,9 +6,9 @@
 // It is NOT a generic endpoint for non-IP domains (e.g. AF_UNIX).
 
 #include <iocoro/error.hpp>
-#include <iocoro/result.hpp>
 #include <iocoro/ip/address.hpp>
 #include <iocoro/ip/detail/endpoint_storage.hpp>
+#include <iocoro/result.hpp>
 
 #include <compare>
 #include <cstdint>
@@ -57,7 +57,7 @@ class endpoint {
   /// Returns invalid_argument on parse failure.
   static auto from_string(std::string const& s) -> result<endpoint> {
     return detail::endpoint_storage::from_string(s).transform(
-        [](detail::endpoint_storage st) noexcept { return endpoint{std::move(st)}; });
+      [](detail::endpoint_storage st) noexcept { return endpoint{std::move(st)}; });
   }
 
   /// Construct an endpoint from a native sockaddr.
@@ -65,16 +65,14 @@ class endpoint {
   /// Returns:
   /// - endpoint on success
   /// - invalid_endpoint / unsupported_address_family / invalid_argument on failure
-  static auto from_native(sockaddr const* addr, socklen_t len)
-    -> result<endpoint> {
+  static auto from_native(sockaddr const* addr, socklen_t len) -> result<endpoint> {
     return detail::endpoint_storage::from_native(addr, len).transform(
-        [](detail::endpoint_storage st) noexcept { return endpoint{std::move(st)}; });
+      [](detail::endpoint_storage st) noexcept { return endpoint{std::move(st)}; });
   }
 
   /// Copy the native sockaddr representation into the user-provided buffer.
   /// See `iocoro::detail::ip::endpoint_storage::to_native()` for contract.
-  auto to_native(sockaddr* addr, socklen_t len) const noexcept
-    -> result<socklen_t> {
+  auto to_native(sockaddr* addr, socklen_t len) const noexcept -> result<socklen_t> {
     return storage_.to_native(addr, len);
   }
 

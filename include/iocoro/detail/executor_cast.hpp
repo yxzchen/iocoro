@@ -27,5 +27,3 @@ inline auto to_io_executor(any_executor const& ex) noexcept -> any_io_executor {
 }
 
 }  // namespace iocoro::detail
-
-
