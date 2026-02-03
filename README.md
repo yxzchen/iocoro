@@ -18,6 +18,18 @@ It aims to provide an executor/awaitable-centric playground for coroutine-based 
 - **Stop/cancellation propagation (via `std::stop_token`)**: promise owns a stop token and supports requesting stop (details evolve with the project).
 - **Core I/O building blocks**: `io_context`, timers, sockets, and basic async algorithms (development-stage semantics).
 
+## Cancellation & stop semantics (preview)
+
+`iocoro` uses `std::stop_token` to propagate stop requests through coroutine chains.
+
+- **Get current stop token**: `co_await iocoro::this_coro::stop_token`
+- **Error codes**:
+  - stop/cancellation -> `iocoro::error::operation_aborted`
+  - timeout expiry (`with_timeout`) -> `iocoro::error::timed_out`
+- **`notify_event`**:
+  - sticky auto-reset (ticketed) semantics (counting-semaphore-like)
+  - resumption always happens by **posting onto the awaiting coroutine’s executor**
+
 ## Platform & toolchain support
 
 - **OS**: Linux

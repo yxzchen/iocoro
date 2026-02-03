@@ -23,11 +23,16 @@ namespace iocoro {
 /// Auto-reset notification event (stop-aware).
 ///
 /// Semantics:
-/// - `notify_one()` wakes exactly one waiter if present; otherwise accumulates one "ticket".
+/// - `notify_one()` wakes exactly one waiter if present; otherwise accumulates one "ticket"
+///   (sticky behavior).
 /// - `async_wait(use_awaitable)` consumes a ticket immediately if available; otherwise suspends
 ///   until notified.
 /// - If a stop request happens while waiting, the waiter is resumed and returns
 ///   `error::operation_aborted`.
+///
+/// Notes:
+/// - This is effectively a counting semaphore-like primitive (unbounded ticket count).
+/// - Resumption is always scheduled by posting onto the awaiting coroutine's executor.
 class notify_event {
  public:
   notify_event() = default;
@@ -64,6 +69,7 @@ class notify_event {
     any_executor ex{};
     std::error_code ec{};
     std::atomic<bool> done{false};
+    std::atomic<bool> suspended{false};
     std::shared_ptr<std::stop_callback<detail::unique_function<void()>>> stop_cb{};
   };
 
@@ -75,6 +81,12 @@ class notify_event {
       return;
     }
     st->ec = ec;
+
+    // If the waiter did not actually suspend (await_ready/await_suspend returned false),
+    // do not schedule resumption; the coroutine will continue inline.
+    if (!st->suspended.load(std::memory_order_acquire)) {
+      return;
+    }
 
     auto h = std::exchange(st->h, std::coroutine_handle<>{});
     if (!h) {
@@ -98,7 +110,6 @@ class notify_event {
   struct wait_awaiter {
     notify_event* ev{};
     std::shared_ptr<wait_state> st{std::make_shared<wait_state>()};
-    bool ready{false};
 
     explicit wait_awaiter(notify_event* ev_) noexcept : ev(ev_) {}
 
@@ -106,7 +117,7 @@ class notify_event {
       std::scoped_lock lk{ev->m_};
       if (ev->tickets_ > 0) {
         --ev->tickets_;
-        ready = true;
+        st->done.store(true, std::memory_order_release);
         return true;
       }
       return false;
@@ -125,7 +136,7 @@ class notify_event {
       }
       if (token.stop_requested()) {
         st->ec = make_error_code(error::operation_aborted);
-        ready = true;
+        st->done.store(true, std::memory_order_release);
         return false;
       }
 
@@ -133,10 +144,9 @@ class notify_event {
         std::scoped_lock lk{ev->m_};
         if (ev->tickets_ > 0) {
           --ev->tickets_;
-          ready = true;
+          st->done.store(true, std::memory_order_release);
           return false;
         }
-        ev->waiters_.push_back(st);
       }
 
       if (token.stop_possible()) {
@@ -154,16 +164,31 @@ class notify_event {
             }});
       }
 
+      {
+        std::scoped_lock lk{ev->m_};
+        if (ev->tickets_ > 0) {
+          --ev->tickets_;
+          st->done.store(true, std::memory_order_release);
+          return false;
+        }
+        if (st->done.load(std::memory_order_acquire)) {
+          // Stop may have happened while constructing stop callback.
+          return false;
+        }
+        ev->waiters_.push_back(st);
+      }
+
+      st->suspended.store(true, std::memory_order_release);
+      if (st->done.load(std::memory_order_acquire)) {
+        // Stop may have happened after enqueuing but before `suspended` was published.
+        ev->remove_waiter(st.get());
+        return false;
+      }
+
       return true;
     }
 
     auto await_resume() noexcept -> result<void> {
-      if (ready) {
-        if (st->ec) {
-          return unexpected(st->ec);
-        }
-        return ok();
-      }
       if (st->ec) {
         return unexpected(st->ec);
       }
