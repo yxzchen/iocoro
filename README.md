@@ -2,16 +2,13 @@
 
 `iocoro` is a **development-stage** coroutine-based I/O library for C++20.
 
+It aims to provide an executor/awaitable-centric playground for coroutine-based async I/O and composition, suitable for experimentation and discussion. It targets experienced C++ developers who are already comfortable with C++20 coroutines and executor/scheduling semantics, and can tolerate frequent changes.
+
 ### Important notice
 
 - This project **does not guarantee semantic correctness**.
 - This project **does not guarantee API stability**; APIs and behavior may change frequently.
 - This project **does not promise backward compatibility** and is **not recommended for production use**.
-
-## Goals and scope
-
-- **What it tries to solve**: provide an executor/awaitable-centric playground for coroutine-based async I/O and composition, suitable for experimentation and discussion.
-- **Target users**: experienced C++ developers who are already comfortable with C++20 coroutines and executor/scheduling semantics, and who can tolerate frequent changes.
 
 ## Key capabilities (semantic-level)
 
