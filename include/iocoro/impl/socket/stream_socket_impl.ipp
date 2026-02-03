@@ -119,13 +119,23 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     co_return fail(ec);
   }
   if (so_error == 0) {
-    std::scoped_lock lk{mtx_};
-    if (!connect_op_.is_epoch_current(my_epoch)) {
-      state_ = conn_state::disconnected;
-      co_return fail(error::operation_aborted);
+    sockaddr_storage peer{};
+    socklen_t peer_len = sizeof(peer);
+    if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peer), &peer_len) == 0) {
+      std::scoped_lock lk{mtx_};
+      if (!connect_op_.is_epoch_current(my_epoch)) {
+        state_ = conn_state::disconnected;
+        co_return fail(error::operation_aborted);
+      }
+      state_ = conn_state::connected;
+      co_return ok();
     }
-    state_ = conn_state::connected;
-    co_return ok();
+    if (errno != ENOTCONN) {
+      ec = std::error_code(errno, std::generic_category());
+      std::scoped_lock lk{mtx_};
+      state_ = conn_state::disconnected;
+      co_return fail(ec);
+    }
   }
 
   // Wait for writability, then check SO_ERROR.
