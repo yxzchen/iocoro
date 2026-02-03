@@ -21,7 +21,7 @@ class awaitable {
   /// IMPORTANT: This type owns the coroutine frame. If it still owns a handle on destruction,
   /// it will `destroy()` the coroutine.
   explicit awaitable(handle_type h) noexcept : coro_(h) {}
-  ~awaitable() {
+  ~awaitable() noexcept {
     if (coro_) {
       coro_.destroy();
     }
@@ -45,10 +45,10 @@ class awaitable {
   ///
   /// SAFETY: After `release()`, the caller becomes responsible for eventually destroying the
   /// handle (or transferring ownership elsewhere).
-  auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
+  [[nodiscard]] auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
 
   /// Return the executor associated with this coroutine (if any).
-  auto get_executor() const noexcept -> any_executor {
+  [[nodiscard]] auto get_executor() const noexcept -> any_executor {
     if (!coro_) {
       return any_executor{};
     }
@@ -56,7 +56,7 @@ class awaitable {
   }
 
   /// Return the stop token associated with this coroutine (if any).
-  auto get_stop_token() -> std::stop_token {
+  [[nodiscard]] auto get_stop_token() const noexcept -> std::stop_token {
     if (!coro_) {
       return {};
     }
