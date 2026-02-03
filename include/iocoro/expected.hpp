@@ -1,7 +1,7 @@
 #pragma once
 
+#include <exception>
 #include <functional>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -115,26 +115,30 @@ class expected {
   constexpr explicit operator bool() const noexcept { return has_value(); }
 
   constexpr T& value() & {
-    if (!has_value())
+    if (!has_value()) {
       throw_bad_expected_access();
+    }
     return std::get<0>(storage_);
   }
 
   constexpr T const& value() const& {
-    if (!has_value())
+    if (!has_value()) {
       throw_bad_expected_access();
+    }
     return std::get<0>(storage_);
   }
 
   constexpr T&& value() && {
-    if (!has_value())
+    if (!has_value()) {
       throw_bad_expected_access();
+    }
     return std::move(std::get<0>(storage_));
   }
 
   constexpr T const&& value() const&& {
-    if (!has_value())
+    if (!has_value()) {
       throw_bad_expected_access();
+    }
     return std::move(std::get<0>(storage_));
   }
 
@@ -289,10 +293,12 @@ class expected {
 
 template <class T, class E>
 constexpr bool operator==(expected<T, E> const& lhs, expected<T, E> const& rhs) {
-  if (lhs.has_value() != rhs.has_value())
+  if (lhs.has_value() != rhs.has_value()) {
     return false;
-  if (lhs.has_value())
+  }
+  if (lhs.has_value()) {
     return *lhs == *rhs;
+  }
   return lhs.error() == rhs.error();
 }
 
@@ -388,13 +394,15 @@ class expected<void, E> {
   constexpr explicit operator bool() const noexcept { return has_value(); }
 
   constexpr void value() const& {
-    if (!has_value())
+    if (!has_value()) {
       throw_bad_expected_access();
+    }
   }
 
   constexpr void value() && {
-    if (!has_value())
+    if (!has_value()) {
       throw_bad_expected_access();
+    }
   }
 
   constexpr E& error() & noexcept { return std::get<1>(storage_); }
