@@ -13,8 +13,12 @@ auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::aw
   auto accepted = co_await acceptor.async_accept();
   if (!accepted) {
     std::cerr << "tcp_echo_server: accept failed: " << accepted.error().message() << "\n";
-    ctx.stop();
     co_return;
+  }
+
+  auto cr = acceptor.close();
+  if (!cr) {
+    std::cerr << "tcp_echo_server: close acceptor failed: " << cr.error().message() << "\n";
   }
 
   auto socket = std::move(*accepted);
@@ -24,7 +28,6 @@ auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::aw
   auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
   if (!r) {
     std::cerr << "tcp_echo_server: read_until failed: " << r.error().message() << "\n";
-    ctx.stop();
     co_return;
   }
 
@@ -32,7 +35,6 @@ auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::aw
   auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.substr(0, n)));
   if (!w) {
     std::cerr << "tcp_echo_server: write failed: " << w.error().message() << "\n";
-    ctx.stop();
     co_return;
   }
 
@@ -46,8 +48,6 @@ auto server_once(iocoro::io_context& ctx, tcp::acceptor& acceptor) -> iocoro::aw
       break;
     }
   }
-
-  ctx.stop();
 }
 
 }  // namespace
@@ -71,7 +71,6 @@ int main(int argc, char* argv[]) {
   std::cout << "tcp_echo_server: listening on " << ep.to_string() << "\n";
 
   auto ex = ctx.get_executor();
-  auto guard = iocoro::make_work_guard(ctx);
   iocoro::co_spawn(ex, server_once(ctx, acceptor), iocoro::detached);
 
   ctx.run();
