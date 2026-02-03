@@ -3,7 +3,6 @@
 // Single-process TCP roundtrip benchmark using real sockets:
 // - Start a TCP acceptor on 127.0.0.1:0 (ephemeral port)
 // - Spawn N client sessions that connect and perform M request/response roundtrips
-// - Stop the io_context when all sessions complete
 //
 // Notes:
 // - Development-stage benchmark only; not representative of real-world performance.
@@ -40,8 +39,7 @@ auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void
     }
 
     auto const n = *r;
-    auto w =
-      co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.data(), n));
+    auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.data(), n));
     if (!w) {
       co_return;
     }
@@ -107,13 +105,13 @@ int main(int argc, char* argv[]) {
   auto listen_ep = tcp::endpoint{iocoro::ip::address_v4::loopback(), 0};
   auto lr = acceptor.listen(listen_ep);
   if (!lr) {
-    std::cerr << "iocoro_tcp_roundtrip: listen failed\n";
+    std::cerr << "iocoro_tcp_roundtrip: listen failed: " << lr.error().message() << "\n";
     return 1;
   }
 
   auto ep_r = acceptor.local_endpoint();
   if (!ep_r) {
-    std::cerr << "iocoro_tcp_roundtrip: local_endpoint failed\n";
+    std::cerr << "iocoro_tcp_roundtrip: local_endpoint failed: " << ep_r.error().message() << "\n";
     return 1;
   }
 
@@ -141,6 +139,10 @@ int main(int argc, char* argv[]) {
   auto const end = std::chrono::steady_clock::now();
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
+  auto const rps = elapsed_s > 0.0 ? static_cast<double>(total_roundtrips) / elapsed_s : 0.0;
+  auto const avg_us = total_roundtrips > 0 && elapsed_s > 0.0
+                        ? (elapsed_s * 1'000'000.0) / static_cast<double>(total_roundtrips)
+                        : 0.0;
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "iocoro_tcp_roundtrip"
@@ -148,7 +150,12 @@ int main(int argc, char* argv[]) {
             << " sessions=" << sessions
             << " msgs=" << msgs
             << " msg_bytes=" << msg_bytes
+            << " roundtrips=" << total_roundtrips
+            << " tx_bytes=" << total_tx_bytes
+            << " rx_bytes=" << total_rx_bytes
             << " elapsed_s=" << elapsed_s
+            << " rps=" << rps
+            << " avg_us=" << avg_us
             << "\n";
 
   return 0;

@@ -105,9 +105,16 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   // Wait for writability, then check SO_ERROR.
   auto wait_r = co_await base_.wait_write_ready();
   if (!wait_r) {
-    std::scoped_lock lk{mtx_};
-    state_ = conn_state::disconnected;
-    co_return fail(wait_r.error());
+    // The reactor may report an "error readiness" event (e.g. EPOLLERR/EPOLLHUP) while a
+    // non-blocking connect is in progress. In that case, the real reason must be retrieved
+    // from SO_ERROR (e.g. ECONNREFUSED).
+    //
+    // Only treat non-readiness errors as fatal here.
+    if (wait_r.error() != error::eof && wait_r.error() != error::connection_reset) {
+      std::scoped_lock lk{mtx_};
+      state_ = conn_state::disconnected;
+      co_return fail(wait_r.error());
+    }
   }
 
   // If cancel()/close() happened while we were waiting, treat as aborted.

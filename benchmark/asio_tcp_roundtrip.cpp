@@ -3,7 +3,6 @@
 // Single-process TCP roundtrip benchmark using Boost.Asio and real sockets:
 // - Start an acceptor on 127.0.0.1:0 (ephemeral port)
 // - Spawn N client sessions that connect and perform M request/response roundtrips
-// - Stop the io_context when all sessions complete
 //
 // Notes:
 // - Development-stage benchmark only; not representative of real-world performance.
@@ -19,11 +18,11 @@
 #include <string_view>
 
 namespace net = boost::asio;
-using net::ip::tcp;
 using net::awaitable;
 using net::co_spawn;
 using net::detached;
 using net::use_awaitable;
+using net::ip::tcp;
 
 namespace {
 
@@ -111,6 +110,10 @@ int main(int argc, char* argv[]) {
   auto const end = std::chrono::steady_clock::now();
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
+  auto const rps = elapsed_s > 0.0 ? static_cast<double>(total_roundtrips) / elapsed_s : 0.0;
+  auto const avg_us = total_roundtrips > 0 && elapsed_s > 0.0
+                        ? (elapsed_s * 1'000'000.0) / static_cast<double>(total_roundtrips)
+                        : 0.0;
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_tcp_roundtrip"
@@ -118,7 +121,12 @@ int main(int argc, char* argv[]) {
             << " sessions=" << sessions
             << " msgs=" << msgs
             << " msg_bytes=" << msg_bytes
+            << " roundtrips=" << total_roundtrips
+            << " tx_bytes=" << total_tx_bytes
+            << " rx_bytes=" << total_rx_bytes
             << " elapsed_s=" << elapsed_s
+            << " rps=" << rps
+            << " avg_us=" << avg_us
             << "\n";
 
   return 0;
