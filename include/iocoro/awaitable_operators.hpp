@@ -155,10 +155,8 @@ auto operator||(awaitable<A> a, awaitable<B> b) -> awaitable<
 /// This is useful for implementing timeouts where the losing operation must be stopped and fully
 /// completed before returning (to avoid lifetime hazards).
 template <class A, class B>
-auto when_any_cancel_join(
-  awaitable<A> a,
-  awaitable<B> b) -> awaitable<std::pair<std::size_t,
-                                        std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
+auto when_any_cancel_join(awaitable<A> a, awaitable<B> b) -> awaitable<
+  std::pair<std::size_t, std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
   auto fallback_ex = co_await this_coro::executor;
   IOCORO_ENSURE(fallback_ex, "when_any_cancel_join: requires a bound executor");
   auto parent_stop = co_await this_coro::stop_token;
@@ -166,18 +164,16 @@ auto when_any_cancel_join(
   auto st = std::make_shared<detail::when_or_state<A, B>>(std::move(a), std::move(b));
 
   auto ex_a = st->task_a.get_executor();
-  auto join_a = co_spawn(ex_a ? ex_a : fallback_ex, parent_stop,
-                         [st]() mutable -> awaitable<void> {
-                           return detail::when_or_run_one<0, A, A, B>(st);
-                         },
-                         use_awaitable);
+  auto join_a = co_spawn(
+    ex_a ? ex_a : fallback_ex, parent_stop,
+    [st]() mutable -> awaitable<void> { return detail::when_or_run_one<0, A, A, B>(st); },
+    use_awaitable);
 
   auto ex_b = st->task_b.get_executor();
-  auto join_b = co_spawn(ex_b ? ex_b : fallback_ex, parent_stop,
-                         [st]() mutable -> awaitable<void> {
-                           return detail::when_or_run_one<1, B, A, B>(st);
-                         },
-                         use_awaitable);
+  auto join_b = co_spawn(
+    ex_b ? ex_b : fallback_ex, parent_stop,
+    [st]() mutable -> awaitable<void> { return detail::when_or_run_one<1, B, A, B>(st); },
+    use_awaitable);
 
   co_await detail::await_when(st);
 

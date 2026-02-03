@@ -26,7 +26,8 @@ namespace iocoro::io {
 /// Destroying the buffer while the operation is in progress results in
 /// undefined behavior (use-after-free).
 template <async_read_stream Stream>
-[[nodiscard]] auto async_read(Stream& s, std::span<std::byte> buf) -> awaitable<result<std::size_t>> {
+[[nodiscard]] auto async_read(Stream& s, std::span<std::byte> buf)
+  -> awaitable<result<std::size_t>> {
   auto const wanted = buf.size();
 
   while (!buf.empty()) {
@@ -47,7 +48,8 @@ template <async_read_stream Stream>
 }
 
 template <async_read_stream Stream>
-[[nodiscard]] auto async_read(Stream& s, net::mutable_buffer buf) -> awaitable<result<std::size_t>> {
+[[nodiscard]] auto async_read(Stream& s, net::mutable_buffer buf)
+  -> awaitable<result<std::size_t>> {
   co_return co_await async_read(s, buf.as_span());
 }
 

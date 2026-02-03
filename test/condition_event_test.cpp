@@ -179,4 +179,3 @@ TEST(condition_event_test, destroy_aborts_waiters) {
 }
 
 }  // namespace iocoro::test
-

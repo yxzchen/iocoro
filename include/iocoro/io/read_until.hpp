@@ -55,8 +55,7 @@ namespace detail {
 /// undefined behavior (use-after-free).
 template <async_read_stream Stream>
 [[nodiscard]] auto async_read_until(Stream& s, std::span<std::byte> buf,
-                                    std::span<std::byte const> delim,
-                                    std::size_t initial_size = 0)
+                                    std::span<std::byte const> delim, std::size_t initial_size = 0)
   -> awaitable<result<std::size_t>> {
   if (delim.empty()) {
     co_return unexpected(error::invalid_argument);

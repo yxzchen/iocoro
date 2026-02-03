@@ -42,4 +42,3 @@ TEST(this_coro_stop_token_test, yields_token_and_observes_stop_after_cache) {
 }
 
 }  // namespace iocoro::test
-

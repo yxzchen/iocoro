@@ -35,8 +35,7 @@ class steady_timer {
     IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
   }
 
-  explicit steady_timer(any_io_executor ex) noexcept
-      : steady_timer(std::move(ex), clock::now()) {}
+  explicit steady_timer(any_io_executor ex) noexcept : steady_timer(std::move(ex), clock::now()) {}
 
   explicit steady_timer(any_io_executor ex, duration after) noexcept
       : steady_timer(std::move(ex), clock::now() + after) {}

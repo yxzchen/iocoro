@@ -17,8 +17,9 @@ class [[nodiscard]] scope_exit {
   auto operator=(scope_exit const&) -> scope_exit& = delete;
   scope_exit(scope_exit&& other) noexcept(std::is_nothrow_move_constructible_v<F>)
       : f_(std::move(other.f_)), active_(std::exchange(other.active_, false)) {}
-  auto operator=(scope_exit&& other) noexcept(
-    std::is_nothrow_move_assignable_v<F>&& std::is_nothrow_move_constructible_v<F>) -> scope_exit& {
+  auto operator=(scope_exit&& other) noexcept(std::is_nothrow_move_assignable_v<F> &&
+                                              std::is_nothrow_move_constructible_v<F>)
+    -> scope_exit& {
     if (this != &other) {
       run();
       f_ = std::move(other.f_);

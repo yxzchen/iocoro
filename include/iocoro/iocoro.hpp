@@ -28,13 +28,13 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/condition_event.hpp>
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/with_timeout.hpp>
 #include <iocoro/when_all.hpp>
 #include <iocoro/when_any.hpp>
+#include <iocoro/with_timeout.hpp>
 
 // Networking
-#include <iocoro/net/basic_datagram_socket.hpp>
 #include <iocoro/net/basic_acceptor.hpp>
+#include <iocoro/net/basic_datagram_socket.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
 #include <iocoro/net/buffer.hpp>
 #include <iocoro/net/protocol.hpp>
