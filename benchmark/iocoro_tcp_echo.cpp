@@ -41,7 +41,7 @@ auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void
 
     auto const n = *r;
     auto w =
-      co_await iocoro::io::async_write(socket, iocoro::net::buffer(std::string_view(buffer).substr(0, n)));
+      co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.data(), n));
     if (!w) {
       co_return;
     }
@@ -141,10 +141,6 @@ int main(int argc, char* argv[]) {
   auto const end = std::chrono::steady_clock::now();
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
-  auto const rps = elapsed_s > 0.0 ? static_cast<double>(total_roundtrips) / elapsed_s : 0.0;
-  auto const avg_us = total_roundtrips > 0 && elapsed_s > 0.0
-                        ? (elapsed_s * 1'000'000.0) / static_cast<double>(total_roundtrips)
-                        : 0.0;
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "iocoro_tcp_roundtrip"
@@ -153,8 +149,6 @@ int main(int argc, char* argv[]) {
             << " msgs=" << msgs
             << " msg_bytes=" << msg_bytes
             << " elapsed_s=" << elapsed_s
-            << " rps=" << rps
-            << " avg_us=" << avg_us
             << "\n";
 
   return 0;
