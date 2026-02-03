@@ -16,11 +16,14 @@ struct any_executor_access {
   }
 };
 
-inline auto to_io_executor(any_executor const& ex) noexcept -> any_io_executor {
+[[nodiscard]] inline auto to_io_executor(any_executor const& ex) noexcept -> any_io_executor {
   if (!ex) {
     return any_io_executor{};
   }
   if (!ex.supports_io()) {
+    return any_io_executor{};
+  }
+  if (ex.io_context_ptr() == nullptr) {
     return any_io_executor{};
   }
   return any_io_executor{ex};

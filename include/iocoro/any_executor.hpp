@@ -53,8 +53,16 @@ class any_executor {
     return !(a == b);
   }
 
-  void post(detail::unique_function<void()> fn) const noexcept { storage_.post(std::move(fn)); }
+  void post(detail::unique_function<void()> fn) const noexcept {
+    if (!storage_) {
+      return;
+    }
+    storage_.post(std::move(fn));
+  }
   void dispatch(detail::unique_function<void()> fn) const noexcept {
+    if (!storage_) {
+      return;
+    }
     storage_.dispatch(std::move(fn));
   }
 
