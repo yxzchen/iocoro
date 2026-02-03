@@ -42,7 +42,7 @@ class condition_event {
 
   /// Notify a single waiter if present; otherwise accumulate one pending notification.
   void notify() noexcept {
-    auto st = st_;
+    auto st = std::atomic_load_explicit(&st_, std::memory_order_acquire);
     if (!st) {
       return;
     }
@@ -75,7 +75,7 @@ class condition_event {
   /// - `ok()` if a notification is consumed
   /// - `operation_aborted` if cancelled via stop_token or if the event is destroyed
   auto async_wait() -> awaitable<result<void>> {
-    auto st = st_;
+    auto st = std::atomic_load_explicit(&st_, std::memory_order_acquire);
     if (!st) {
       co_return unexpected(make_error_code(error::operation_aborted));
     }
@@ -242,7 +242,8 @@ class condition_event {
   };
 
   void abort_all_waiters() noexcept {
-    auto st = std::move(st_);
+    auto st =
+      std::atomic_exchange_explicit(&st_, std::shared_ptr<state>{}, std::memory_order_acq_rel);
     if (!st) {
       return;
     }
@@ -264,6 +265,8 @@ class condition_event {
     }
   }
 
+  // `condition_event` can be destroyed concurrently with `notify()/async_wait()` in user code.
+  // Access to `st_` must therefore be atomic.
   std::shared_ptr<state> st_{};
 };
 
