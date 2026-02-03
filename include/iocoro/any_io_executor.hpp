@@ -45,8 +45,6 @@ class any_io_executor {
 
   explicit operator bool() const noexcept { return static_cast<bool>(storage_); }
 
-  auto as_any_executor() const noexcept -> any_executor { return any_executor{*this}; }
-
   /// Access the underlying `io_context` implementation (for internal integrations).
   auto io_context_ptr() const noexcept -> detail::io_context_impl* { return impl_; }
 

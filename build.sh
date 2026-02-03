@@ -44,7 +44,8 @@ Options:
     --prefix PATH           Set installation prefix (default: $INSTALL_PREFIX)
 
 Examples:
-    $0                      # Build in Release mode
+    $0                      # Build in Debug mode (default)
+    $0 -r                   # Build in Release mode
     $0 -d -t                # Build in Debug mode and run tests
     $0 -b                   # Build benchmarks
     $0 -c -r -i             # Clean, build in Release, and install
@@ -169,6 +170,12 @@ configure_project() {
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
         -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
     )
+
+    if [ "$TEST" = true ]; then
+        CMAKE_ARGS+=(-DIOCORO_BUILD_TESTS=ON)
+    else
+        CMAKE_ARGS+=(-DIOCORO_BUILD_TESTS=OFF)
+    fi
     
     if [ "$BENCH" = true ]; then
         CMAKE_ARGS+=(-DIOCORO_BUILD_BENCHMARKS=ON)
