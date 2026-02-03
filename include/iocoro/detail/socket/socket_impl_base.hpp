@@ -202,14 +202,12 @@ class socket_impl_base {
       co_return unexpected(error::not_open);
     }
 
-    auto orig_ex = co_await this_coro::executor;
-    co_await this_coro::switch_to(ex_);
+    co_await this_coro::on(any_executor{ex_});
     auto r = co_await detail::operation_awaiter{[this, fh](detail::reactor_op_ptr rop) mutable {
       auto h = ctx_impl_->register_fd_read(fh.fd, std::move(rop));
       set_read_handle(fh, h);
       return h;
     }};
-    co_await this_coro::switch_to(orig_ex);
     co_return r;
   }
 
@@ -220,14 +218,12 @@ class socket_impl_base {
       co_return unexpected(error::not_open);
     }
 
-    auto orig_ex = co_await this_coro::executor;
-    co_await this_coro::switch_to(ex_);
+    co_await this_coro::on(any_executor{ex_});
     auto r = co_await detail::operation_awaiter{[this, fh](detail::reactor_op_ptr rop) mutable {
       auto h = ctx_impl_->register_fd_write(fh.fd, std::move(rop));
       set_write_handle(fh, h);
       return h;
     }};
-    co_await this_coro::switch_to(orig_ex);
     co_return r;
   }
 

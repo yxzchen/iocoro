@@ -70,12 +70,9 @@ class steady_timer {
     // IMPORTANT: timer registration mutates reactor-owned state; do it on the reactor thread.
     // NOTE: If we are already on that thread, avoid an extra hop (keeps run_one()-style
     // loops deterministic w.r.t. register/cancel ordering).
-    auto orig_ex = co_await this_coro::executor;
-    IOCORO_ENSURE(orig_ex, "steady_timer::async_wait: requires a bound executor");
-    co_await this_coro::switch_to(ex_);
+    co_await this_coro::on(any_executor{ex_});
     auto r = co_await detail::operation_awaiter{
       [timer](detail::reactor_op_ptr rop) { return timer->register_timer(std::move(rop)); }};
-    co_await this_coro::switch_to(orig_ex);
     co_return r;
   }
 

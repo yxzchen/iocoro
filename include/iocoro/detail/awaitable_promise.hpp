@@ -172,6 +172,32 @@ struct awaitable_promise_base {
 
     return awaiter{this, std::move(t.ex)};
   }
+
+  auto await_transform(this_coro::on_t t) noexcept {
+    struct awaiter {
+      any_executor target;
+
+      bool await_ready() noexcept {
+        IOCORO_ENSURE(target, "this_coro::on: empty executor");
+
+        // Fast-path: if we're already running under the target executor, continue inline.
+        // This avoids an unnecessary post() and keeps one-shot hops cheap for same-executor cases.
+        if (detail::get_current_executor() == target) {
+          return true;
+        }
+        return false;
+      }
+
+      auto await_suspend(std::coroutine_handle<> h) noexcept -> bool {
+        target.post([h]() mutable { h.resume(); });
+        return true;
+      }
+
+      void await_resume() noexcept {}
+    };
+
+    return awaiter{std::move(t.ex)};
+  }
 };
 
 template <typename T>
