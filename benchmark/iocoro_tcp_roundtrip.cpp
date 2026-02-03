@@ -1,14 +1,4 @@
-// iocoro_tcp_roundtrip.cpp
-//
-// Single-process TCP roundtrip benchmark using real sockets:
-// - Start a TCP acceptor on 127.0.0.1:0 (ephemeral port)
-// - Spawn N client sessions that connect and perform M request/response roundtrips
-//
-// Notes:
-// - Development-stage benchmark only; not representative of real-world performance.
-
 #include <iocoro/iocoro.hpp>
-#include <iocoro/ip.hpp>
 
 #include <atomic>
 #include <chrono>

@@ -41,6 +41,16 @@
 #include <iocoro/shutdown.hpp>
 #include <iocoro/socket_option.hpp>
 
+#include <iocoro/ip/address.hpp>
+#include <iocoro/ip/endpoint.hpp>
+#include <iocoro/ip/resolver.hpp>
+#include <iocoro/ip/tcp.hpp>
+#include <iocoro/ip/udp.hpp>
+
+#include <iocoro/local/dgram.hpp>
+#include <iocoro/local/endpoint.hpp>
+#include <iocoro/local/stream.hpp>
+
 // Async I/O algorithms
 #include <iocoro/io/read.hpp>
 #include <iocoro/io/read_until.hpp>

@@ -1,12 +1,3 @@
-// asio_tcp_roundtrip.cpp
-//
-// Single-process TCP roundtrip benchmark using Boost.Asio and real sockets:
-// - Start an acceptor on 127.0.0.1:0 (ephemeral port)
-// - Spawn N client sessions that connect and perform M request/response roundtrips
-//
-// Notes:
-// - Development-stage benchmark only; not representative of real-world performance.
-
 #include <boost/asio.hpp>
 
 #include <atomic>
