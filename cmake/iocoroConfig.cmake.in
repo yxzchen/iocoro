@@ -21,7 +21,7 @@ endif()
 
 if(TARGET liburing::liburing)
   set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_LINK_LIBRARIES liburing::liburing)
-  set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS IOCORO_USE_URING)
+  set_property(TARGET iocoro::iocoro APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS IOCORO_BACKEND_URING)
   message(STATUS "iocoro: liburing found - io_uring support enabled")
 else()
   message(STATUS "iocoro: liburing not found - using epoll")
