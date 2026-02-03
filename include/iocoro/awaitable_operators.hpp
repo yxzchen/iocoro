@@ -140,4 +140,71 @@ auto operator||(awaitable<A> a, awaitable<B> b) -> awaitable<
   co_return std::make_pair(index, std::move(*result));
 }
 
+/// Wait for either awaitable to complete (binary when_any) and join the other.
+///
+/// Semantics:
+/// - Starts both awaitables concurrently on their bound executors (or the caller's executor if
+///   none is bound).
+/// - Completes with `(index, value)` of the first completion.
+/// - Requests stop on the non-winning awaitable (best-effort).
+/// - Waits for the non-winning awaitable to finish after stop is requested ("cancel + join").
+/// - If the first completion throws, still requests stop on the other awaitable, waits for both
+///   runner coroutines to finish, and then rethrows the exception.
+///
+/// This is useful for implementing timeouts where the losing operation must be stopped and fully
+/// completed before returning (to avoid lifetime hazards).
+template <class A, class B>
+auto when_any_cancel_join(
+  awaitable<A> a,
+  awaitable<B> b) -> awaitable<std::pair<std::size_t,
+                                        std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
+  auto fallback_ex = co_await this_coro::executor;
+  IOCORO_ENSURE(fallback_ex, "when_any_cancel_join: requires a bound executor");
+
+  auto st = std::make_shared<detail::when_or_state<A, B>>(std::move(a), std::move(b));
+
+  auto ex_a = st->task_a.get_executor();
+  auto join_a = co_spawn(ex_a ? ex_a : fallback_ex,
+                         [st]() mutable -> awaitable<void> {
+                           return detail::when_or_run_one<0, A, A, B>(st);
+                         },
+                         use_awaitable);
+
+  auto ex_b = st->task_b.get_executor();
+  auto join_b = co_spawn(ex_b ? ex_b : fallback_ex,
+                         [st]() mutable -> awaitable<void> {
+                           return detail::when_or_run_one<1, B, A, B>(st);
+                         },
+                         use_awaitable);
+
+  co_await detail::await_when(st);
+
+  std::exception_ptr ep{};
+  std::size_t index{};
+  std::optional<typename detail::when_or_state<A, B>::result_variant> result{};
+  {
+    std::scoped_lock lk{st->result_m};
+    ep = st->first_ep;
+    if (!ep) {
+      index = st->completed_index;
+      result = std::move(st->result);
+    }
+  }
+
+  if (ep) {
+    co_await std::move(join_a);
+    co_await std::move(join_b);
+    std::rethrow_exception(ep);
+  }
+
+  if (index == 0U) {
+    co_await std::move(join_b);
+  } else {
+    co_await std::move(join_a);
+  }
+
+  IOCORO_ENSURE(result.has_value(), "when_any_cancel_join: missing result");
+  co_return std::make_pair(index, std::move(*result));
+}
+
 }  // namespace iocoro
