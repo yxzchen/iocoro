@@ -10,6 +10,7 @@
 #include <atomic>
 #include <coroutine>
 #include <list>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <stop_token>
@@ -57,7 +58,10 @@ class condition_event {
         st->waiters.pop_front();
         w->linked = false;
       } else {
-        ++st->pending;
+        // Best-effort and saturating: avoid overflow in pathological "notify without waiters" cases.
+        if (st->pending != std::numeric_limits<std::size_t>::max()) {
+          ++st->pending;
+        }
         return;
       }
     }
@@ -88,6 +92,8 @@ class condition_event {
       std::coroutine_handle<> h{};
       any_executor ex{};
       std::atomic<bool> done{false};
+      std::atomic<bool> suspended{false};
+      std::atomic<bool> cancel_requested{false};
       std::error_code ec{};
       std::unique_ptr<std::stop_callback<detail::unique_function<void()>>> stop_cb{};
       waiter_list::iterator it{};
@@ -119,6 +125,23 @@ class condition_event {
       IOCORO_ENSURE(ex, "condition_event: empty executor in completion");
       ex.post([h]() mutable noexcept { h.resume(); });
     }
+
+    static void cancel_waiter(std::shared_ptr<state> const& st, waiter_ptr const& w,
+                              std::error_code ec) noexcept {
+      if (!w) {
+        return;
+      }
+
+      if (st) {
+        std::scoped_lock lk{st->m};
+        if (w->linked) {
+          st->waiters.erase(w->it);
+          w->linked = false;
+        }
+      }
+
+      complete(w, ec);
+    }
   };
 
   struct wait_awaiter {
@@ -127,7 +150,7 @@ class condition_event {
     std::shared_ptr<state> st{};
     state::waiter_ptr w{};
     result<void> ready_res{};
-    bool suspended{false};
+    bool did_suspend{false};
 
     bool await_ready() const noexcept { return false; }
 
@@ -143,68 +166,78 @@ class condition_event {
       if constexpr (requires { h.promise().get_stop_token(); }) {
         token = h.promise().get_stop_token();
         if (token.stop_possible() && token.stop_requested()) {
-          suspended = false;
+          did_suspend = false;
           ready_res = unexpected(make_error_code(error::operation_aborted));
           return false;
         }
+      }
+
+      w = std::make_shared<state::waiter_state>();
+      w->h = h;
+      w->ex = ex;
+
+      if (token.stop_possible()) {
+        std::weak_ptr<state> weak_st{st};
+        std::weak_ptr<state::waiter_state> weak_w{w};
+        w->stop_cb = std::make_unique<std::stop_callback<detail::unique_function<void()>>>(
+          token, detail::unique_function<void()>{[weak_st, weak_w]() mutable noexcept {
+            auto st = weak_st.lock();
+            auto w = weak_w.lock();
+            if (!w) {
+              return;
+            }
+
+            w->cancel_requested.store(true, std::memory_order_release);
+
+            if (!w->suspended.load(std::memory_order_acquire)) {
+              // Not yet suspended (or never will be): do not attempt to resume.
+              return;
+            }
+
+            state::cancel_waiter(st, w, make_error_code(error::operation_aborted));
+          }});
       }
 
       {
         std::scoped_lock lk{st->m};
         if (st->destroyed) {
-          suspended = false;
+          w->stop_cb.reset();
+          did_suspend = false;
           ready_res = unexpected(make_error_code(error::operation_aborted));
           return false;
         }
         if (st->pending > 0) {
           --st->pending;
-          suspended = false;
+          w->stop_cb.reset();
+          did_suspend = false;
           ready_res = ok();
           return false;
         }
 
-        w = std::make_shared<state::waiter_state>();
-        w->h = h;
-        w->ex = ex;
         st->waiters.push_back(w);
         w->it = std::prev(st->waiters.end());
         w->linked = true;
       }
 
-      if (token.stop_possible()) {
-        auto weak_st = std::weak_ptr<state>{st};
-        auto wp = w;
-        w->stop_cb = std::make_unique<std::stop_callback<detail::unique_function<void()>>>(
-          token, detail::unique_function<void()>{[weak_st, wp]() mutable noexcept {
-            auto st = weak_st.lock();
-            if (!st) {
-              return;
-            }
+      // Publish "we will suspend" so stop callbacks can safely resume.
+      w->suspended.store(true, std::memory_order_release);
+      did_suspend = true;
 
-            {
-              std::scoped_lock lk{st->m};
-              if (wp->linked) {
-                st->waiters.erase(wp->it);
-                wp->linked = false;
-              }
-            }
-
-            state::complete(std::move(wp), make_error_code(error::operation_aborted));
-          }});
+      // Close the remaining race: stop can be requested between stop_cb installation and the
+      // suspended publish above. If that happened, proactively cancel now.
+      if (w->cancel_requested.load(std::memory_order_acquire)) {
+        state::cancel_waiter(st, w, make_error_code(error::operation_aborted));
       }
 
-      suspended = true;
       return true;
     }
 
     auto await_resume() noexcept -> result<void> {
-      if (!suspended) {
+      if (!did_suspend) {
         return ready_res;
       }
-      if (w && w->ec) {
-        return unexpected(w->ec);
-      }
-      return ok();
+      // For the suspension path, completion fully determines the result through `w->ec`.
+      return w->ec ? unexpected(w->ec) : ok();
     }
   };
 
