@@ -88,7 +88,7 @@ TEST(io_executor_test, any_io_executor_any_executor_roundtrip_preserves_equality
 
 TEST(io_executor_test, any_io_executor_any_executor_roundtrip_preserves_equality_for_strand) {
   iocoro::io_context ctx;
-  auto base = ctx.get_executor().as_any_executor();
+  auto base = ctx.get_executor();
 
   auto strand = iocoro::make_strand(base);
   iocoro::any_executor e0{strand};

@@ -3,6 +3,14 @@
 #include <cstdlib>
 #include <exception>
 
+// Assertion/ensure utilities used for internal invariants and API contracts.
+//
+// - `IOCORO_ASSERT(...)`: debug-only assertion (compiled out in NDEBUG).
+// - `IOCORO_ENSURE(...)`: always-on contract check; fails fast (terminates) on violation.
+// - `IOCORO_UNREACHABLE()`: mark unreachable control flow; fails fast if reached.
+//
+// IMPORTANT: These macros are part of the library's safety story; prefer `IOCORO_ENSURE`
+// for conditions that must hold in production builds.
 #if defined(__GNUC__) || defined(__clang__)
 #define IOCORO_LIKELY(x) __builtin_expect(!!(x), 1)
 #define IOCORO_UNLIKELY(x) __builtin_expect(!!(x), 0)

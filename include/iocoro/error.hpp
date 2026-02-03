@@ -5,6 +5,10 @@
 
 namespace iocoro {
 
+/// Library error codes for common asynchronous I/O failures.
+///
+/// These values are converted to `std::error_code` via `make_error_code(error)` and a custom
+/// error category (see `impl/error.ipp`).
 enum class error {
   /// Operation cancelled.
   operation_aborted = 1,

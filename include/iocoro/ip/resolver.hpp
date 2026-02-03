@@ -2,7 +2,7 @@
 
 // IP-domain resolver.
 //
-// Resolver is inherently IP-specific (host/service resolution), so it lives under `iocoro::ip`.
+// NOTE: Name/service resolution is inherently IP-specific, so it lives under `iocoro::ip`.
 
 #include <iocoro/any_executor.hpp>
 #include <iocoro/awaitable.hpp>
@@ -25,30 +25,13 @@
 
 namespace iocoro::ip {
 
-/// Protocol-typed resolver facade.
+/// Protocol-typed resolver facade for host/service -> `Protocol::endpoint` expansion.
 ///
-/// Responsibility boundary (locked-in):
-/// - Accept host/service strings.
-/// - Produce a list of `Protocol::endpoint` results.
-/// - All protocol typing is via the `Protocol` template parameter.
+/// IMPORTANT: `getaddrinfo()` is blocking. This resolver offloads it onto a `thread_pool`
+/// executor (customizable) and resumes the awaiting coroutine on its original executor.
 ///
-/// Threading model:
-/// - DNS resolution (getaddrinfo) is executed on a thread_pool executor (blocking call).
-/// - Coroutine resumption happens on the calling coroutine's executor.
-///
-/// Lifecycle:
-/// - Optionally accepts a custom thread_pool executor for DNS operations.
-/// - If not provided, uses an internal static thread_pool with 1 worker thread.
-///
-/// Usage:
-///   // Use default internal thread_pool:
-///   ip::tcp::resolver resolver;
-///   auto result = co_await resolver.async_resolve("www.example.com", "80");
-///
-///   // Use custom thread_pool:
-///   thread_pool pool{4};
-///   ip::tcp::resolver resolver{pool.get_executor()};
-///   auto result = co_await resolver.async_resolve("www.example.com", "80");
+/// Cancellation is best-effort: a stop request prevents resumption with resolved results, but
+/// cannot interrupt an in-flight `getaddrinfo()` call running on the pool.
 template <class Protocol>
 class resolver {
  public:
@@ -56,13 +39,6 @@ class resolver {
   using endpoint = typename Protocol::endpoint;
   using results_type = std::vector<endpoint>;
 
-  /// Construct a resolver with optional custom executor for DNS resolution.
-  ///
-  /// Parameters:
-  /// - pool_ex: Optional executor for running blocking DNS operations (getaddrinfo).
-  ///            If not provided, uses an internal static thread_pool with 1 worker thread.
-  ///            DNS resolution is a blocking system call that should NOT run on the io_context
-  ///            thread. The resolver will post getaddrinfo work to this executor.
   resolver() noexcept = default;
   explicit resolver(any_executor pool_ex) noexcept : pool_ex_(std::move(pool_ex)) {}
 
@@ -71,29 +47,15 @@ class resolver {
   resolver(resolver&&) noexcept = default;
   auto operator=(resolver&&) noexcept -> resolver& = default;
 
-  /// Resolve a host and service to a list of endpoints.
+  /// Resolve `(host, service)` into a list of endpoints.
   ///
-  /// Parameters:
-  /// - host: Hostname or IP address (e.g., "www.example.com", "192.0.2.1", or empty for passive).
-  /// - service: Service name or port number (e.g., "http", "80").
+  /// - `host` may be a hostname or numeric address; empty is forwarded as nullptr to getaddrinfo.
+  /// - `service` may be a service name or numeric port; empty is forwarded as nullptr.
   ///
-  /// Returns:
-  /// - Success: results_type (may be empty if no addresses were resolved).
-  /// - Failure: std::error_code (from getaddrinfo).
-  ///
-  /// Cancellation:
-  /// - Cancellation is best-effort: the coroutine can be canceled, but the underlying
-  ///   getaddrinfo() call will still run to completion on the thread_pool executor.
-  ///
-  /// Note: This function uses getaddrinfo, which is a blocking system call. To avoid blocking
-  /// the io_context thread, the call is executed on the thread_pool provided at construction
-  /// (or the internal default thread_pool if none was provided).
+  /// Returns `std::error_code` originating from `getaddrinfo()` on failure.
   auto async_resolve(std::string host, std::string service)
     -> awaitable<result<results_type>> {
-    // Get the pool executor (custom or default static pool).
     auto pool_ex = pool_ex_ ? *pool_ex_ : get_default_executor();
-
-    // Create and await the resolve_awaiter with explicit constructor.
     co_return co_await resolve_awaiter{std::move(pool_ex), std::move(host), std::move(service)};
   }
 
@@ -116,7 +78,6 @@ class addrinfo_error_category_impl : public std::error_category {
   auto name() const noexcept -> char const* override { return "addrinfo"; }
 
   auto message(int ev) const -> std::string override {
-    // Use gai_strerror to get the error message for getaddrinfo errors.
     char const* msg = ::gai_strerror(ev);
     return msg ? msg : "unknown addrinfo error";
   }
@@ -133,7 +94,10 @@ struct resolver<Protocol>::resolve_awaiter {
   std::string host;
   std::string service;
 
-  // Shared state between thread_pool worker and awaiting coroutine.
+  // Shared state between the pool worker and the awaiting coroutine.
+  //
+  // SAFETY: this is shared-owned by both sides; resumption is posted onto `ex` to keep
+  // coroutine resumption on the caller's executor.
   struct result_state {
     std::coroutine_handle<> continuation;
     any_executor ex;
@@ -143,7 +107,6 @@ struct resolver<Protocol>::resolve_awaiter {
   };
   std::shared_ptr<result_state> state;
 
-  // Explicit constructor to ensure proper initialization.
   explicit resolve_awaiter(any_executor pool_ex_, std::string host_, std::string service_)
       : pool_ex(std::move(pool_ex_)),
         host(std::move(host_)),
@@ -174,6 +137,8 @@ struct resolver<Protocol>::resolve_awaiter {
           st->ex.post([st]() { st->continuation.resume(); });
         }
       } else {
+        // IMPORTANT: stop requests only affect the awaiting coroutine. The blocking
+        // getaddrinfo() call cannot be interrupted; we only prevent delivering results.
         st->stop_cb =
           std::make_unique<std::stop_callback<::iocoro::detail::unique_function<void()>>>(
             token, ::iocoro::detail::unique_function<void()>{[weak_state]() mutable {
@@ -194,32 +159,26 @@ struct resolver<Protocol>::resolve_awaiter {
       [st, host_copy = std::move(host_copy), service_copy = std::move(service_copy)]() {
         result<results_type> res{};
         try {
-          // Build hints for getaddrinfo based on Protocol.
           addrinfo hints;
           std::memset(&hints, 0, sizeof(hints));
           hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6.
           hints.ai_socktype = Protocol::type();
           hints.ai_protocol = Protocol::protocol();
 
-          // Execute getaddrinfo (blocking system call).
           addrinfo* result_list = nullptr;
           int const ret = ::getaddrinfo(host_copy.empty() ? nullptr : host_copy.c_str(),
                                         service_copy.empty() ? nullptr : service_copy.c_str(),
                                         &hints, &result_list);
 
           if (ret != 0) {
-            // getaddrinfo error.
-            // Map EAI_* error codes to addrinfo_error and create a proper error_code.
             res = unexpected(std::error_code(ret, addrinfo_error_category()));
           } else {
-            // Success: convert addrinfo list to Protocol::endpoint list.
             results_type endpoints;
             for (auto* ai = result_list; ai != nullptr; ai = ai->ai_next) {
               auto ep_result = endpoint::from_native(ai->ai_addr, ai->ai_addrlen);
               if (ep_result) {
                 endpoints.push_back(std::move(*ep_result));
               }
-              // Silently skip addresses that cannot be converted (e.g., unsupported family).
             }
             ::freeaddrinfo(result_list);
             res = std::move(endpoints);
@@ -234,7 +193,6 @@ struct resolver<Protocol>::resolve_awaiter {
 
         st->res = std::move(res);
         st->stop_cb.reset();
-        // Post coroutine resumption back to the captured IO executor.
         st->ex.post([st]() { st->continuation.resume(); });
       });
   }

@@ -63,20 +63,14 @@ class stream_socket_impl {
 
   /// Adopt an existing native handle (e.g. accept()).
   ///
-  /// INTENDED USE (acceptor pattern only):
-  /// - This method is specifically designed for use by `acceptor` classes (e.g., `tcp::acceptor`)
-  ///   to transfer ownership of an accepted connection fd to a new socket object.
-  /// - The accepted fd represents an already-established connection (e.g., from `::accept()`).
+  /// IMPORTANT: Intended for acceptor adoption only (transferring ownership of an accepted fd).
   ///
-  /// PRECONDITIONS (CRITICAL - UNDEFINED BEHAVIOR IF VIOLATED):
-  /// - The target `stream_socket_impl` object MUST be default-constructed (empty state).
-  /// - Calling `assign()` on a socket that has been used (via `open()`, previous `assign()`,
-  ///   or any I/O operations) results in UNDEFINED BEHAVIOR.
-  /// - The provided `fd` must be a valid, open file descriptor representing a connected stream
-  ///   socket.
+  /// Preconditions:
+  /// - The socket must be in an unused state (no prior `open()`/`assign()` and no in-flight ops).
+  /// - `fd` must refer to a connected stream socket.
   ///
-  /// POSTCONDITIONS (on success):
-  /// - The socket takes ownership of `fd` and is ready for I/O operations.
+  /// Postconditions on success:
+  /// - This socket takes ownership of `fd` and is ready for I/O.
   /// - The fd is set to non-blocking mode (best-effort).
   auto assign(int fd) noexcept -> result<void> {
     IOCORO_ASSERT(state_ == conn_state::disconnected);

@@ -16,6 +16,10 @@ class awaitable {
   using promise_type = detail::awaitable_promise<T>;
   using handle_type = std::coroutine_handle<promise_type>;
 
+  /// Owning handle wrapper for an `awaitable_promise<T>` coroutine.
+  ///
+  /// IMPORTANT: This type owns the coroutine frame. If it still owns a handle on destruction,
+  /// it will `destroy()` the coroutine.
   explicit awaitable(handle_type h) noexcept : coro_(h) {}
   ~awaitable() {
     if (coro_) {
@@ -39,10 +43,11 @@ class awaitable {
 
   /// Release ownership of the coroutine handle without destroying it.
   ///
-  /// This is primarily used by spawn utilities (e.g. co_spawn) to take over the
-  /// coroutine frame lifetime.
+  /// SAFETY: After `release()`, the caller becomes responsible for eventually destroying the
+  /// handle (or transferring ownership elsewhere).
   auto release() noexcept -> handle_type { return std::exchange(coro_, {}); }
 
+  /// Return the executor associated with this coroutine (if any).
   auto get_executor() const noexcept -> any_executor {
     if (!coro_) {
       return any_executor{};
@@ -50,6 +55,7 @@ class awaitable {
     return coro_.promise().get_executor();
   }
 
+  /// Return the stop token associated with this coroutine (if any).
   auto get_stop_token() -> std::stop_token {
     if (!coro_) {
       return {};
@@ -57,6 +63,7 @@ class awaitable {
     return coro_.promise().get_stop_token();
   }
 
+  /// Request stop for this coroutine (if supported by the promise).
   void request_stop() noexcept {
     if (coro_) {
       coro_.promise().request_stop();
@@ -66,6 +73,8 @@ class awaitable {
   bool await_ready() const noexcept { return false; }
   template <class Promise>
   auto await_suspend(std::coroutine_handle<Promise> h) noexcept -> std::coroutine_handle<> {
+    // NOTE: We always suspend and resume through `coro_`. The continuation is stored in the
+    // awaited coroutine's promise.
     coro_.promise().set_continuation(h);
     if constexpr (requires { h.promise().get_executor(); }) {
       coro_.promise().inherit_executor(h.promise().get_executor());

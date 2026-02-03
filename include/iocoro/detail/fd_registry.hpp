@@ -43,6 +43,11 @@ class fd_registry {
 
   // NOTE: fd_registry is reactor-thread-only.
   // All accesses must be serialized by io_context_impl (reactor thread ownership).
+  //
+  // Token model:
+  // - Each successful (re)registration assigns a fresh monotonically-increasing token.
+  // - Cancellation/deregistration uses (fd, kind, token) matching to avoid ABA bugs where an old
+  //   cancel request could accidentally cancel a newer operation on the same fd/kind.
   auto register_read(int fd, reactor_op_ptr op) -> register_result;
   auto register_write(int fd, reactor_op_ptr op) -> register_result;
   auto cancel(int fd, fd_event_kind kind, std::uint64_t token) noexcept -> cancel_result;
@@ -79,6 +84,10 @@ class fd_registry {
   auto register_impl(int fd, reactor_op_ptr op, fd_event_kind kind) -> register_result;
   void trim_tail(std::size_t fd_index);
 
+  // INVARIANT:
+  // - `active_count_` equals the number of non-null ops across all slots (read+write).
+  // - `max_active_fd_` tracks the highest fd index that may still contain an op; used only to
+  //   bound `operations_` size (memory trimming), not for correctness of matching.
   std::vector<fd_ops> operations_{};
   std::uint64_t next_token_ = 1;
   std::size_t active_count_ = 0;

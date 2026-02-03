@@ -55,8 +55,9 @@ class basic_datagram_socket {
   auto operator=(basic_datagram_socket&&) -> basic_datagram_socket& = default;
 
   /// Bind the socket to a local endpoint.
-  /// This opens the socket if not already open.
-  /// Must be called before receiving data.
+  ///
+  /// IMPORTANT: This is a lazy-open point. If the socket is not open, this call opens it and
+  /// fixes the address family to `local_ep.family()`.
   auto bind(endpoint_type const& local_ep) -> result<void> {
     auto open_r = ok();
     if (!handle_.impl().is_open()) {
@@ -66,8 +67,11 @@ class basic_datagram_socket {
   }
 
   /// Connect the socket to a remote endpoint.
-  /// This opens the socket if not already open and fixes the remote peer.
-  /// After connecting, only send_to() to the connected endpoint is allowed.
+  ///
+  /// IMPORTANT: This is a lazy-open point. If the socket is not open, this call opens it and
+  /// fixes the address family to `remote_ep.family()`.
+  ///
+  /// After connecting, the socket has a fixed peer; sending to other destinations is invalid.
   auto connect(endpoint_type const& remote_ep) -> result<void> {
     auto open_r = ok();
     if (!handle_.impl().is_open()) {
@@ -110,12 +114,15 @@ class basic_datagram_socket {
     co_return *result;
   }
 
-  /// Get the local endpoint.
+  /// Query the local endpoint for an open socket.
   auto local_endpoint() const -> result<endpoint_type> {
     return ::iocoro::detail::socket::get_local_endpoint<endpoint_type>(handle_.native_handle());
   }
 
-  /// Get the remote endpoint (only valid if connected).
+  /// Query the connected peer endpoint.
+  ///
+  /// Returns `error::not_open` if the socket is not open and `error::not_connected` if it is
+  /// open but not connected.
   auto remote_endpoint() const -> result<endpoint_type> {
     auto const fd = handle_.native_handle();
     if (fd < 0) {

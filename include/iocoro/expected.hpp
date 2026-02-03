@@ -13,6 +13,12 @@
 
 namespace iocoro {
 
+// Compatibility shim for `std::expected` (C++23).
+//
+// - If the standard library provides `std::expected`, this header aliases it.
+// - Otherwise, this header provides a small subset implementation sufficient for iocoro.
+//
+// This is part of the library's public error model; see `result<T>` in `result.hpp`.
 #if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
 
 template <class E>

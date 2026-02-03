@@ -25,7 +25,15 @@ concept completion_callback_for = std::invocable<F&, expected<T, std::exception_
                                   (!std::same_as<std::remove_cvref_t<F>, detached_t>) &&
                                   (!std::same_as<std::remove_cvref_t<F>, use_awaitable_t>);
 
-/// Start a callable that returns iocoro::awaitable<T> on the given executor (detached).
+/// Start an `awaitable` factory on `ex`.
+///
+/// Overloads:
+/// - `detached`: fire-and-forget; exceptions are swallowed.
+/// - `use_awaitable`: returns an `awaitable` that yields the result (or rethrows).
+/// - completion callback: called with `expected<T, exception_ptr>`; callback exceptions are swallowed.
+///
+/// IMPORTANT: The coroutine is *started* by posting its first `resume()` onto `ex`.
+/// There is no guarantee of inline execution at the call site.
 namespace detail {
 
 template <typename F, typename Completion>
@@ -46,8 +54,10 @@ void co_spawn(any_executor ex, F&& f, detached_t) {
                                 detail::detached_completion<value_type>{});
 }
 
-/// Start a callable that returns iocoro::awaitable<T> on the given executor, returning an
-/// awaitable that can be awaited to obtain the result.
+/// Start a factory on `ex` and return an awaitable for its result.
+///
+/// IMPORTANT: This does not automatically cancel the spawned coroutine if the awaiting
+/// coroutine is stopped or destroyed; it only controls how the result is delivered.
 template <typename F>
   requires awaitable_factory<std::remove_cvref_t<F>>
 auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
@@ -60,8 +70,11 @@ auto co_spawn(any_executor ex, F&& f, use_awaitable_t)
   return detail::await_result<value_type>(std::move(st));
 }
 
-/// Start a callable that returns iocoro::awaitable<T> on the given executor, invoking a
-/// completion callback with either the result or an exception.
+/// Start a factory on `ex` and invoke `completion` when done.
+///
+/// `completion` is invoked with:
+/// - `expected<T, exception_ptr>{value}` on success
+/// - `unexpected(exception_ptr)` if the coroutine throws
 template <typename F, typename Completion>
   requires awaitable_factory<std::remove_cvref_t<F>> &&
            completion_callback_for<std::remove_cvref_t<Completion>,
@@ -71,7 +84,7 @@ void co_spawn(any_executor ex, F&& f, Completion&& completion) {
                                 std::forward<Completion>(completion));
 }
 
-/// Overload for awaitable<T>: converts to factory lambda and forwards to unified implementation.
+/// Convenience overload: treat an `awaitable<T>` as a factory and forward.
 template <typename T, typename Token>
 auto co_spawn(any_executor ex, awaitable<T> a, Token&& token) {
   return co_spawn(

@@ -176,27 +176,15 @@ void spawn_task(spawn_context ctx, Factory&& factory, Completion&& completion) {
 /// Used by co_spawn(use_awaitable) to wait for completion and extract the result.
 template <typename T>
 struct spawn_result_awaiter {
-  // IMPORTANT: Explicit constructor required to avoid ASan use-after-free errors.
+  // IMPORTANT: Keep this explicit constructor.
   //
-  // Issue: Aggregate initialization `awaiter{shared_ptr}` triggers ASan
-  // use-after-free errors. Known to affect:
-  // - spawn_result_awaiter<T> / spawn_result_awaiter<void> (this file)
-  // - awaiter inside steady_timer::async_wait (steady_timer.ipp)
-  // - when_all_awaiter (when_all/state.hpp)
-  // Likely affects all awaiters containing shared_ptr members.
+  // SAFETY (ASan pitfall): Using aggregate initialization `spawn_result_awaiter<T>{shared_ptr}`
+  // has been observed to trigger use-after-free under ASan (gcc 12.2.0), likely due to temporary
+  // materialization / lifetime subtleties for aggregates containing `std::shared_ptr`.
   //
-  // Suspected cause: Aggregate init may create temporaries with incorrect
-  // lifetime, leading to premature destruction of the shared state.
+  // Workaround: explicit constructor + `std::move` makes ownership transfer unambiguous.
   //
-  // gcc version: 12.2.0
-  //
-  // Workaround: Explicit constructor with std::move ensures proper ownership
-  // transfer and resolves all ASan issues.
-  //
-  // TODO: Investigate root cause - possibly related to:
-  // - C++17/20 aggregate initialization rules changes
-  // - Compiler-specific temporary materialization behavior
-  // - Interaction between move semantics and aggregate members
+  // TODO: Reduce to a minimal reproducer and report upstream if still reproducible.
   explicit spawn_result_awaiter(std::shared_ptr<spawn_result_state<T>> st_) : st(std::move(st_)) {}
 
   std::shared_ptr<spawn_result_state<T>> st;

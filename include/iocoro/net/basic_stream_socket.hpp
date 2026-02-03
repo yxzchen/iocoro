@@ -50,6 +50,10 @@ class basic_stream_socket {
   basic_stream_socket(basic_stream_socket&&) = default;
   auto operator=(basic_stream_socket&&) -> basic_stream_socket& = default;
 
+  /// Connect to `ep`.
+  ///
+  /// IMPORTANT: This is a lazy-open point. If the socket is not open, this call opens it and
+  /// fixes the address family to `ep.family()`.
   auto async_connect(endpoint const& ep) -> awaitable<result<void>> {
     // Lazy-open based on endpoint family; protocol specifics come from Protocol tag.
     if (!handle_.impl().is_open()) {
@@ -75,6 +79,10 @@ class basic_stream_socket {
     return ::iocoro::detail::socket::get_local_endpoint<endpoint>(handle_.native_handle());
   }
 
+  /// Query the connected peer endpoint.
+  ///
+  /// Returns `error::not_open` if the socket is not open and `error::not_connected` if it is
+  /// open but not connected.
   auto remote_endpoint() const -> result<endpoint> {
     auto const fd = handle_.native_handle();
     if (fd < 0) {

@@ -14,8 +14,10 @@
 
 namespace iocoro::detail {
 
-/// Shared state for async operation awaiters.
-/// Holds the coroutine handle, executor, and result error code.
+/// Shared state for an in-flight reactor operation.
+///
+/// SAFETY: completion and cancellation may race; `done` is used to guarantee exactly one
+/// resumption path wins and observes the final `ec`.
 struct operation_wait_state {
   std::coroutine_handle<> h{};
   any_executor ex{};
@@ -24,7 +26,12 @@ struct operation_wait_state {
   std::unique_ptr<std::stop_callback<unique_function<void()>>> stop_cb{};
 };
 
-/// Generic awaiter for async operations.
+/// Awaiter that bridges a reactor operation into coroutine suspension.
+///
+/// Semantics:
+/// - Registers a reactor operation via `register_op`.
+/// - Captures the awaiting coroutine's executor and resumes by posting onto it.
+/// - If a stop token is available, requests cancellation best-effort by calling `handle.cancel()`.
 template <typename Factory>
 struct operation_awaiter {
   Factory register_op;
@@ -55,8 +62,8 @@ struct operation_awaiter {
         }
         st->ec = ec;
 
-        // Stop callback might race with completion; resetting unregisters it and
-        // makes cancellation best-effort idempotent.
+        // SAFETY: stop callback may race with completion. Resetting unregisters it and makes
+        // cancellation best-effort and idempotent.
         st->stop_cb.reset();
 
         auto h = std::exchange(st->h, std::coroutine_handle<>{});
@@ -65,6 +72,8 @@ struct operation_awaiter {
         }
         auto ex = st->ex;
         IOCORO_ENSURE(ex, "operation_awaiter: empty executor in completion");
+        // IMPORTANT: Resume by posting onto the captured executor. This avoids resuming inline
+        // on the reactor thread and keeps execution under the awaiting coroutine's executor.
         ex.post([h]() mutable noexcept { h.resume(); });
       }
     };
