@@ -2,6 +2,8 @@
 
 #include <sys/socket.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <cerrno>
 
 namespace iocoro::detail::socket {
@@ -102,6 +104,67 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     co_return fail(ec);
   }
 
+  int so_error = 0;
+  socklen_t optlen = sizeof(so_error);
+
+  auto is_loopback = [](sockaddr const* sa, socklen_t salen) noexcept -> bool {
+    if (!sa) {
+      return false;
+    }
+    if (sa->sa_family == AF_INET) {
+      if (salen < sizeof(sockaddr_in)) {
+        return false;
+      }
+      auto const* in = reinterpret_cast<sockaddr_in const*>(sa);
+      auto const addr_v4 = ntohl(in->sin_addr.s_addr);
+      return (addr_v4 >> 24) == 127;
+    }
+    if (sa->sa_family == AF_INET6) {
+      if (salen < sizeof(sockaddr_in6)) {
+        return false;
+      }
+      auto const* in6 = reinterpret_cast<sockaddr_in6 const*>(sa);
+      return IN6_IS_ADDR_LOOPBACK(&in6->sin6_addr) != 0;
+    }
+    return false;
+  };
+
+  if (is_loopback(addr, len)) {
+    // If the connect finished before we registered for write readiness (ET),
+    // SO_ERROR is ready. This avoids a missed write event for fast localhost connects.
+    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
+      ec = std::error_code(errno, std::generic_category());
+      std::scoped_lock lk{mtx_};
+      state_ = conn_state::disconnected;
+      co_return fail(ec);
+    }
+    if (so_error != 0 && so_error != EINPROGRESS) {
+      ec = std::error_code(so_error, std::generic_category());
+      std::scoped_lock lk{mtx_};
+      state_ = conn_state::disconnected;
+      co_return fail(ec);
+    }
+    if (so_error == 0) {
+      sockaddr_storage peer{};
+      socklen_t peer_len = sizeof(peer);
+      if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peer), &peer_len) == 0) {
+        std::scoped_lock lk{mtx_};
+        if (!connect_op_.is_epoch_current(my_epoch)) {
+          state_ = conn_state::disconnected;
+          co_return fail(error::operation_aborted);
+        }
+        state_ = conn_state::connected;
+        co_return ok();
+      }
+      if (errno != ENOTCONN) {
+        ec = std::error_code(errno, std::generic_category());
+        std::scoped_lock lk{mtx_};
+        state_ = conn_state::disconnected;
+        co_return fail(ec);
+      }
+    }
+  }
+
   // Wait for writability, then check SO_ERROR.
   auto wait_r = co_await base_.wait_write_ready();
   if (!wait_r) {
@@ -124,8 +187,8 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     co_return fail(error::operation_aborted);
   }
 
-  int so_error = 0;
-  socklen_t optlen = sizeof(so_error);
+  so_error = 0;
+  optlen = sizeof(so_error);
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
     ec = std::error_code(errno, std::generic_category());
     std::scoped_lock lk{mtx_};
