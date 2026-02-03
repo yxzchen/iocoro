@@ -29,21 +29,17 @@ class steady_timer {
   using time_point = clock::time_point;
   using duration = clock::duration;
 
-  explicit steady_timer(any_io_executor ex) noexcept
-      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now()) {
-    IOCORO_ENSURE(ex_, "steady_timer: requires a non-empty IO executor");
-    IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
-  }
   explicit steady_timer(any_io_executor ex, time_point at) noexcept
       : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(at) {
     IOCORO_ENSURE(ex_, "steady_timer: requires a non-empty IO executor");
     IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
   }
+
+  explicit steady_timer(any_io_executor ex) noexcept
+      : steady_timer(std::move(ex), clock::now()) {}
+
   explicit steady_timer(any_io_executor ex, duration after) noexcept
-      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()), expiry_(clock::now() + after) {
-    IOCORO_ENSURE(ex_, "steady_timer: requires a non-empty IO executor");
-    IOCORO_ENSURE(ctx_impl_ != nullptr, "steady_timer: missing io_context_impl");
-  }
+      : steady_timer(std::move(ex), clock::now() + after) {}
 
   steady_timer(steady_timer const&) = delete;
   auto operator=(steady_timer const&) -> steady_timer& = delete;
