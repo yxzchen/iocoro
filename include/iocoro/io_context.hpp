@@ -24,6 +24,8 @@ class work_guard;
 /// - `run*()` drives completion of posted tasks, timers, and I/O readiness callbacks.
 /// - At most one thread may execute `run()`, `run_one()`, or `run_for()` at a time for a given
 ///   `io_context` instance (single reactor thread ownership).
+/// - Backend failures are treated as fatal internal errors: pending I/O and timers are aborted
+///   with `error::internal_error`, and the loop transitions to the stopped state.
 ///
 /// Threading:
 /// - `post()` (via the executor) and `stop()` are safe to call from any thread.

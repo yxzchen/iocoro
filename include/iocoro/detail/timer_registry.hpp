@@ -43,6 +43,11 @@ class timer_registry {
   auto process_expired(bool stopped) -> std::size_t;
   auto empty() const -> bool;
 
+  // Drain all registered timer operations and clear the registry.
+  //
+  // NOTE: timer_registry is reactor-thread-only; callers must ensure serialization.
+  auto drain_all() noexcept -> std::vector<reactor_op_ptr>;
+
  private:
   struct timer_node {
     std::chrono::steady_clock::time_point expiry{};
@@ -222,6 +227,27 @@ inline auto timer_registry::recycle_node(std::uint32_t index) -> void {
   if (active_count_ > 0) {
     --active_count_;
   }
+}
+
+inline auto timer_registry::drain_all() noexcept -> std::vector<reactor_op_ptr> {
+  std::vector<reactor_op_ptr> out{};
+  if (nodes_.empty()) {
+    return out;
+  }
+
+  out.reserve(active_count_);
+  for (auto& node : nodes_) {
+    if (node.op) {
+      out.push_back(std::move(node.op));
+    }
+    node.op = {};
+  }
+
+  nodes_.clear();
+  heap_.clear();
+  free_.clear();
+  active_count_ = 0;
+  return out;
 }
 
 }  // namespace iocoro::detail
