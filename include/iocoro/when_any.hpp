@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <exception>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -51,17 +52,18 @@ void when_any_start_variadic(any_executor fallback_ex, std::stop_token parent_st
                              [[maybe_unused]] std::shared_ptr<when_any_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
-  (detail::spawn_task<void>(
-     detail::spawn_context{[&]() {
-                             auto task_ex = std::get<Is>(tasks).get_executor();
-                             return task_ex ? task_ex : fallback_ex;
-                           }(),
-                           parent_stop},
-     [st, task = std::move(std::get<Is>(tasks))]() mutable -> awaitable<void> {
-       return when_any_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-         st, std::move(task));
-     },
-     detail::detached_completion<void>{}),
+  ([&]() {
+    auto task = std::move(std::get<Is>(tasks));
+    auto const task_ex = task.get_executor();
+    auto const exec = task_ex ? task_ex : fallback_ex;
+    detail::spawn_task<void>(
+      detail::spawn_context{exec, parent_stop},
+      [st, task = std::move(task)]() mutable -> awaitable<void> {
+        return when_any_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
+          st, std::move(task));
+      },
+      detail::detached_completion<void>{});
+  }(),
    ...);
 }
 
@@ -188,11 +190,15 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
 
   std::exception_ptr ep{};
   std::size_t index{};
+  std::optional<std::remove_cvref_t<T>> result{};
   {
     std::scoped_lock lk{st->m};
     ep = st->first_ep;
     if (!ep) {
       index = st->completed_index;
+      if constexpr (!std::is_void_v<T>) {
+        result = std::move(st->result);
+      }
     }
   }
 
@@ -203,9 +209,8 @@ auto when_any(std::vector<awaitable<T>> tasks) -> awaitable<std::pair<
   if constexpr (std::is_void_v<T>) {
     co_return std::make_pair(index, std::monostate{});
   } else {
-    std::scoped_lock lk{st->m};
-    IOCORO_ENSURE(st->result.has_value(), "when_any(vector): missing value");
-    co_return std::make_pair(index, std::move(*st->result));
+    IOCORO_ENSURE(result.has_value(), "when_any(vector): missing value");
+    co_return std::make_pair(index, std::move(*result));
   }
 }
 
