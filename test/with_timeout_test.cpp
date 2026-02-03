@@ -1,16 +1,18 @@
 #include <iocoro/iocoro.hpp>
+#include <iocoro/ip/tcp.hpp>
 #include "test_util.hpp"
 
 #include <gtest/gtest.h>
 
-#include <atomic>
+#include <array>
 #include <chrono>
-#include <exception>
-#include <optional>
+#include <cstddef>
+#include <span>
 #include <stdexcept>
-#include <system_error>
+#include <string>
 #include <thread>
 #include <variant>
+#include <vector>
 
 namespace iocoro::test {
 
@@ -80,7 +82,7 @@ auto blocking_sleep_then_throw(std::chrono::milliseconds d) -> iocoro::awaitable
   co_return 0;
 }
 
-TEST(awaitable_operators, timer_race_cancels_loser) {
+TEST(with_timeout_test, timer_race_cancels_loser) {
   iocoro::io_context ctx;
 
   auto fast_ec = std::make_shared<std::optional<std::error_code>>();
@@ -95,8 +97,8 @@ TEST(awaitable_operators, timer_race_cancels_loser) {
     iocoro::steady_timer slow_timer(ex);
     slow_timer.expires_after(50ms);
 
-    auto [index, result] =
-      co_await (wait_timer_value(fast_timer, fast_ec, 7) || wait_timer_ec(slow_timer, slow_ec));
+    auto [index, result] = co_await iocoro::when_any_cancel_join(
+      wait_timer_value(fast_timer, fast_ec, 7), wait_timer_ec(slow_timer, slow_ec));
 
     EXPECT_EQ(index, 0U);
     EXPECT_EQ(std::get<0>(result), 7);
@@ -112,7 +114,7 @@ TEST(awaitable_operators, timer_race_cancels_loser) {
   EXPECT_EQ(slow_ec->value(), aborted);
 }
 
-TEST(awaitable_operators, operator_or_returns_second_when_second_wins) {
+TEST(with_timeout_test, operator_or_returns_second_when_second_wins) {
   iocoro::io_context ctx;
 
   auto a_ec = std::make_shared<std::optional<std::error_code>>();
@@ -127,7 +129,8 @@ TEST(awaitable_operators, operator_or_returns_second_when_second_wins) {
     iocoro::steady_timer fast(ex);
     fast.expires_after(5ms);
 
-    auto [index, result] = co_await (wait_timer_ec(slow, a_ec) || wait_timer_value(fast, b_ec, 9));
+    auto [index, result] = co_await iocoro::when_any_cancel_join(wait_timer_ec(slow, a_ec),
+                                                                 wait_timer_value(fast, b_ec, 9));
 
     EXPECT_EQ(index, 1U);
     EXPECT_EQ(std::get<1>(result), 9);
@@ -144,7 +147,7 @@ TEST(awaitable_operators, operator_or_returns_second_when_second_wins) {
   EXPECT_EQ(b_ec->value(), std::error_code{});
 }
 
-TEST(awaitable_operators, operator_or_supports_void_and_value) {
+TEST(with_timeout_test, operator_or_supports_void_and_value) {
   iocoro::io_context ctx;
 
   auto a_ec = std::make_shared<std::optional<std::error_code>>();
@@ -157,7 +160,8 @@ TEST(awaitable_operators, operator_or_supports_void_and_value) {
     slow.expires_after(50ms);
 
     auto [index, result] =
-      co_await (wait_timer_void(fast, a_ec) || wait_timer_value(slow, a_ec, 3));
+      co_await iocoro::when_any_cancel_join(wait_timer_void(fast, a_ec),
+                                            wait_timer_value(slow, a_ec, 3));
     EXPECT_EQ(index, 0U);
     EXPECT_TRUE(std::holds_alternative<std::monostate>(result));
     co_return;
@@ -167,7 +171,7 @@ TEST(awaitable_operators, operator_or_supports_void_and_value) {
   ASSERT_TRUE(r);
 }
 
-TEST(awaitable_operators, operator_or_rethrows_if_first_completion_throws_and_requests_stop) {
+TEST(with_timeout_test, operator_or_rethrows_if_first_completion_throws_and_requests_stop) {
   iocoro::io_context ctx;
 
   auto loser_ec = std::make_shared<std::optional<std::error_code>>();
@@ -175,13 +179,12 @@ TEST(awaitable_operators, operator_or_rethrows_if_first_completion_throws_and_re
 
   auto task = [&]() -> iocoro::awaitable<void> {
     try {
-      (void)co_await (throw_runtime_error() || long_timer_wait_ec(1h, loser_ec));
+      (void)co_await iocoro::when_any_cancel_join(throw_runtime_error(),
+                                                  long_timer_wait_ec(1h, loser_ec));
     } catch (std::runtime_error const&) {
       saw_exception->store(true);
     }
 
-    // operator|| does not join the loser; give it a moment to observe stop and record its ec.
-    co_await iocoro::co_sleep(10ms);
     co_return;
   };
 
@@ -193,7 +196,7 @@ TEST(awaitable_operators, operator_or_rethrows_if_first_completion_throws_and_re
   EXPECT_EQ(loser_ec->value(), iocoro::make_error_code(iocoro::error::operation_aborted));
 }
 
-TEST(awaitable_operators, operator_or_ignores_loser_exception_after_winner_completes) {
+TEST(with_timeout_test, operator_or_ignores_loser_exception_after_winner_completes) {
   iocoro::io_context ctx;
   iocoro::thread_pool pool{1};
 
@@ -201,7 +204,7 @@ TEST(awaitable_operators, operator_or_ignores_loser_exception_after_winner_compl
   auto task = [&]() -> iocoro::awaitable<void> {
     auto loser = iocoro::bind_executor(iocoro::any_executor{pool.get_executor()},
                                        blocking_sleep_then_throw(30ms));
-    auto [index, result] = co_await (immediate_int(7) || std::move(loser));
+    auto [index, result] = co_await iocoro::when_any_cancel_join(immediate_int(7), std::move(loser));
     EXPECT_EQ(index, 0U);
     EXPECT_EQ(std::get<0>(result), 7);
     completed->store(true);
@@ -215,35 +218,7 @@ TEST(awaitable_operators, operator_or_ignores_loser_exception_after_winner_compl
   pool.join();
 }
 
-TEST(awaitable_operators, operator_or_does_not_join_loser) {
-  iocoro::io_context ctx;
-  iocoro::thread_pool pool{1};
-
-  auto loser_done = std::make_shared<std::atomic<bool>>(false);
-
-  auto task = [&]() -> iocoro::awaitable<void> {
-    auto a = immediate_int(1);
-    auto b = iocoro::bind_executor(iocoro::any_executor{pool.get_executor()},
-                                   blocking_sleep_set_flag(80ms, loser_done, 2));
-
-    auto [index, result] = co_await (std::move(a) || std::move(b));
-    EXPECT_EQ(index, 0U);
-    EXPECT_EQ(std::get<0>(result), 1);
-
-    // Not joined: b should still be running (sleeping).
-    EXPECT_FALSE(loser_done->load());
-
-    // Give the loser time to finish in the background.
-    co_await iocoro::co_sleep(120ms);
-    EXPECT_TRUE(loser_done->load());
-    co_return;
-  };
-
-  auto r = iocoro::test::sync_wait(ctx, task());
-  ASSERT_TRUE(r);
-}
-
-TEST(awaitable_operators, when_any_cancel_join_joins_loser_before_return) {
+TEST(with_timeout_test, when_any_cancel_join_joins_loser_before_return) {
   iocoro::io_context ctx;
   iocoro::thread_pool pool{1};
 
@@ -267,7 +242,7 @@ TEST(awaitable_operators, when_any_cancel_join_joins_loser_before_return) {
   ASSERT_TRUE(r);
 }
 
-TEST(awaitable_operators, when_any_cancel_join_joins_loser_even_if_winner_throws) {
+TEST(with_timeout_test, when_any_cancel_join_joins_loser_even_if_winner_throws) {
   iocoro::io_context ctx;
   iocoro::thread_pool pool{1};
 
@@ -294,7 +269,7 @@ TEST(awaitable_operators, when_any_cancel_join_joins_loser_even_if_winner_throws
   EXPECT_TRUE(saw_exception->load());
 }
 
-TEST(awaitable_operators, when_any_cancel_join_cancels_timer_loser_and_waits_for_completion) {
+TEST(with_timeout_test, when_any_cancel_join_cancels_timer_loser_and_waits_for_completion) {
   iocoro::io_context ctx;
 
   auto loser_ec = std::make_shared<std::optional<std::error_code>>();
@@ -313,7 +288,7 @@ TEST(awaitable_operators, when_any_cancel_join_cancels_timer_loser_and_waits_for
   EXPECT_EQ(loser_ec->value(), iocoro::make_error_code(iocoro::error::operation_aborted));
 }
 
-TEST(awaitable_operators, operator_or_allows_either_winner_when_both_complete_similarly) {
+TEST(with_timeout_test, operator_or_allows_either_winner_when_both_complete_similarly) {
   iocoro::io_context ctx;
 
   auto task = [&]() -> iocoro::awaitable<void> {
@@ -324,9 +299,9 @@ TEST(awaitable_operators, operator_or_allows_either_winner_when_both_complete_si
     iocoro::steady_timer t2(ex);
     t2.expires_after(5ms);
 
-    auto [index, result] =
-      co_await (wait_timer_value(t1, std::make_shared<std::optional<std::error_code>>(), 1) ||
-                wait_timer_value(t2, std::make_shared<std::optional<std::error_code>>(), 2));
+    auto [index, result] = co_await iocoro::when_any_cancel_join(
+      wait_timer_value(t1, std::make_shared<std::optional<std::error_code>>(), 1),
+      wait_timer_value(t2, std::make_shared<std::optional<std::error_code>>(), 2));
 
     EXPECT_TRUE(index == 0U || index == 1U);
     if (index == 0U) {
@@ -338,6 +313,142 @@ TEST(awaitable_operators, operator_or_allows_either_winner_when_both_complete_si
   };
 
   auto r = iocoro::test::sync_wait(ctx, task());
+  ASSERT_TRUE(r);
+}
+
+TEST(with_timeout_test, resolve_timeout_microseconds) {
+  iocoro::io_context ctx;
+
+  bool timed_out = false;
+  auto timeout_ec = make_error_code(error::timed_out);
+  auto task = [&]() -> awaitable<void> {
+    auto ex = co_await this_coro::io_executor;
+    thread_pool pool{1};
+    pool.get_executor().post([] { std::this_thread::sleep_for(5ms); });
+    ip::tcp::resolver resolver(pool.get_executor());
+
+    auto r = co_await with_timeout(resolver.async_resolve("example.com", "80"), 1us);
+    timed_out = (!r && r.error() == timeout_ec);
+    co_return;
+  };
+
+  auto r = iocoro::test::sync_wait(ctx, task());
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(timed_out);
+}
+
+TEST(with_timeout_test, connect_timeout_ms) {
+  iocoro::io_context ctx;
+
+  bool timed_out = false;
+  auto timeout_ec = make_error_code(error::timed_out);
+  auto task = [&]() -> awaitable<void> {
+    auto ex = co_await this_coro::io_executor;
+    ip::tcp::socket socket(ex);
+
+    auto ep = ip::tcp::endpoint::from_string("58.246.163.58:80");
+    if (!ep) {
+      throw std::runtime_error("invalid endpoint");
+    }
+
+    auto r = co_await with_timeout(socket.async_connect(*ep), 1ms);
+    timed_out = (!r && r.error() == timeout_ec);
+    co_return;
+  };
+
+  auto r = iocoro::test::sync_wait(ctx, task());
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(timed_out);
+}
+
+TEST(with_timeout_test, read_timeout_ms) {
+  iocoro::io_context ctx;
+
+  bool timed_out = false;
+  auto timeout_ec = make_error_code(error::timed_out);
+  auto task = [&]() -> awaitable<void> {
+    auto ex = co_await this_coro::io_executor;
+    ip::tcp::socket socket(ex);
+
+    auto ep = ip::tcp::endpoint::from_string("58.246.163.58:80");
+    if (!ep) {
+      throw std::runtime_error("invalid endpoint");
+    }
+
+    auto cr = co_await socket.async_connect(*ep);
+    if (!cr) {
+      co_return;
+    }
+
+    std::array<std::byte, 1024> buf{};
+    auto r = co_await with_timeout(socket.async_read_some(buf), 1ms);
+    timed_out = (!r && r.error() == timeout_ec);
+    co_return;
+  };
+
+  auto r = iocoro::test::sync_wait(ctx, task());
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(timed_out);
+}
+
+TEST(with_timeout_test, write_timeout_ms) {
+  iocoro::io_context ctx;
+
+  bool timed_out = false;
+  auto timeout_ec = make_error_code(error::timed_out);
+  auto task = [&]() -> awaitable<void> {
+    auto ex = co_await this_coro::io_executor;
+    ip::tcp::socket socket(ex);
+
+    auto ep = ip::tcp::endpoint::from_string("58.246.163.58:80");
+    if (!ep) {
+      throw std::runtime_error("invalid endpoint");
+    }
+
+    auto cr = co_await socket.async_connect(*ep);
+    if (!cr) {
+      co_return;
+    }
+
+    std::vector<std::byte> payload(16 * 1024 * 1024);
+    auto r = co_await with_timeout(io::async_write(socket, payload), 1ms);
+    timed_out = (!r && r.error() == timeout_ec);
+    co_return;
+  };
+
+  auto r = iocoro::test::sync_wait(ctx, task());
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(timed_out);
+}
+
+TEST(with_timeout_test, stop_returns_operation_aborted) {
+  iocoro::io_context ctx;
+
+  std::stop_source stop_src{};
+  auto aborted_ec = make_error_code(error::operation_aborted);
+
+  auto task = [&]() -> awaitable<void> {
+    auto ex = co_await this_coro::io_executor;
+
+    steady_timer t(ex);
+    t.expires_after(24h);
+
+    auto r = co_await with_timeout(t.async_wait(use_awaitable), 24h);
+    if (r) {
+      ADD_FAILURE() << "expected operation_aborted, got success";
+    } else {
+      EXPECT_EQ(r.error(), aborted_ec);
+    }
+    co_return;
+  };
+
+  std::jthread stopper{[&]() {
+    std::this_thread::sleep_for(1ms);
+    stop_src.request_stop();
+  }};
+
+  auto r = iocoro::test::sync_wait(
+    ctx, iocoro::co_spawn(ctx.get_executor(), stop_src.get_token(), task(), iocoro::use_awaitable));
   ASSERT_TRUE(r);
 }
 
