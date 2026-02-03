@@ -5,6 +5,7 @@
 #include <iocoro/io/write.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/ip.hpp>
+#include <iocoro/net/buffer.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -31,7 +32,7 @@ auto example(iocoro::io_context& ctx, tcp::endpoint ep, std::string msg, int n)
     for (int i = 0; i < n; ++i) {
       auto w = co_await iocoro::io::async_write(
         socket,
-        std::span<std::byte const>(reinterpret_cast<std::byte const*>(msg.data()), msg.size()));
+        iocoro::net::buffer(msg));
       if (!w) {
         throw std::runtime_error("write failed");
       }

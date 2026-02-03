@@ -5,6 +5,7 @@
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/net/buffer.hpp>
 #include <iocoro/result.hpp>
 #include <iocoro/shutdown.hpp>
 
@@ -69,8 +70,16 @@ class basic_stream_socket {
     return handle_.impl().async_read_some(buffer);
   }
 
+  auto async_read_some(mutable_buffer buffer) -> awaitable<result<std::size_t>> {
+    return async_read_some(buffer.as_span());
+  }
+
   auto async_write_some(std::span<std::byte const> buffer) -> awaitable<result<std::size_t>> {
     return handle_.impl().async_write_some(buffer);
+  }
+
+  auto async_write_some(const_buffer buffer) -> awaitable<result<std::size_t>> {
+    return async_write_some(buffer.as_span());
   }
 
   auto local_endpoint() const -> result<endpoint> {

@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <iostream>
-#include <span>
 #include <string>
 
 namespace {
@@ -31,17 +30,16 @@ auto server_once(tcp::acceptor& acceptor) -> iocoro::awaitable<void> {
   }
 
   auto socket = std::move(*accepted);
-  std::string buffer;
-  buffer.resize(1024);
-  auto span = std::span<std::byte>(reinterpret_cast<std::byte*>(buffer.data()), buffer.size());
+  std::string buffer(1024, '\0');
+  auto buf = iocoro::net::buffer(buffer);
 
-  auto r = co_await iocoro::io::async_read_until(socket, span, '\n', 0);
+  auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
   if (!r) {
     co_return;
   }
 
   auto const n = *r;
-  auto w = co_await iocoro::io::async_write(socket, std::span<std::byte const>(span.data(), n));
+  auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.substr(0, n)));
   if (!w) {
     co_return;
   }
@@ -55,22 +53,20 @@ auto client_once(iocoro::io_context& ctx, tcp::endpoint ep) -> iocoro::awaitable
   }
 
   std::string msg = "ping\n";
-  auto w = co_await iocoro::io::async_write(
-    socket, std::span<std::byte const>(reinterpret_cast<std::byte const*>(msg.data()), msg.size()));
+  auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(msg));
   if (!w) {
     co_return;
   }
 
-  std::string buffer;
-  buffer.resize(1024);
-  auto span = std::span<std::byte>(reinterpret_cast<std::byte*>(buffer.data()), buffer.size());
-  auto r = co_await iocoro::io::async_read_until(socket, span, '\n', 0);
+  std::string buffer(1024, '\0');
+  auto buf = iocoro::net::buffer(buffer);
+  auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
   if (!r) {
     co_return;
   }
 
   auto const n = *r;
-  std::cout << "tcp_echo: received: " << std::string_view(buffer.data(), n);
+  std::cout << "tcp_echo: received: " << buffer.substr(0, n);
 
   ctx.stop();
 }

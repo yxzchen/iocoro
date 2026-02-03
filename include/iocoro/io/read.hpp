@@ -3,6 +3,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/io/stream_concepts.hpp>
+#include <iocoro/net/buffer.hpp>
 #include <iocoro/result.hpp>
 
 #include <cstddef>
@@ -43,6 +44,11 @@ auto async_read(Stream& s, std::span<std::byte> buf) -> awaitable<result<std::si
   }
 
   co_return wanted;
+}
+
+template <async_read_stream Stream>
+auto async_read(Stream& s, net::mutable_buffer buf) -> awaitable<result<std::size_t>> {
+  co_return co_await async_read(s, buf.as_span());
 }
 
 }  // namespace iocoro::io

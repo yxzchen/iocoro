@@ -5,6 +5,7 @@
 #include <iocoro/detail/socket_handle_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/net/buffer.hpp>
 #include <iocoro/result.hpp>
 
 #include <iocoro/detail/socket/datagram_socket_impl.hpp>
@@ -89,6 +90,11 @@ class basic_datagram_socket {
     co_return co_await handle_.impl().async_send_to(buffer, destination.data(), destination.size());
   }
 
+  auto async_send_to(const_buffer buffer, endpoint_type const& destination)
+    -> awaitable<result<std::size_t>> {
+    co_return co_await async_send_to(buffer.as_span(), destination);
+  }
+
   /// Receive a datagram and retrieve the source endpoint.
   ///
   /// Important: The socket must be bound before calling this.
@@ -113,6 +119,11 @@ class basic_datagram_socket {
 
     source = *ep_result;
     co_return *result;
+  }
+
+  auto async_receive_from(mutable_buffer buffer, endpoint_type& source)
+    -> awaitable<result<std::size_t>> {
+    co_return co_await async_receive_from(buffer.as_span(), source);
   }
 
   /// Query the local endpoint for an open socket.
