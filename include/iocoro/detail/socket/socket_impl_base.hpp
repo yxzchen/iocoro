@@ -56,7 +56,7 @@ class socket_impl_base {
   socket_impl_base(socket_impl_base&&) = delete;
   auto operator=(socket_impl_base&&) -> socket_impl_base& = delete;
 
-  ~socket_impl_base() { (void)close(); }
+  ~socket_impl_base() noexcept { (void)close(); }
 
   auto get_io_context_impl() const noexcept -> io_context_impl* { return ctx_impl_; }
   auto get_executor() const noexcept -> any_io_executor { return ex_; }

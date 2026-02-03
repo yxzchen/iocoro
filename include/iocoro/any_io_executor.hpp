@@ -33,10 +33,18 @@ class any_io_executor {
   explicit any_io_executor(Ex ex) noexcept : any_io_executor(any_executor{std::move(ex)}) {}
 
   /// Schedule work for later execution.
-  void post(detail::unique_function<void()> f) const noexcept { storage_.post(std::move(f)); }
+  void post(detail::unique_function<void()> f) const noexcept {
+    if (!storage_) {
+      return;
+    }
+    storage_.post(std::move(f));
+  }
 
   /// Execute inline when permitted; otherwise schedule like `post()`.
   void dispatch(detail::unique_function<void()> f) const noexcept {
+    if (!storage_) {
+      return;
+    }
     storage_.dispatch(std::move(f));
   }
 

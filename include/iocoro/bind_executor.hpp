@@ -14,7 +14,7 @@ namespace iocoro {
 ///
 /// IMPORTANT: This does not start execution; it only changes where the coroutine is scheduled.
 template <typename T>
-auto bind_executor(any_executor executor, awaitable<T> task) -> awaitable<T> {
+[[nodiscard]] auto bind_executor(any_executor executor, awaitable<T> task) -> awaitable<T> {
   auto handle = task.release();
   handle.promise().set_executor(std::move(executor));
   return awaitable<T>{handle};

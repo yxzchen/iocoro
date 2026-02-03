@@ -1,21 +1,14 @@
-// asio_tcp_roundtrip.cpp
-//
-// Single-process TCP roundtrip benchmark using Boost.Asio and real sockets:
-// - Start an acceptor on 127.0.0.1:0 (ephemeral port)
-// - Spawn N client sessions that connect and perform M request/response roundtrips
-//
-// Notes:
-// - Development-stage benchmark only; not representative of real-world performance.
-
 #include <boost/asio.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace net = boost::asio;
 using net::awaitable;
@@ -96,7 +89,8 @@ int main(int argc, char* argv[]) {
   st.msg = "Some message\n";
 
   auto const msg_bytes = st.msg.size();
-  auto const total_roundtrips = static_cast<std::uint64_t>(sessions) * static_cast<std::uint64_t>(msgs);
+  auto const total_roundtrips =
+    static_cast<std::uint64_t>(sessions) * static_cast<std::uint64_t>(msgs);
   auto const total_tx_bytes = total_roundtrips * msg_bytes;
   auto const total_rx_bytes = total_roundtrips * msg_bytes;
 
@@ -118,17 +112,10 @@ int main(int argc, char* argv[]) {
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_tcp_roundtrip"
             << " listen=" << listen_ep.address().to_string() << ":" << listen_ep.port()
-            << " sessions=" << sessions
-            << " msgs=" << msgs
-            << " msg_bytes=" << msg_bytes
-            << " roundtrips=" << total_roundtrips
-            << " tx_bytes=" << total_tx_bytes
-            << " rx_bytes=" << total_rx_bytes
-            << " elapsed_s=" << elapsed_s
-            << " rps=" << rps
-            << " avg_us=" << avg_us
-            << "\n";
+            << " sessions=" << sessions << " msgs=" << msgs << " msg_bytes=" << msg_bytes
+            << " roundtrips=" << total_roundtrips << " tx_bytes=" << total_tx_bytes
+            << " rx_bytes=" << total_rx_bytes << " elapsed_s=" << elapsed_s << " rps=" << rps
+            << " avg_us=" << avg_us << "\n";
 
   return 0;
 }
-

@@ -50,7 +50,8 @@ auto wait_timer_ec(iocoro::steady_timer& timer, std::shared_ptr<std::optional<st
   co_return ec;
 }
 
-auto wait_timer_void(iocoro::steady_timer& timer, std::shared_ptr<std::optional<std::error_code>> out)
+auto wait_timer_void(iocoro::steady_timer& timer,
+                     std::shared_ptr<std::optional<std::error_code>> out)
   -> iocoro::awaitable<void> {
   auto r = co_await timer.async_wait(iocoro::use_awaitable);
   *out = r ? std::error_code{} : r.error();
@@ -67,7 +68,7 @@ auto long_timer_wait_ec(std::chrono::steady_clock::duration d,
 }
 
 auto blocking_sleep_set_flag(std::chrono::milliseconds d, std::shared_ptr<std::atomic<bool>> done,
-                            int value) -> iocoro::awaitable<int> {
+                             int value) -> iocoro::awaitable<int> {
   std::this_thread::sleep_for(d);
   done->store(true);
   co_return value;
@@ -155,7 +156,8 @@ TEST(awaitable_operators, operator_or_supports_void_and_value) {
     iocoro::steady_timer slow(ex);
     slow.expires_after(50ms);
 
-    auto [index, result] = co_await (wait_timer_void(fast, a_ec) || wait_timer_value(slow, a_ec, 3));
+    auto [index, result] =
+      co_await (wait_timer_void(fast, a_ec) || wait_timer_value(slow, a_ec, 3));
     EXPECT_EQ(index, 0U);
     EXPECT_TRUE(std::holds_alternative<std::monostate>(result));
     co_return;
@@ -197,8 +199,8 @@ TEST(awaitable_operators, operator_or_ignores_loser_exception_after_winner_compl
 
   auto completed = std::make_shared<std::atomic<bool>>(false);
   auto task = [&]() -> iocoro::awaitable<void> {
-    auto loser =
-      iocoro::bind_executor(iocoro::any_executor{pool.get_executor()}, blocking_sleep_then_throw(30ms));
+    auto loser = iocoro::bind_executor(iocoro::any_executor{pool.get_executor()},
+                                       blocking_sleep_then_throw(30ms));
     auto [index, result] = co_await (immediate_int(7) || std::move(loser));
     EXPECT_EQ(index, 0U);
     EXPECT_EQ(std::get<0>(result), 7);
@@ -322,8 +324,9 @@ TEST(awaitable_operators, operator_or_allows_either_winner_when_both_complete_si
     iocoro::steady_timer t2(ex);
     t2.expires_after(5ms);
 
-    auto [index, result] = co_await (wait_timer_value(t1, std::make_shared<std::optional<std::error_code>>(), 1) ||
-                                     wait_timer_value(t2, std::make_shared<std::optional<std::error_code>>(), 2));
+    auto [index, result] =
+      co_await (wait_timer_value(t1, std::make_shared<std::optional<std::error_code>>(), 1) ||
+                wait_timer_value(t2, std::make_shared<std::optional<std::error_code>>(), 2));
 
     EXPECT_TRUE(index == 0U || index == 1U);
     if (index == 0U) {

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <span>
 #include <string_view>
 #include <system_error>
@@ -17,8 +18,8 @@ namespace iocoro::io {
 namespace detail {
 /// Search for `delim` in the byte span.
 /// Returns the position of the first occurrence, or `npos` if not found.
-inline auto find_in_span(std::span<std::byte const> data, std::span<std::byte const> delim)
-  -> std::size_t {
+[[nodiscard]] inline auto find_in_span(std::span<std::byte const> data,
+                                       std::span<std::byte const> delim) -> std::size_t {
   constexpr auto npos = static_cast<std::size_t>(-1);
 
   if (delim.empty() || data.size() < delim.size()) {
@@ -53,8 +54,9 @@ inline auto find_in_span(std::span<std::byte const> data, std::span<std::byte co
 /// Destroying the buffer while the operation is in progress results in
 /// undefined behavior (use-after-free).
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, std::span<std::byte> buf, std::span<std::byte const> delim,
-                      std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
+[[nodiscard]] auto async_read_until(Stream& s, std::span<std::byte> buf,
+                                    std::span<std::byte const> delim, std::size_t initial_size = 0)
+  -> awaitable<result<std::size_t>> {
   if (delim.empty()) {
     co_return unexpected(error::invalid_argument);
   }
@@ -107,28 +109,32 @@ auto async_read_until(Stream& s, std::span<std::byte> buf, std::span<std::byte c
 }
 
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, net::mutable_buffer buf, net::const_buffer delim,
-                      std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
+[[nodiscard]] auto async_read_until(Stream& s, net::mutable_buffer buf, net::const_buffer delim,
+                                    std::size_t initial_size = 0)
+  -> awaitable<result<std::size_t>> {
   co_return co_await async_read_until(s, buf.as_span(), delim.as_span(), initial_size);
 }
 
 /// Convenience overload accepting string_view delimiter.
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, net::mutable_buffer buf, std::string_view delim,
-                      std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
+[[nodiscard]] auto async_read_until(Stream& s, net::mutable_buffer buf, std::string_view delim,
+                                    std::size_t initial_size = 0)
+  -> awaitable<result<std::size_t>> {
   co_return co_await async_read_until(s, buf.as_span(), delim, initial_size);
 }
 
 /// Convenience overload accepting string_view delimiter.
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, std::span<std::byte> buf, std::string_view delim,
-                      std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
+[[nodiscard]] auto async_read_until(Stream& s, std::span<std::byte> buf, std::string_view delim,
+                                    std::size_t initial_size = 0)
+  -> awaitable<result<std::size_t>> {
   co_return co_await async_read_until(s, buf, net::buffer(delim).as_span(), initial_size);
 }
 
 /// Convenience overload for single-character delimiters.
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, std::span<std::byte> buf, char delim, std::size_t initial_size = 0)
+[[nodiscard]] auto async_read_until(Stream& s, std::span<std::byte> buf, char delim,
+                                    std::size_t initial_size = 0)
   -> awaitable<result<std::size_t>> {
   std::byte const d[1] = {static_cast<std::byte>(delim)};
   co_return co_await async_read_until(s, buf, std::span<std::byte const>{d, 1}, initial_size);
@@ -136,7 +142,8 @@ auto async_read_until(Stream& s, std::span<std::byte> buf, char delim, std::size
 
 /// Convenience overload for single-character delimiters.
 template <async_read_stream Stream>
-auto async_read_until(Stream& s, net::mutable_buffer buf, char delim, std::size_t initial_size = 0)
+[[nodiscard]] auto async_read_until(Stream& s, net::mutable_buffer buf, char delim,
+                                    std::size_t initial_size = 0)
   -> awaitable<result<std::size_t>> {
   co_return co_await async_read_until(s, buf.as_span(), delim, initial_size);
 }

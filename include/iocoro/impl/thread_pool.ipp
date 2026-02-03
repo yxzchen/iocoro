@@ -69,7 +69,7 @@ inline thread_pool::thread_pool(std::size_t n_threads) {
   }
 }
 
-inline thread_pool::~thread_pool() {
+inline thread_pool::~thread_pool() noexcept {
   stop();
   join();
 }

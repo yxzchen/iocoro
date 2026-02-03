@@ -8,8 +8,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <memory>
 #include <mutex>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace iocoro::detail {
 

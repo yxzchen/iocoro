@@ -58,8 +58,7 @@ auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -
   steady_timer timer(io_ex);
   timer.expires_after(timeout);
 
-  auto [index, v] =
-    co_await when_any_cancel_join(std::move(op), timer.async_wait(use_awaitable));
+  auto [index, v] = co_await when_any_cancel_join(std::move(op), timer.async_wait(use_awaitable));
 
   if (index == 0U) {
     timer.cancel();
@@ -69,7 +68,8 @@ auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -
   // Timer completed first: distinguish natural expiry from cancellation due to stop.
   auto const& timer_res = std::get<1>(v);
   if (!timer_res) {
-    if (timer_res.error() == make_error_code(error::operation_aborted) && parent_stop.stop_requested()) {
+    if (timer_res.error() == make_error_code(error::operation_aborted) &&
+        parent_stop.stop_requested()) {
       co_return unexpected(error::operation_aborted);
     }
     co_return unexpected(timer_res.error());
@@ -79,4 +79,3 @@ auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -
 }
 
 }  // namespace iocoro
-

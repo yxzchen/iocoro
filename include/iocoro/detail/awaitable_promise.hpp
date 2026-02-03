@@ -12,6 +12,7 @@
 #include <coroutine>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <utility>
 
@@ -58,7 +59,7 @@ struct awaitable_promise_base {
     return final_awaiter{this};
   }
 
-  auto get_executor() noexcept { return ex_; }
+  auto get_executor() const noexcept { return ex_; }
   void set_executor(any_executor ex) noexcept { ex_ = std::move(ex); }
 
   void inherit_executor(any_executor parent_ex) noexcept {
@@ -189,7 +190,9 @@ struct awaitable_promise final : awaitable_promise_base {
 
   auto take_value() -> T {
     assert(value_.has_value());
-    return std::move(*value_);
+    auto v = std::move(*value_);
+    value_.reset();
+    return v;
   }
 };
 

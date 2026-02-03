@@ -28,17 +28,28 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/condition_event.hpp>
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/with_timeout.hpp>
 #include <iocoro/when_all.hpp>
 #include <iocoro/when_any.hpp>
+#include <iocoro/with_timeout.hpp>
 
 // Networking
 #include <iocoro/net/basic_acceptor.hpp>
+#include <iocoro/net/basic_datagram_socket.hpp>
 #include <iocoro/net/basic_stream_socket.hpp>
 #include <iocoro/net/buffer.hpp>
 #include <iocoro/net/protocol.hpp>
 #include <iocoro/shutdown.hpp>
 #include <iocoro/socket_option.hpp>
+
+#include <iocoro/ip/address.hpp>
+#include <iocoro/ip/endpoint.hpp>
+#include <iocoro/ip/resolver.hpp>
+#include <iocoro/ip/tcp.hpp>
+#include <iocoro/ip/udp.hpp>
+
+#include <iocoro/local/dgram.hpp>
+#include <iocoro/local/endpoint.hpp>
+#include <iocoro/local/stream.hpp>
 
 // Async I/O algorithms
 #include <iocoro/io/read.hpp>

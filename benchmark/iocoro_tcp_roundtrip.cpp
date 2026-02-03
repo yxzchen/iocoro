@@ -1,21 +1,13 @@
-// iocoro_tcp_roundtrip.cpp
-//
-// Single-process TCP roundtrip benchmark using real sockets:
-// - Start a TCP acceptor on 127.0.0.1:0 (ephemeral port)
-// - Spawn N client sessions that connect and perform M request/response roundtrips
-//
-// Notes:
-// - Development-stage benchmark only; not representative of real-world performance.
-
 #include <iocoro/iocoro.hpp>
-#include <iocoro/ip.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -46,7 +38,8 @@ auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void
   }
 }
 
-auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> iocoro::awaitable<void> {
+auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st)
+  -> iocoro::awaitable<void> {
   auto ex = co_await iocoro::this_coro::executor;
 
   for (int i = 0; i < sessions; ++i) {
@@ -59,7 +52,8 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> ioco
   }
 }
 
-auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st) -> iocoro::awaitable<void> {
+auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
+  -> iocoro::awaitable<void> {
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
@@ -130,7 +124,8 @@ int main(int argc, char* argv[]) {
   }
 
   auto const msg_bytes = st.msg.size();
-  auto const total_roundtrips = static_cast<std::uint64_t>(sessions) * static_cast<std::uint64_t>(msgs);
+  auto const total_roundtrips =
+    static_cast<std::uint64_t>(sessions) * static_cast<std::uint64_t>(msgs);
   auto const total_tx_bytes = total_roundtrips * msg_bytes;
   auto const total_rx_bytes = total_roundtrips * msg_bytes;
 
@@ -146,18 +141,10 @@ int main(int argc, char* argv[]) {
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "iocoro_tcp_roundtrip"
-            << " listen=" << ep_r->to_string()
-            << " sessions=" << sessions
-            << " msgs=" << msgs
-            << " msg_bytes=" << msg_bytes
-            << " roundtrips=" << total_roundtrips
-            << " tx_bytes=" << total_tx_bytes
-            << " rx_bytes=" << total_rx_bytes
-            << " elapsed_s=" << elapsed_s
-            << " rps=" << rps
-            << " avg_us=" << avg_us
-            << "\n";
+            << " listen=" << ep_r->to_string() << " sessions=" << sessions << " msgs=" << msgs
+            << " msg_bytes=" << msg_bytes << " roundtrips=" << total_roundtrips
+            << " tx_bytes=" << total_tx_bytes << " rx_bytes=" << total_rx_bytes
+            << " elapsed_s=" << elapsed_s << " rps=" << rps << " avg_us=" << avg_us << "\n";
 
   return 0;
 }
-

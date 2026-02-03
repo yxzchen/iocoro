@@ -47,17 +47,16 @@ auto when_any_run_one(std::shared_ptr<when_any_variadic_state<Ts...>> st, awaita
 }
 
 template <class... Ts, std::size_t... Is>
-void when_any_start_variadic(any_executor fallback_ex,
-                             std::stop_token parent_stop,
+void when_any_start_variadic(any_executor fallback_ex, std::stop_token parent_stop,
                              [[maybe_unused]] std::shared_ptr<when_any_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
   (detail::spawn_task<void>(
      detail::spawn_context{[&]() {
-       auto task_ex = std::get<Is>(tasks).get_executor();
-       return task_ex ? task_ex : fallback_ex;
-     }(),
-                          parent_stop},
+                             auto task_ex = std::get<Is>(tasks).get_executor();
+                             return task_ex ? task_ex : fallback_ex;
+                           }(),
+                           parent_stop},
      [st, task = std::move(std::get<Is>(tasks))]() mutable -> awaitable<void> {
        return when_any_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
          st, std::move(task));

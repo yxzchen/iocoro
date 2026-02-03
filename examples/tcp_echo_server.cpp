@@ -1,5 +1,4 @@
 #include <iocoro/iocoro.hpp>
-#include <iocoro/ip.hpp>
 
 #include <cstdint>
 #include <iostream>
@@ -76,4 +75,3 @@ int main(int argc, char* argv[]) {
   ctx.run();
   return 0;
 }
-

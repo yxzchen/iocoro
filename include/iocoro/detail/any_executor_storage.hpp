@@ -45,8 +45,7 @@ class any_executor_storage {
   template <iocoro::executor Ex>
   explicit any_executor_storage(Ex ex) {
     using executor_type = std::decay_t<Ex>;
-    static_assert(std::is_copy_constructible_v<executor_type>);
-    static_assert(std::is_nothrow_move_constructible_v<executor_type>);
+    static_assert(std::is_move_constructible_v<executor_type>);
     if constexpr (fits_inline<executor_type>) {
       ::new (storage_ptr()) executor_type(std::move(ex));
       ptr_ = storage_ptr();
@@ -220,6 +219,9 @@ class any_executor_storage {
 
   void copy_from(any_executor_storage const& other) {
     if (other.ptr_ == nullptr) {
+      ptr_ = nullptr;
+      vtable_ = nullptr;
+      is_inline_ = false;
       return;
     }
     if (other.is_inline_) {
@@ -237,6 +239,9 @@ class any_executor_storage {
 
   void move_from(any_executor_storage& other) noexcept {
     if (other.ptr_ == nullptr) {
+      ptr_ = nullptr;
+      vtable_ = nullptr;
+      is_inline_ = false;
       return;
     }
     auto const* vt = other.vtable_;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
 #include <iocoro/co_spawn.hpp>
 #include <iocoro/expected.hpp>
@@ -10,6 +11,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <atomic>
+#include <cstdint>
 #include <exception>
 #include <optional>
 #include <string>
@@ -37,7 +39,7 @@ struct unique_fd {
     return *this;
   }
 
-  ~unique_fd() { reset(); }
+  ~unique_fd() noexcept { reset(); }
 
   auto get() const noexcept -> int { return fd; }
 
