@@ -3,6 +3,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/io/stream_concepts.hpp>
+#include <iocoro/net/buffer.hpp>
 #include <iocoro/result.hpp>
 
 #include <cstddef>
@@ -44,6 +45,11 @@ auto async_write(Stream& s, std::span<std::byte const> buf) -> awaitable<result<
   }
 
   co_return wanted;
+}
+
+template <async_write_stream Stream>
+auto async_write(Stream& s, net::const_buffer buf) -> awaitable<result<std::size_t>> {
+  co_return co_await async_write(s, buf.as_span());
 }
 
 }  // namespace iocoro::io

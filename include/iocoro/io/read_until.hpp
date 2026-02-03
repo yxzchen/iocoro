@@ -3,6 +3,7 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/io/stream_concepts.hpp>
+#include <iocoro/net/buffer.hpp>
 #include <iocoro/result.hpp>
 
 #include <algorithm>
@@ -105,13 +106,24 @@ auto async_read_until(Stream& s, std::span<std::byte> buf, std::span<std::byte c
   co_return unexpected(error::message_size);
 }
 
+template <async_read_stream Stream>
+auto async_read_until(Stream& s, net::mutable_buffer buf, net::const_buffer delim,
+                      std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
+  co_return co_await async_read_until(s, buf.as_span(), delim.as_span(), initial_size);
+}
+
+/// Convenience overload accepting string_view delimiter.
+template <async_read_stream Stream>
+auto async_read_until(Stream& s, net::mutable_buffer buf, std::string_view delim,
+                      std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
+  co_return co_await async_read_until(s, buf.as_span(), delim, initial_size);
+}
+
 /// Convenience overload accepting string_view delimiter.
 template <async_read_stream Stream>
 auto async_read_until(Stream& s, std::span<std::byte> buf, std::string_view delim,
                       std::size_t initial_size = 0) -> awaitable<result<std::size_t>> {
-  auto const delim_bytes =
-    std::span<std::byte const>{reinterpret_cast<std::byte const*>(delim.data()), delim.size()};
-  co_return co_await async_read_until(s, buf, delim_bytes, initial_size);
+  co_return co_await async_read_until(s, buf, net::buffer(delim).as_span(), initial_size);
 }
 
 /// Convenience overload for single-character delimiters.
@@ -120,6 +132,13 @@ auto async_read_until(Stream& s, std::span<std::byte> buf, char delim, std::size
   -> awaitable<result<std::size_t>> {
   std::byte const d[1] = {static_cast<std::byte>(delim)};
   co_return co_await async_read_until(s, buf, std::span<std::byte const>{d, 1}, initial_size);
+}
+
+/// Convenience overload for single-character delimiters.
+template <async_read_stream Stream>
+auto async_read_until(Stream& s, net::mutable_buffer buf, char delim, std::size_t initial_size = 0)
+  -> awaitable<result<std::size_t>> {
+  co_return co_await async_read_until(s, buf.as_span(), delim, initial_size);
 }
 
 }  // namespace iocoro::io
