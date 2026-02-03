@@ -11,6 +11,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <exception>
 #include <functional>
@@ -45,7 +46,7 @@ class thread_pool {
   thread_pool(thread_pool&&) = delete;
   auto operator=(thread_pool&&) -> thread_pool& = delete;
 
-  ~thread_pool();
+  ~thread_pool() noexcept;
 
   auto get_executor() noexcept -> executor_type;
 
@@ -167,7 +168,7 @@ class thread_pool::executor_type {
     }
   }
 
-  thread_pool* pool_;
+  thread_pool* pool_{nullptr};
 };
 
 }  // namespace iocoro
