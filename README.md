@@ -1,4 +1,4 @@
-# iocoro (Development Stage)
+# iocoro
 
 `iocoro` is a **development-stage (Development / Experimental)** coroutine-based I/O library for C++20.
 
@@ -20,17 +20,6 @@
 - **Spawning and completion model**: `co_spawn` supports `detached`, `use_awaitable`, and completion callbacks.
 - **Stop/cancellation propagation (via `std::stop_token`)**: promise owns a stop token and supports requesting stop (details evolve with the project).
 - **Core I/O building blocks**: `io_context`, timers, sockets, and basic async algorithms (development-stage semantics).
-
-> Note: these describe design intent. Exact semantics, edge cases, and supported behavior may change.
-
-## Non-goals (to prevent misuse)
-
-This project is currently **not** aiming for:
-
-- **Production readiness**: no guarantees on stability, correctness, or performance.
-- **API stability / backward compatibility**: version numbers and packaging do not imply compatibility promises.
-- **Performance claims**: benchmarks are for development reference only.
-- **Complete ecosystem compatibility**: full Asio compatibility or cross-platform parity is not a goal at this stage.
 
 ## Quick start
 
@@ -95,16 +84,6 @@ ctest --test-dir build --output-on-failure -j
   - **Goal**: demonstrate `this_coro::switch_to()` across executors.
   - **Preconditions**: after switching to a non-IO executor, do not call IO-only operations until switching back.
   - **Assumptions**: switching semantics are development-stage and may evolve.
-
-## Benchmarks (development reference)
-
-See `benchmark/README.md`. Benchmark results are **not representative** and are only for development-time comparisons/regressions.
-
-## Project status
-
-- Development / Experimental
-- APIs and semantics may change frequently.
-- Not recommended for production use.
 
 ## License
 
