@@ -1,14 +1,14 @@
 # iocoro
 
-`iocoro` is a **development-stage** coroutine-based I/O library for C++20.
+`iocoro` is a **0.x preview** coroutine-based I/O library for C++20.
 
-It aims to provide an executor/awaitable-centric playground for coroutine-based async I/O and composition, suitable for experimentation and discussion. It targets experienced C++ developers who are already comfortable with C++20 coroutines and executor/scheduling semantics, and can tolerate frequent changes.
+It aims to provide an executor/awaitable-centric playground for coroutine-based async I/O and composition, suitable for experimentation and discussion. It targets experienced C++ developers who are already comfortable with C++20 coroutines and executor/scheduling semantics, and can tolerate frequent API/behavior changes.
 
-### Important notice
+### Status & stability
 
-- This project **does not guarantee semantic correctness**.
-- This project **does not guarantee API stability**; APIs and behavior may change frequently.
-- This project **does not promise backward compatibility** and is **not recommended for production use**.
+- This is a **preview/testing release** (0.x): APIs and behavior may change frequently.
+- This project **does not promise backward compatibility** during 0.x.
+- CI tries to cover correctness, sanitizers, and installability, but you should treat it as **experimental**.
 
 ## Key capabilities (semantic-level)
 
@@ -17,6 +17,16 @@ It aims to provide an executor/awaitable-centric playground for coroutine-based 
 - **Spawning and completion model**: `co_spawn` supports `detached`, `use_awaitable`, and completion callbacks.
 - **Stop/cancellation propagation (via `std::stop_token`)**: promise owns a stop token and supports requesting stop (details evolve with the project).
 - **Core I/O building blocks**: `io_context`, timers, sockets, and basic async algorithms (development-stage semantics).
+
+## Platform & toolchain support
+
+- **OS**: Linux
+- **C++**: C++20 (coroutines required)
+- **Build**: CMake \(>= 3.15\)
+- **Compilers**: GCC / Clang with C++20 coroutine support (CI covers GCC/Clang on Ubuntu)
+- **Backends**:
+  - **epoll**: default
+  - **io_uring**: **opt-in**, requires `liburing` and a compatible kernel (typically 5.1+)
 
 ## Minimal example
 
@@ -52,7 +62,7 @@ Networking is experimental; APIs and semantics may change.
 - IP: TCP/UDP sockets and typed endpoints under `iocoro::ip::*` (plus resolvers).
 - Local (AF_UNIX): local stream/datagram under `iocoro::local::*`.
 - Composed I/O: `iocoro::io::{async_read, async_write, async_read_until}` for supported stream types.
-- Linux backend: epoll by default; optional io_uring when `liburing` is available and `IOCORO_ENABLE_URING=ON`.
+- Linux backend: epoll by default; **io_uring is opt-in**.
 
 ## Quick start
 
@@ -76,6 +86,36 @@ Run tests (requires GTest):
 ```bash
 ./build.sh -t
 ```
+
+## Install and use with CMake (`find_package`)
+
+Install to a prefix:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build build -j
+cmake --install build
+```
+
+Consume from another project:
+
+```cmake
+find_package(iocoro REQUIRED)
+target_link_libraries(your_target PRIVATE iocoro::iocoro)
+```
+
+### Backend selection (io_uring opt-in)
+
+By default, `iocoro::iocoro` uses **epoll**.
+
+If you want **io_uring**, enable it explicitly before `find_package(iocoro)`:
+
+```cmake
+set(IOCORO_ENABLE_URING ON CACHE BOOL "Enable iocoro io_uring backend")
+find_package(iocoro REQUIRED)
+```
+
+If `IOCORO_ENABLE_URING=ON` but `liburing` is not found, CMake will keep using epoll.
 
 Build benchmarks:
 

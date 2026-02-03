@@ -11,6 +11,9 @@ option(IOCORO_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(IOCORO_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(IOCORO_BUILD_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
 
+# NOTE: For installed packages, io_uring is opt-in at consumer configure time:
+# set(IOCORO_ENABLE_URING ON) before find_package(iocoro).
+
 add_library(iocoro INTERFACE)
 add_library(iocoro::iocoro ALIAS iocoro)
 target_include_directories(iocoro INTERFACE
