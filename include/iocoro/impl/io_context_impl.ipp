@@ -364,7 +364,7 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
     // Backend failure is treated as a fatal internal error for this io_context instance.
     // Abort all in-flight reactor operations so awaiters can observe an error rather than
     // hanging indefinitely.
-    auto const ec = make_error_code(error::internal_error);
+    std::error_code const ec = error::internal_error;
 
     auto drained = fd_registry_.drain_all();
     for (int fd : drained.fds) {

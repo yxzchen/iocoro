@@ -214,7 +214,7 @@ auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -
   // Timer completed first: distinguish natural expiry from cancellation due to stop.
   auto const& timer_res = std::get<1>(v);
   if (!timer_res) {
-    if (timer_res.error() == make_error_code(error::operation_aborted) &&
+    if (timer_res.error() == error::operation_aborted &&
         parent_stop.stop_requested()) {
       co_return unexpected(error::operation_aborted);
     }

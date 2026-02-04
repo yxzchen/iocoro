@@ -53,7 +53,7 @@ TEST(this_coro_test, yields_token_and_observes_stop_after_cache) {
 TEST(this_coro_test, stop_cancels_steady_timer_wait) {
   iocoro::io_context ctx;
   std::stop_source stop_src{};
-  auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted = iocoro::error::operation_aborted;
 
   auto task = [&]() -> iocoro::awaitable<iocoro::result<void>> {
     auto ex = co_await iocoro::this_coro::io_executor;
@@ -78,7 +78,7 @@ TEST(this_coro_test, stop_cancels_steady_timer_wait) {
 TEST(this_coro_test, stop_cancels_tcp_accept_pending) {
   iocoro::io_context ctx;
   std::stop_source stop_src{};
-  auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted = iocoro::error::operation_aborted;
 
   iocoro::ip::tcp::acceptor acc{ctx};
   auto lr = acc.listen(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0});
@@ -110,7 +110,7 @@ TEST(this_coro_test, stop_cancels_tcp_read_pending) {
   ASSERT_NE(server.port, 0);
 
   std::stop_source stop_src{};
-  auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted = iocoro::error::operation_aborted;
 
   std::atomic<bool> started_read{false};
 
@@ -155,7 +155,7 @@ TEST(this_coro_test, stop_cancels_tcp_read_pending) {
 TEST(this_coro_test, stop_cancels_udp_receive_pending) {
   iocoro::io_context ctx;
   std::stop_source stop_src{};
-  auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted = iocoro::error::operation_aborted;
 
   iocoro::ip::udp::socket sock{ctx};
   auto br = sock.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});

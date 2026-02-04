@@ -87,7 +87,8 @@ class socket_impl_base {
   ///
   /// Returns:
   /// - {} on success
-  /// - error::busy if already open
+  /// - error::already_open if already open
+  /// - error::busy if another open/assign is in progress
   /// - std::error_code(errno, generic_category()) for sys failures
   auto open(int domain, int type, int protocol) noexcept -> result<void>;
 

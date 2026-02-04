@@ -34,7 +34,7 @@ inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> result<v
     return fail(error::not_open);
   }
   if (::bind(fd, addr, len) != 0) {
-    return fail(std::error_code(errno, std::generic_category()));
+    return fail(map_socket_errno(errno));
   }
   return ok();
 }
@@ -48,7 +48,7 @@ inline auto acceptor_impl::listen(int backlog) -> result<void> {
     backlog = SOMAXCONN;
   }
   if (::listen(fd, backlog) != 0) {
-    return fail(std::error_code(errno, std::generic_category()));
+    return fail(map_socket_errno(errno));
   }
   {
     std::scoped_lock lk{mtx_};
@@ -92,7 +92,7 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
     int fd = ::accept(listen_fd, nullptr, nullptr);
     if (fd >= 0) {
       if (!set_cloexec(fd) || !set_nonblocking(fd)) {
-        auto ec = std::error_code(errno, std::generic_category());
+        auto ec = map_socket_errno(errno);
         (void)::close(fd);
         co_return unexpected(ec);
       }
@@ -125,7 +125,7 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
       continue;
     }
 
-    co_return unexpected(std::error_code(errno, std::generic_category()));
+    co_return unexpected(map_socket_errno(errno));
   }
 }
 

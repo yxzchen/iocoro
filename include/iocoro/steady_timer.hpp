@@ -151,7 +151,7 @@ class steady_timer {
         // partially-registered operation (window between add_timer() and handle assignment).
         std::scoped_lock lk{mtx};
         if (closed) {
-          rop->vt->on_abort(rop->block, make_error_code(error::operation_aborted));
+          rop->vt->on_abort(rop->block, error::operation_aborted);
           return detail::io_context_impl::event_handle::invalid_handle();
         }
         old = std::exchange(handle, detail::io_context_impl::event_handle::invalid_handle());

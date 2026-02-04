@@ -12,7 +12,10 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
   bool opened = false;
   {
     std::scoped_lock lk{mtx_};
-    if (state_ != fd_state::closed || native_handle() >= 0) {
+    if (state_ == fd_state::open || native_handle() >= 0) {
+      return fail(error::already_open);
+    }
+    if (state_ != fd_state::closed) {
       return fail(error::busy);
     }
     state_ = fd_state::opening;
@@ -53,7 +56,7 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
   // Aborted by close()/assign() while opening.
   // We intentionally do not adopt the fd.
   (void)::close(fd);
-  return fail(error::busy);
+  return fail(error::operation_aborted);
 }
 
 inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
@@ -111,7 +114,7 @@ inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
 
   // Aborted by close() while assigning.
   (void)::close(fd);
-  return fail(error::busy);
+  return fail(error::operation_aborted);
 }
 
 inline void socket_impl_base::cancel() noexcept {

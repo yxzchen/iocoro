@@ -140,7 +140,7 @@ TEST(condition_event_test, stop_cancels_and_removes_waiter) {
 
     auto r = co_await std::move(w);
     EXPECT_FALSE(r);
-    EXPECT_EQ(r.error(), iocoro::make_error_code(iocoro::error::operation_aborted));
+    EXPECT_EQ(r.error(), iocoro::error::operation_aborted);
 
     // If the waiter wasn't removed, this notify would be "consumed" by the cancelled waiter.
     // Instead, it should become pending and be consumed by the next wait.
@@ -155,7 +155,7 @@ TEST(condition_event_test, stop_cancels_and_removes_waiter) {
 
 TEST(condition_event_test, destroy_aborts_waiters) {
   iocoro::io_context ctx;
-  auto aborted_ec = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted_ec = iocoro::error::operation_aborted;
 
   auto task = [&]() -> iocoro::awaitable<void> {
     auto* ev = new iocoro::condition_event{};
@@ -281,7 +281,7 @@ TEST(condition_event_test, stress_stop_race_does_not_double_resume_or_hang) {
 
       auto r = co_await iocoro::with_timeout(std::move(join), 200ms);
       EXPECT_FALSE(static_cast<bool>(r));
-      EXPECT_EQ(r.error(), iocoro::make_error_code(iocoro::error::operation_aborted));
+      EXPECT_EQ(r.error(), iocoro::error::operation_aborted);
 
       done.fetch_add(1, std::memory_order_relaxed);
     }

@@ -10,18 +10,20 @@ namespace iocoro {
 /// These values are converted to `std::error_code` via `make_error_code(error)` and a custom
 /// error category (see `impl/error.ipp`).
 enum class error {
+  // Cancellation / timeouts / internal
   /// Operation cancelled.
   operation_aborted = 1,
 
-  /// Operation timed out.
+  /// Operation timed out (library-level, e.g. `with_timeout`).
   timed_out,
-
-  /// Feature exists in API but is not implemented yet (stubs / WIP).
-  not_implemented,
 
   /// Internal error (unexpected exception or system failure).
   internal_error,
 
+  /// Feature exists in API but is not implemented yet (stubs / WIP).
+  not_implemented,
+
+  // Invalid input / unsupported / limits
   /// Invalid argument / malformed input (library-level).
   invalid_argument,
 
@@ -34,18 +36,23 @@ enum class error {
   /// Operation failed because a message/buffer would exceed the allowed maximum size.
   message_size,
 
+  // Object / socket state
   /// The socket (or underlying resource) is not open.
   not_open,
+
+  /// Operation failed because the resource is already open.
+  already_open,
 
   /// An operation cannot proceed because another conflicting operation is in-flight.
   busy,
 
-  /// Datagram socket is not bound to a local address (required for receiving).
+  /// Datagram socket has no local address (required for receiving).
   not_bound,
 
   /// Acceptor is open/bound but not in listening state (listen() not called successfully).
   not_listening,
 
+  // Connection state / stream outcomes
   /// Socket is not connected.
   not_connected,
 
@@ -60,6 +67,28 @@ enum class error {
 
   /// Connection was reset by peer.
   connection_reset,
+
+  // Network-related (normalized from common errno values)
+  /// Address is already in use (e.g. bind()).
+  address_in_use,
+
+  /// Address is not available on the local machine (e.g. bind()).
+  address_not_available,
+
+  /// Network is unreachable.
+  network_unreachable,
+
+  /// Host is unreachable.
+  host_unreachable,
+
+  /// Connection attempt failed because the peer refused it.
+  connection_refused,
+
+  /// Connection was aborted (e.g. during accept/connect).
+  connection_aborted,
+
+  /// Connection attempt timed out at the OS level (e.g. connect()).
+  connection_timed_out,
 
 };
 
