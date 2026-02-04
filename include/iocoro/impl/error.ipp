@@ -17,8 +17,6 @@ class error_category_impl : public std::error_category {
         return "timed out";
       case error::internal_error:
         return "internal error";
-      case error::not_implemented:
-        return "not implemented";
 
       // Invalid input / unsupported / limits
       case error::invalid_argument:

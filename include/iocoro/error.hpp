@@ -20,9 +20,6 @@ enum class error {
   /// Internal error (unexpected exception or system failure).
   internal_error,
 
-  /// Feature exists in API but is not implemented yet (stubs / WIP).
-  not_implemented,
-
   // Invalid input / unsupported / limits
   /// Invalid argument / malformed input (library-level).
   invalid_argument,
