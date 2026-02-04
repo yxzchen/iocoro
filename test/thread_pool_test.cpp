@@ -6,6 +6,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -160,4 +161,33 @@ TEST(thread_pool_test, multiple_work_guards_reference_counting) {
   ctx.restart();
 
   EXPECT_GE(ran.load(std::memory_order_relaxed), 2);
+}
+
+TEST(thread_pool_test, executor_stopped_reflects_pool_state) {
+  iocoro::thread_pool pool{1};
+  auto ex = pool.get_executor();
+
+  EXPECT_FALSE(ex.stopped());
+  pool.stop();
+  EXPECT_TRUE(ex.stopped());
+
+  pool.join();
+  EXPECT_TRUE(ex.stopped());
+}
+
+TEST(thread_pool_test, post_after_stop_is_dropped) {
+  iocoro::thread_pool pool{1};
+  auto ex = pool.get_executor();
+
+  pool.stop();
+
+  std::atomic<int> ran{0};
+  for (int i = 0; i < 1000; ++i) {
+    ex.post([&] { ran.fetch_add(1, std::memory_order_relaxed); });
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  EXPECT_EQ(ran.load(std::memory_order_relaxed), 0);
+
+  pool.join();
 }
