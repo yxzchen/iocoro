@@ -199,3 +199,67 @@ TEST(io_context_test, stress_concurrent_post_and_stop_restart_does_not_deadlock)
 
   EXPECT_EQ(executed.load(std::memory_order_relaxed), posted.load(std::memory_order_relaxed));
 }
+
+TEST(io_context_test, stopped_context_does_not_fire_expired_timer_until_restart) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> fired{false};
+  iocoro::steady_timer t{ex};
+  t.expires_after(50ms);
+
+  iocoro::co_spawn(
+    ex,
+    [&]() -> iocoro::awaitable<void> {
+      auto r = co_await t.async_wait(iocoro::use_awaitable);
+      if (r) {
+        fired.store(true, std::memory_order_release);
+      }
+      co_return;
+    },
+    iocoro::detached);
+
+  // Start the coroutine and ensure the timer is registered.
+  (void)ctx.run_one();
+
+  ctx.stop();
+  std::this_thread::sleep_for(60ms);
+
+  // While stopped, run_for should not make progress on timers.
+  for (int i = 0; i < 5; ++i) {
+    (void)ctx.run_for(1ms);
+    EXPECT_FALSE(fired.load(std::memory_order_acquire));
+  }
+
+  ctx.restart();
+  ctx.run();
+  EXPECT_TRUE(fired.load(std::memory_order_acquire));
+}
+
+TEST(io_context_test, dispatch_while_stopped_is_not_inline) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::vector<int> order;
+
+  ex.post([&] {
+    order.push_back(1);
+
+    ctx.stop();
+    ex.dispatch([&] { order.push_back(2); });
+
+    order.push_back(3);
+  });
+
+  ctx.run();
+
+  ASSERT_EQ(order.size(), 2U);
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 3);
+
+  ctx.restart();
+  ctx.run();
+
+  ASSERT_EQ(order.size(), 3U);
+  EXPECT_EQ(order[2], 2);
+}
