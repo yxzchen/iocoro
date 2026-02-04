@@ -15,8 +15,6 @@ class error_category_impl : public std::error_category {
         return "operation aborted";
       case error::timed_out:
         return "timed out";
-      case error::not_implemented:
-        return "not implemented";
       case error::internal_error:
         return "internal error";
 
@@ -33,6 +31,8 @@ class error_category_impl : public std::error_category {
       // Object / socket state
       case error::not_open:
         return "resource not open";
+      case error::already_open:
+        return "already open";
       case error::busy:
         return "resource busy";
       case error::not_bound:
@@ -53,6 +53,22 @@ class error_category_impl : public std::error_category {
         return "broken pipe";
       case error::connection_reset:
         return "connection reset";
+
+      // Network-related
+      case error::address_in_use:
+        return "address in use";
+      case error::address_not_available:
+        return "address not available";
+      case error::network_unreachable:
+        return "network unreachable";
+      case error::host_unreachable:
+        return "host unreachable";
+      case error::connection_refused:
+        return "connection refused";
+      case error::connection_aborted:
+        return "connection aborted";
+      case error::connection_timed_out:
+        return "connection timed out";
       default:
         return "unknown error";
     }

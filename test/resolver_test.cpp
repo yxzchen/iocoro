@@ -41,5 +41,5 @@ TEST(resolver_test, resolve_cancelled_before_call_returns_operation_aborted) {
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(static_cast<bool>(*r));
-  EXPECT_EQ(r->error(), iocoro::make_error_code(iocoro::error::operation_aborted));
+  EXPECT_EQ(r->error(), iocoro::error::operation_aborted);
 }

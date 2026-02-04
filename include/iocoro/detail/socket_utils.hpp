@@ -13,6 +13,44 @@
 
 namespace iocoro::detail::socket {
 
+inline auto map_socket_errno(int err) noexcept -> std::error_code {
+  switch (err) {
+    case EPIPE: {
+      return error::broken_pipe;
+    }
+    case ECONNRESET: {
+      return error::connection_reset;
+    }
+    case ECONNREFUSED: {
+      return error::connection_refused;
+    }
+    case ECONNABORTED: {
+      return error::connection_aborted;
+    }
+    case ETIMEDOUT: {
+      return error::connection_timed_out;
+    }
+    case EHOSTUNREACH: {
+      return error::host_unreachable;
+    }
+    case ENETUNREACH: {
+      return error::network_unreachable;
+    }
+    case EADDRINUSE: {
+      return error::address_in_use;
+    }
+    case EADDRNOTAVAIL: {
+      return error::address_not_available;
+    }
+    case EMSGSIZE: {
+      return error::message_size;
+    }
+    default: {
+      return std::error_code(err, std::generic_category());
+    }
+  }
+}
+
 inline auto retry_fcntl(int fd, int cmd, long arg) noexcept -> int {
   for (;;) {
     int const r = ::fcntl(fd, cmd, arg);
@@ -57,7 +95,7 @@ auto get_local_endpoint(int fd) -> result<Endpoint> {
   sockaddr_storage ss{};
   socklen_t len = sizeof(ss);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return unexpected(map_socket_errno(errno));
   }
   return Endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
 }
@@ -74,7 +112,7 @@ auto get_remote_endpoint(int fd) -> result<Endpoint> {
     if (errno == ENOTCONN) {
       return unexpected(error::not_connected);
     }
-    return unexpected(std::error_code(errno, std::generic_category()));
+    return unexpected(map_socket_errno(errno));
   }
   return Endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
 }

@@ -77,7 +77,7 @@ class condition_event {
   auto async_wait() -> awaitable<result<void>> {
     auto st = std::atomic_load_explicit(&st_, std::memory_order_acquire);
     if (!st) {
-      co_return unexpected(make_error_code(error::operation_aborted));
+      co_return unexpected(error::operation_aborted);
     }
     co_return co_await wait_awaiter{std::move(st)};
   }
@@ -167,7 +167,7 @@ class condition_event {
         token = h.promise().get_stop_token();
         if (token.stop_possible() && token.stop_requested()) {
           did_suspend = false;
-          ready_res = unexpected(make_error_code(error::operation_aborted));
+          ready_res = unexpected(error::operation_aborted);
           return false;
         }
       }
@@ -194,7 +194,7 @@ class condition_event {
               return;
             }
 
-            state::cancel_waiter(st, w, make_error_code(error::operation_aborted));
+            state::cancel_waiter(st, w, error::operation_aborted);
           }});
       }
 
@@ -203,7 +203,7 @@ class condition_event {
         if (st->destroyed) {
           w->stop_cb.reset();
           did_suspend = false;
-          ready_res = unexpected(make_error_code(error::operation_aborted));
+          ready_res = unexpected(error::operation_aborted);
           return false;
         }
         if (st->pending > 0) {
@@ -226,7 +226,7 @@ class condition_event {
       // Close the remaining race: stop can be requested between stop_cb installation and the
       // suspended publish above. If that happened, proactively cancel now.
       if (w->cancel_requested.load(std::memory_order_acquire)) {
-        state::cancel_waiter(st, w, make_error_code(error::operation_aborted));
+        state::cancel_waiter(st, w, error::operation_aborted);
       }
 
       return true;
@@ -261,7 +261,7 @@ class condition_event {
     }
 
     for (auto& w : waiters) {
-      state::complete(std::move(w), make_error_code(error::operation_aborted));
+      state::complete(std::move(w), error::operation_aborted);
     }
   }
 

@@ -206,9 +206,9 @@ TEST(tcp_socket_test, io_async_read_returns_error_eof_on_peer_graceful_close) {
     std::array<std::byte, 1> buf{};
     auto rd = co_await iocoro::io::async_read(sock, std::span{buf});
     if (rd) {
-      co_return iocoro::unexpected(iocoro::make_error_code(iocoro::error::internal_error));
+      co_return iocoro::unexpected(iocoro::error::internal_error);
     }
-    EXPECT_EQ(rd.error(), iocoro::make_error_code(iocoro::error::eof));
+    EXPECT_EQ(rd.error(), iocoro::error::eof);
     co_return iocoro::ok();
   }());
 
@@ -294,9 +294,9 @@ TEST(tcp_socket_test, shutdown_send_makes_future_writes_fail_broken_pipe) {
     std::array<std::byte, 1> out{std::byte{0x1}};
     auto wr = co_await sock.async_write_some(std::span<std::byte const>{out});
     if (wr) {
-      co_return iocoro::unexpected(iocoro::make_error_code(iocoro::error::internal_error));
+      co_return iocoro::unexpected(iocoro::error::internal_error);
     }
-    EXPECT_EQ(wr.error(), iocoro::make_error_code(iocoro::error::broken_pipe));
+    EXPECT_EQ(wr.error(), iocoro::error::broken_pipe);
     co_return iocoro::ok();
   }());
 

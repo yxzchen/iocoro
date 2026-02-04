@@ -51,7 +51,7 @@ inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> res
     return fail(error::not_open);
   }
   if (::bind(fd, addr, len) != 0) {
-    return fail(std::error_code(errno, std::generic_category()));
+    return fail(map_socket_errno(errno));
   }
   return ok();
 }
@@ -99,7 +99,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     if (errno == EINPROGRESS) {
       break;
     }
-    ec = std::error_code(errno, std::generic_category());
+    ec = map_socket_errno(errno);
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
     co_return fail(ec);
@@ -134,13 +134,13 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     // If the connect finished before we registered for write readiness (ET),
     // SO_ERROR is ready. This avoids a missed write event for fast localhost connects.
     if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
-      ec = std::error_code(errno, std::generic_category());
+      ec = map_socket_errno(errno);
       std::scoped_lock lk{mtx_};
       state_ = conn_state::disconnected;
       co_return fail(ec);
     }
     if (so_error != 0 && so_error != EINPROGRESS) {
-      ec = std::error_code(so_error, std::generic_category());
+      ec = map_socket_errno(so_error);
       std::scoped_lock lk{mtx_};
       state_ = conn_state::disconnected;
       co_return fail(ec);
@@ -158,7 +158,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
         co_return ok();
       }
       if (errno != ENOTCONN) {
-        ec = std::error_code(errno, std::generic_category());
+        ec = map_socket_errno(errno);
         std::scoped_lock lk{mtx_};
         state_ = conn_state::disconnected;
         co_return fail(ec);
@@ -191,13 +191,13 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   so_error = 0;
   optlen = sizeof(so_error);
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
-    ec = std::error_code(errno, std::generic_category());
+    ec = map_socket_errno(errno);
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
     co_return fail(ec);
   }
   if (so_error != 0) {
-    ec = std::error_code(so_error, std::generic_category());
+    ec = map_socket_errno(so_error);
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
     co_return fail(ec);
@@ -269,7 +269,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
       }
       continue;
     }
-    co_return unexpected(std::error_code(errno, std::generic_category()));
+    co_return unexpected(map_socket_errno(errno));
   }
 }
 
@@ -324,7 +324,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
       }
       continue;
     }
-    co_return unexpected(std::error_code(errno, std::generic_category()));
+    co_return unexpected(map_socket_errno(errno));
   }
 }
 
@@ -347,7 +347,7 @@ inline auto stream_socket_impl::shutdown(shutdown_type what) -> result<void> {
     if (errno == ENOTCONN) {
       return fail(error::not_connected);
     }
-    return fail(std::error_code(errno, std::generic_category()));
+    return fail(map_socket_errno(errno));
   }
 
   // Update logical shutdown state only after syscall succeeds.

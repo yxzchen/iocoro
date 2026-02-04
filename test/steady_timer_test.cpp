@@ -107,7 +107,7 @@ TEST(steady_timer_test, expires_after_while_waiting_aborts_previous_wait_and_new
       ADD_FAILURE() << "expected operation_aborted";
       co_return;
     }
-    EXPECT_EQ(r1.error(), iocoro::make_error_code(iocoro::error::operation_aborted));
+    EXPECT_EQ(r1.error(), iocoro::error::operation_aborted);
 
     auto r2 = co_await t.async_wait(iocoro::use_awaitable);
     if (!r2) {
@@ -147,7 +147,7 @@ TEST(steady_timer_test, second_async_wait_cancels_first) {
       ADD_FAILURE() << "expected operation_aborted";
       co_return;
     }
-    EXPECT_EQ(r1.error(), iocoro::make_error_code(iocoro::error::operation_aborted));
+    EXPECT_EQ(r1.error(), iocoro::error::operation_aborted);
     co_return;
   }());
 
@@ -156,7 +156,7 @@ TEST(steady_timer_test, second_async_wait_cancels_first) {
 
 TEST(steady_timer_test, destroy_timer_aborts_waiter) {
   iocoro::io_context ctx;
-  auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted = iocoro::error::operation_aborted;
 
   auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<void> {
     auto ex = co_await iocoro::this_coro::io_executor;
@@ -215,11 +215,11 @@ TEST(steady_timer_test, cancel_and_expires_from_foreign_thread_no_double_complet
       if (rr) {
         completed.fetch_add(1, std::memory_order_relaxed);
       } else {
-        if (rr.error() == iocoro::make_error_code(iocoro::error::timed_out)) {
+        if (rr.error() == iocoro::error::timed_out) {
           timed_out.store(true, std::memory_order_relaxed);
           co_return;
         }
-        EXPECT_EQ(rr.error(), iocoro::make_error_code(iocoro::error::operation_aborted));
+        EXPECT_EQ(rr.error(), iocoro::error::operation_aborted);
         aborted.fetch_add(1, std::memory_order_relaxed);
       }
     }

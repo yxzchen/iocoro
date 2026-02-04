@@ -108,7 +108,7 @@ TEST(with_timeout_test, timer_race_cancels_loser) {
   auto r = iocoro::test::sync_wait(ctx, task());
   ASSERT_TRUE(r);
 
-  auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted = iocoro::error::operation_aborted;
   ASSERT_TRUE(fast_ec->has_value());
   EXPECT_EQ(fast_ec->value(), std::error_code{});
   ASSERT_TRUE(slow_ec->has_value());
@@ -141,7 +141,7 @@ TEST(with_timeout_test, operator_or_returns_second_when_second_wins) {
   auto r = iocoro::test::sync_wait(ctx, task());
   ASSERT_TRUE(r);
 
-  auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
+  std::error_code const aborted = iocoro::error::operation_aborted;
   ASSERT_TRUE(a_ec->has_value());
   EXPECT_EQ(a_ec->value(), aborted);
   ASSERT_TRUE(b_ec->has_value());
@@ -194,7 +194,7 @@ TEST(with_timeout_test, operator_or_rethrows_if_first_completion_throws_and_requ
 
   EXPECT_TRUE(saw_exception->load());
   ASSERT_TRUE(loser_ec->has_value());
-  EXPECT_EQ(loser_ec->value(), iocoro::make_error_code(iocoro::error::operation_aborted));
+  EXPECT_EQ(loser_ec->value(), iocoro::error::operation_aborted);
 }
 
 TEST(with_timeout_test, operator_or_ignores_loser_exception_after_winner_completes) {
@@ -286,7 +286,7 @@ TEST(with_timeout_test, when_any_cancel_join_cancels_timer_loser_and_waits_for_c
   ASSERT_TRUE(r);
 
   ASSERT_TRUE(loser_ec->has_value());
-  EXPECT_EQ(loser_ec->value(), iocoro::make_error_code(iocoro::error::operation_aborted));
+  EXPECT_EQ(loser_ec->value(), iocoro::error::operation_aborted);
 }
 
 TEST(with_timeout_test, operator_or_allows_either_winner_when_both_complete_similarly) {
@@ -320,7 +320,7 @@ TEST(with_timeout_test, operator_or_allows_either_winner_when_both_complete_simi
 TEST(with_timeout_test, timeout_zero_immediate_timeout_on_never_finishing_op) {
   iocoro::io_context ctx;
   bool timed_out = false;
-  auto timeout_ec = make_error_code(error::timed_out);
+  std::error_code const timeout_ec = error::timed_out;
 
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
@@ -339,7 +339,7 @@ TEST(with_timeout_test, timeout_zero_immediate_timeout_on_never_finishing_op) {
 TEST(with_timeout_test, timeout_negative_treated_as_immediate_timeout) {
   iocoro::io_context ctx;
   bool timed_out = false;
-  auto timeout_ec = make_error_code(error::timed_out);
+  std::error_code const timeout_ec = error::timed_out;
 
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
@@ -358,7 +358,7 @@ TEST(with_timeout_test, timeout_negative_treated_as_immediate_timeout) {
 TEST(with_timeout_test, accept_timeout_local) {
   iocoro::io_context ctx;
   bool timed_out = false;
-  auto timeout_ec = make_error_code(error::timed_out);
+  std::error_code const timeout_ec = error::timed_out;
 
   iocoro::ip::tcp::acceptor acc{ctx};
   auto lr = acc.listen(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0});
@@ -378,7 +378,7 @@ TEST(with_timeout_test, accept_timeout_local) {
 TEST(with_timeout_test, tcp_read_timeout_local_blackhole) {
   iocoro::io_context ctx;
   bool timed_out = false;
-  auto timeout_ec = make_error_code(error::timed_out);
+  std::error_code const timeout_ec = error::timed_out;
 
   iocoro::test::tcp_blackhole_server server{300ms, /*client_rcvbuf=*/1024};
   ASSERT_GE(server.listen_fd.get(), 0);
@@ -408,7 +408,7 @@ TEST(with_timeout_test, tcp_read_timeout_local_blackhole) {
 TEST(with_timeout_test, tcp_write_timeout_local_blackhole) {
   iocoro::io_context ctx;
   bool timed_out = false;
-  auto timeout_ec = make_error_code(error::timed_out);
+  std::error_code const timeout_ec = error::timed_out;
 
   // Small receive buffer to make backpressure deterministic.
   iocoro::test::tcp_blackhole_server server{300ms, /*client_rcvbuf=*/1024};
@@ -461,7 +461,7 @@ TEST(with_timeout_test, stop_requested_before_call_short_circuits_to_operation_a
   stop_src.request_stop();
 
   std::atomic<int> op_calls{0};
-  auto aborted_ec = make_error_code(error::operation_aborted);
+  std::error_code const aborted_ec = error::operation_aborted;
 
   auto task = [&]() -> awaitable<void> {
     auto op = [&]() -> awaitable<iocoro::result<void>> {
@@ -488,7 +488,7 @@ TEST(with_timeout_test, stop_returns_operation_aborted) {
   iocoro::io_context ctx;
 
   std::stop_source stop_src{};
-  auto aborted_ec = make_error_code(error::operation_aborted);
+  std::error_code const aborted_ec = error::operation_aborted;
 
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;

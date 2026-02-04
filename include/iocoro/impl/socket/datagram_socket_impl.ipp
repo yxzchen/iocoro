@@ -42,7 +42,7 @@ inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len) -> r
   }
 
   if (::bind(fd, addr, len) != 0) {
-    return fail(std::error_code(errno, std::generic_category()));
+    return fail(map_socket_errno(errno));
   }
 
   {
@@ -64,7 +64,7 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len) -
 
   // For datagram sockets, connect() is synchronous (just sets the default peer).
   if (::connect(fd, addr, len) != 0) {
-    return fail(std::error_code(errno, std::generic_category()));
+    return fail(map_socket_errno(errno));
   }
 
   {
@@ -143,12 +143,7 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
       continue;
     }
 
-    // Map EMSGSIZE to our error code.
-    if (errno == EMSGSIZE) {
-      co_return unexpected(error::message_size);
-    }
-
-    co_return unexpected(std::error_code(errno, std::generic_category()));
+    co_return unexpected(map_socket_errno(errno));
   }
 }
 
@@ -235,7 +230,7 @@ inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer
       continue;
     }
 
-    co_return unexpected(std::error_code(errno, std::generic_category()));
+    co_return unexpected(map_socket_errno(errno));
   }
 }
 

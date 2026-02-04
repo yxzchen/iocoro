@@ -322,7 +322,7 @@ TEST(io_context_impl_test, backend_throw_aborts_all_inflight_ops_and_stops_loop)
   std::atomic<bool> timer_aborted{false};
   std::atomic<int> timer_abort_calls{0};
   std::atomic<int> timer_complete_calls{0};
-  auto expected_internal = iocoro::make_error_code(iocoro::error::internal_error);
+  std::error_code const expected_internal = iocoro::error::internal_error;
   auto timer_op = iocoro::detail::make_reactor_op<expect_abort_ec_state>(
     expect_abort_ec_state{&timer_abort_calls, &timer_complete_calls, &timer_aborted,
                           expected_internal});
