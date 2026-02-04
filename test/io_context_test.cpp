@@ -1,10 +1,17 @@
 #include <gtest/gtest.h>
 
+#include <iocoro/co_spawn.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/steady_timer.hpp>
+#include <iocoro/work_guard.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <thread>
 #include <vector>
+
+using namespace std::chrono_literals;
 
 TEST(io_context_test, post_and_run_executes_all_posted_operations) {
   iocoro::io_context ctx;
@@ -79,4 +86,116 @@ TEST(io_context_test, run_for_processes_posted_work) {
   auto n = ctx.run_for(std::chrono::milliseconds{1});
   EXPECT_EQ(n, 1U);
   EXPECT_EQ(count.load(), 1);
+}
+
+TEST(io_context_test, stop_preserves_posted_until_restart) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<int> count{0};
+  ctx.stop();
+  for (int i = 0; i < 100; ++i) {
+    ex.post([&] { count.fetch_add(1, std::memory_order_relaxed); });
+  }
+
+  // While stopped, we should not execute user callbacks.
+  for (int i = 0; i < 10; ++i) {
+    (void)ctx.run_for(1ms);
+    EXPECT_EQ(count.load(std::memory_order_relaxed), 0);
+  }
+
+  ctx.restart();
+  ctx.run();
+  EXPECT_EQ(count.load(std::memory_order_relaxed), 100);
+}
+
+TEST(io_context_test, posted_fairness_does_not_starve_expired_timer) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<int> fired{0};
+  iocoro::steady_timer t{ex};
+  t.expires_after(0ms);
+
+  // Post more than max_drain_per_tick so posted_queue will yield.
+  for (std::size_t i = 0; i < 2048; ++i) {
+    ex.post([] {});
+  }
+
+  iocoro::co_spawn(
+    ex,
+    [&]() -> iocoro::awaitable<void> {
+      auto r = co_await t.async_wait(iocoro::use_awaitable);
+      EXPECT_TRUE(static_cast<bool>(r));
+      fired.fetch_add(1, std::memory_order_relaxed);
+      co_return;
+    },
+    iocoro::detached);
+
+  // The timer should fire without requiring the posted queue to fully drain.
+  auto const deadline = std::chrono::steady_clock::now() + 1s;
+  while (std::chrono::steady_clock::now() < deadline) {
+    (void)ctx.run_one();
+    if (fired.load(std::memory_order_relaxed) == 1) {
+      break;
+    }
+  }
+  EXPECT_EQ(fired.load(std::memory_order_relaxed), 1);
+}
+
+TEST(io_context_test, stress_concurrent_post_and_stop_restart_does_not_deadlock) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  auto guard = iocoro::make_work_guard(ctx);
+
+  std::atomic<bool> done{false};
+  std::atomic<int> posted{0};
+  std::atomic<int> executed{0};
+
+  std::thread runner([&] {
+    while (!done.load(std::memory_order_acquire)) {
+      (void)ctx.run_for(1ms);
+      std::this_thread::yield();
+    }
+  });
+
+  std::thread producer([&] {
+    for (int i = 0; i < 20000; ++i) {
+      posted.fetch_add(1, std::memory_order_relaxed);
+      ex.post([&] { executed.fetch_add(1, std::memory_order_relaxed); });
+      if ((i % 128) == 0) {
+        std::this_thread::yield();
+      }
+    }
+  });
+
+  std::thread toggler([&] {
+    for (int i = 0; i < 2000; ++i) {
+      ctx.stop();
+      std::this_thread::sleep_for(50us);
+      ctx.restart();
+      if ((i % 16) == 0) {
+        std::this_thread::yield();
+      }
+    }
+  });
+
+  producer.join();
+  toggler.join();
+
+  done.store(true, std::memory_order_release);
+  runner.join();
+
+  auto const deadline = std::chrono::steady_clock::now() + 2s;
+  while (std::chrono::steady_clock::now() < deadline) {
+    ctx.restart();
+    (void)ctx.run_for(1ms);
+    if (executed.load(std::memory_order_relaxed) == posted.load(std::memory_order_relaxed)) {
+      break;
+    }
+    std::this_thread::sleep_for(1ms);
+  }
+
+  EXPECT_EQ(executed.load(std::memory_order_relaxed), posted.load(std::memory_order_relaxed));
 }
