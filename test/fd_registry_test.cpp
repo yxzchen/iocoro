@@ -43,7 +43,7 @@ inline void complete_and_destroy(iocoro::detail::reactor_op_ptr op) noexcept {
 
 }  // namespace
 
-TEST(stress_fd_registry, old_token_does_not_cancel_new_registration_on_same_fd) {
+TEST(fd_registry_test, old_token_does_not_cancel_new_registration_on_same_fd) {
   iocoro::detail::fd_registry reg;
 
   std::atomic<int> c1{0};

@@ -23,7 +23,7 @@ namespace iocoro::test {
 
 using namespace std::chrono_literals;
 
-TEST(this_coro_stop_token_test, yields_token_and_observes_stop_after_cache) {
+TEST(this_coro_test, yields_token_and_observes_stop_after_cache) {
   iocoro::io_context ctx;
   std::stop_source stop_src{};
 
@@ -50,7 +50,7 @@ TEST(this_coro_stop_token_test, yields_token_and_observes_stop_after_cache) {
   EXPECT_TRUE(saw_stop.load());
 }
 
-TEST(this_coro_stop_token_test, stop_cancels_steady_timer_wait) {
+TEST(this_coro_test, stop_cancels_steady_timer_wait) {
   iocoro::io_context ctx;
   std::stop_source stop_src{};
   auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
@@ -75,7 +75,7 @@ TEST(this_coro_stop_token_test, stop_cancels_steady_timer_wait) {
   EXPECT_EQ(r->error(), aborted);
 }
 
-TEST(this_coro_stop_token_test, stop_cancels_tcp_accept_pending) {
+TEST(this_coro_test, stop_cancels_tcp_accept_pending) {
   iocoro::io_context ctx;
   std::stop_source stop_src{};
   auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);
@@ -101,7 +101,7 @@ TEST(this_coro_stop_token_test, stop_cancels_tcp_accept_pending) {
   EXPECT_EQ(r->error(), aborted);
 }
 
-TEST(this_coro_stop_token_test, stop_cancels_tcp_read_pending) {
+TEST(this_coro_test, stop_cancels_tcp_read_pending) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -152,7 +152,7 @@ TEST(this_coro_stop_token_test, stop_cancels_tcp_read_pending) {
   ASSERT_TRUE(r);
 }
 
-TEST(this_coro_stop_token_test, stop_cancels_udp_receive_pending) {
+TEST(this_coro_test, stop_cancels_udp_receive_pending) {
   iocoro::io_context ctx;
   std::stop_source stop_src{};
   auto aborted = iocoro::make_error_code(iocoro::error::operation_aborted);

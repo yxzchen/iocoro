@@ -45,7 +45,7 @@ inline void abort_and_destroy(iocoro::detail::reactor_op_ptr op) noexcept {
 
 }  // namespace
 
-TEST(stress_timer_registry, stale_generation_does_not_cancel_new_timer_in_same_slot) {
+TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slot) {
   iocoro::detail::timer_registry reg;
 
   std::atomic<int> complete{0};
