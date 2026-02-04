@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstddef>
 #include <span>
+#include <stop_token>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -316,18 +317,16 @@ TEST(with_timeout_test, operator_or_allows_either_winner_when_both_complete_simi
   ASSERT_TRUE(r);
 }
 
-TEST(with_timeout_test, resolve_timeout_microseconds) {
+TEST(with_timeout_test, timeout_zero_immediate_timeout_on_never_finishing_op) {
   iocoro::io_context ctx;
-
   bool timed_out = false;
   auto timeout_ec = make_error_code(error::timed_out);
+
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
-    thread_pool pool{1};
-    pool.get_executor().post([] { std::this_thread::sleep_for(5ms); });
-    ip::tcp::resolver resolver(pool.get_executor());
-
-    auto r = co_await with_timeout(resolver.async_resolve("example.com", "80"), 1us);
+    steady_timer t(ex);
+    t.expires_after(24h);
+    auto r = co_await with_timeout(t.async_wait(use_awaitable), 0ms);
     timed_out = (!r && r.error() == timeout_ec);
     co_return;
   };
@@ -337,21 +336,16 @@ TEST(with_timeout_test, resolve_timeout_microseconds) {
   EXPECT_TRUE(timed_out);
 }
 
-TEST(with_timeout_test, connect_timeout_ms) {
+TEST(with_timeout_test, timeout_negative_treated_as_immediate_timeout) {
   iocoro::io_context ctx;
-
   bool timed_out = false;
   auto timeout_ec = make_error_code(error::timed_out);
+
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
-    ip::tcp::socket socket(ex);
-
-    auto ep = ip::tcp::endpoint::from_string("58.246.163.58:80");
-    if (!ep) {
-      throw std::runtime_error("invalid endpoint");
-    }
-
-    auto r = co_await with_timeout(socket.async_connect(*ep), 1ms);
+    steady_timer t(ex);
+    t.expires_after(24h);
+    auto r = co_await with_timeout(t.async_wait(use_awaitable), std::chrono::milliseconds{-1});
     timed_out = (!r && r.error() == timeout_ec);
     co_return;
   };
@@ -361,27 +355,47 @@ TEST(with_timeout_test, connect_timeout_ms) {
   EXPECT_TRUE(timed_out);
 }
 
-TEST(with_timeout_test, read_timeout_ms) {
+TEST(with_timeout_test, accept_timeout_local) {
   iocoro::io_context ctx;
-
   bool timed_out = false;
   auto timeout_ec = make_error_code(error::timed_out);
+
+  iocoro::ip::tcp::acceptor acc{ctx};
+  auto lr = acc.listen(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(lr) << lr.error().message();
+
+  auto task = [&]() -> awaitable<void> {
+    auto r = co_await with_timeout(acc.async_accept(), 1ms);
+    timed_out = (!r && r.error() == timeout_ec);
+    co_return;
+  };
+
+  auto r = iocoro::test::sync_wait(ctx, task());
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(timed_out);
+}
+
+TEST(with_timeout_test, tcp_read_timeout_local_blackhole) {
+  iocoro::io_context ctx;
+  bool timed_out = false;
+  auto timeout_ec = make_error_code(error::timed_out);
+
+  iocoro::test::tcp_blackhole_server server{300ms, /*client_rcvbuf=*/1024};
+  ASSERT_GE(server.listen_fd.get(), 0);
+  ASSERT_NE(server.port, 0);
+
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
     ip::tcp::socket socket(ex);
-
-    auto ep = ip::tcp::endpoint::from_string("58.246.163.58:80");
-    if (!ep) {
-      throw std::runtime_error("invalid endpoint");
-    }
-
-    auto cr = co_await socket.async_connect(*ep);
+    auto cr = co_await socket.async_connect(
+      ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), server.port});
     if (!cr) {
+      ADD_FAILURE() << cr.error().message();
       co_return;
     }
 
-    std::array<std::byte, 1024> buf{};
-    auto r = co_await with_timeout(socket.async_read_some(buf), 1ms);
+    std::array<std::byte, 1> buf{};
+    auto r = co_await with_timeout(socket.async_read_some(std::span{buf}), 1ms);
     timed_out = (!r && r.error() == timeout_ec);
     co_return;
   };
@@ -391,26 +405,29 @@ TEST(with_timeout_test, read_timeout_ms) {
   EXPECT_TRUE(timed_out);
 }
 
-TEST(with_timeout_test, write_timeout_ms) {
+TEST(with_timeout_test, tcp_write_timeout_local_blackhole) {
   iocoro::io_context ctx;
-
   bool timed_out = false;
   auto timeout_ec = make_error_code(error::timed_out);
+
+  // Small receive buffer to make backpressure deterministic.
+  iocoro::test::tcp_blackhole_server server{300ms, /*client_rcvbuf=*/1024};
+  ASSERT_GE(server.listen_fd.get(), 0);
+  ASSERT_NE(server.port, 0);
+
   auto task = [&]() -> awaitable<void> {
     auto ex = co_await this_coro::io_executor;
     ip::tcp::socket socket(ex);
-
-    auto ep = ip::tcp::endpoint::from_string("58.246.163.58:80");
-    if (!ep) {
-      throw std::runtime_error("invalid endpoint");
-    }
-
-    auto cr = co_await socket.async_connect(*ep);
+    auto cr = co_await socket.async_connect(
+      ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), server.port});
     if (!cr) {
+      ADD_FAILURE() << cr.error().message();
       co_return;
     }
 
-    std::vector<std::byte> payload(16 * 1024 * 1024);
+    // Make backpressure deterministic: shrink send buffer and write a large payload.
+    iocoro::test::set_socket_buffer_sizes(socket.native_handle(), /*sndbuf=*/1024, /*rcvbuf=*/-1);
+    std::vector<std::byte> payload(8 * 1024 * 1024);
     auto r = co_await with_timeout(io::async_write(socket, payload), 1ms);
     timed_out = (!r && r.error() == timeout_ec);
     co_return;
@@ -419,6 +436,52 @@ TEST(with_timeout_test, write_timeout_ms) {
   auto r = iocoro::test::sync_wait(ctx, task());
   ASSERT_TRUE(r);
   EXPECT_TRUE(timed_out);
+}
+
+TEST(with_timeout_test, op_error_is_propagated_not_masked_by_timeout) {
+  iocoro::io_context ctx;
+  auto bad_ec = std::make_error_code(std::errc::bad_file_descriptor);
+  bool propagated = false;
+
+  auto task = [&]() -> awaitable<void> {
+    auto op = [&]() -> awaitable<iocoro::result<void>> { co_return unexpected(bad_ec); };
+    auto r = co_await with_timeout(op(), 24h);
+    propagated = (!r && r.error() == bad_ec);
+    co_return;
+  };
+
+  auto r = iocoro::test::sync_wait(ctx, task());
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(propagated);
+}
+
+TEST(with_timeout_test, stop_requested_before_call_short_circuits_to_operation_aborted) {
+  iocoro::io_context ctx;
+  std::stop_source stop_src{};
+  stop_src.request_stop();
+
+  std::atomic<int> op_calls{0};
+  auto aborted_ec = make_error_code(error::operation_aborted);
+
+  auto task = [&]() -> awaitable<void> {
+    auto op = [&]() -> awaitable<iocoro::result<void>> {
+      op_calls.fetch_add(1, std::memory_order_relaxed);
+      co_return ok();
+    };
+
+    auto r = co_await with_timeout(op(), 1ms);
+    if (r) {
+      ADD_FAILURE() << "expected operation_aborted";
+      co_return;
+    }
+    EXPECT_EQ(r.error(), aborted_ec);
+    co_return;
+  };
+
+  auto r = iocoro::test::sync_wait(
+    ctx, iocoro::co_spawn(ctx.get_executor(), stop_src.get_token(), task(), use_awaitable));
+  ASSERT_TRUE(r);
+  EXPECT_EQ(op_calls.load(std::memory_order_relaxed), 0);
 }
 
 TEST(with_timeout_test, stop_returns_operation_aborted) {

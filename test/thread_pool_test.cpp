@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <iocoro/io_context.hpp>
 #include <iocoro/thread_pool.hpp>
+#include <iocoro/work_guard.hpp>
 
 #include <array>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 #include <stdexcept>
 
 TEST(thread_pool_test, size_returns_thread_count) {
@@ -93,4 +96,68 @@ TEST(thread_pool_test, dispatch_runs_inline_on_worker_thread) {
   EXPECT_EQ(order[0], 1);
   EXPECT_EQ(order[1], 2);
   EXPECT_EQ(order[2], 3);
+}
+
+TEST(thread_pool_test, work_guard_keeps_context_alive_until_reset) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<bool> ran{false};
+
+  auto wg = iocoro::make_work_guard(ctx);
+
+  std::jthread runner{[&] { (void)ctx.run(); }};
+
+  // Give runner a moment to start; it should not exit because of work_guard.
+  std::this_thread::sleep_for(std::chrono::milliseconds{2});
+
+  ex.post([&] {
+    ran.store(true, std::memory_order_release);
+    wg.reset();
+  });
+
+  runner.join();
+  ctx.restart();
+
+  EXPECT_TRUE(ran.load(std::memory_order_acquire));
+}
+
+TEST(thread_pool_test, work_guard_reset_allows_run_to_return_when_no_work) {
+  iocoro::io_context ctx;
+
+  auto wg = iocoro::make_work_guard(ctx);
+  wg.reset();
+
+  auto n = ctx.run_for(std::chrono::milliseconds{1});
+  EXPECT_EQ(n, 0U);
+}
+
+TEST(thread_pool_test, multiple_work_guards_reference_counting) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<int> ran{0};
+
+  auto g1 = iocoro::make_work_guard(ctx);
+  auto g2 = iocoro::make_work_guard(ctx);
+
+  std::jthread runner{[&] { (void)ctx.run(); }};
+
+  ex.post([&] { ran.fetch_add(1, std::memory_order_relaxed); });
+  std::this_thread::sleep_for(std::chrono::milliseconds{1});
+
+  g1.reset();
+  // still held by g2, loop should keep running
+  ex.post([&] { ran.fetch_add(1, std::memory_order_relaxed); });
+  std::this_thread::sleep_for(std::chrono::milliseconds{1});
+
+  ex.post([&] {
+    ran.fetch_add(1, std::memory_order_relaxed);
+    g2.reset();
+  });
+
+  runner.join();
+  ctx.restart();
+
+  EXPECT_GE(ran.load(std::memory_order_relaxed), 2);
 }

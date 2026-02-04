@@ -208,7 +208,7 @@ auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -
 
   if (index == 0U) {
     timer.cancel();
-    co_return std::get<0>(v);
+    co_return std::move(std::get<0>(v));
   }
 
   // Timer completed first: distinguish natural expiry from cancellation due to stop.

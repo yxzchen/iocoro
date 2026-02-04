@@ -209,7 +209,12 @@ class expected {
   constexpr auto transform(F&& f) & {
     using U = std::remove_cv_t<std::invoke_result_t<F, T&>>;
     if (has_value()) {
-      return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), **this));
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f), **this);
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), **this));
+      }
     } else {
       return expected<U, E>(unexpected<E>(error()));
     }
@@ -219,7 +224,12 @@ class expected {
   constexpr auto transform(F&& f) const& {
     using U = std::remove_cv_t<std::invoke_result_t<F, T const&>>;
     if (has_value()) {
-      return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), **this));
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f), **this);
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), **this));
+      }
     } else {
       return expected<U, E>(unexpected<E>(error()));
     }
@@ -229,7 +239,12 @@ class expected {
   constexpr auto transform(F&& f) && {
     using U = std::remove_cv_t<std::invoke_result_t<F, T&&>>;
     if (has_value()) {
-      return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), std::move(**this)));
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f), std::move(**this));
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), std::move(**this)));
+      }
     } else {
       return expected<U, E>(unexpected<E>(std::move(error())));
     }
@@ -239,7 +254,12 @@ class expected {
   constexpr auto transform(F&& f) const&& {
     using U = std::remove_cv_t<std::invoke_result_t<F, T const&&>>;
     if (has_value()) {
-      return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), std::move(**this)));
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f), std::move(**this));
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f), std::move(**this)));
+      }
     } else {
       return expected<U, E>(unexpected<E>(std::move(error())));
     }
@@ -446,10 +466,59 @@ class expected<void, E> {
   constexpr auto transform(F&& f) & {
     using U = std::remove_cv_t<std::invoke_result_t<F>>;
     if (has_value()) {
-      std::invoke(std::forward<F>(f));
-      return expected<U, E>();
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f));
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f)));
+      }
     } else {
       return expected<U, E>(unexpected<E>(error()));
+    }
+  }
+
+  template <class F>
+  constexpr auto transform(F&& f) const& {
+    using U = std::remove_cv_t<std::invoke_result_t<F>>;
+    if (has_value()) {
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f));
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f)));
+      }
+    } else {
+      return expected<U, E>(unexpected<E>(error()));
+    }
+  }
+
+  template <class F>
+  constexpr auto transform(F&& f) && {
+    using U = std::remove_cv_t<std::invoke_result_t<F>>;
+    if (has_value()) {
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f));
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f)));
+      }
+    } else {
+      return expected<U, E>(unexpected<E>(std::move(error())));
+    }
+  }
+
+  template <class F>
+  constexpr auto transform(F&& f) const&& {
+    using U = std::remove_cv_t<std::invoke_result_t<F>>;
+    if (has_value()) {
+      if constexpr (std::is_void_v<U>) {
+        std::invoke(std::forward<F>(f));
+        return expected<void, E>();
+      } else {
+        return expected<U, E>(std::in_place, std::invoke(std::forward<F>(f)));
+      }
+    } else {
+      return expected<U, E>(unexpected<E>(std::move(error())));
     }
   }
 

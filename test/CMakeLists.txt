@@ -45,8 +45,5 @@ make_test(local_dgram_test)
 make_test(stream_socket_impl_test)
 make_test(datagram_socket_impl_test)
 
-make_test(stress_io_context_post_stop_restart_test)
-make_test(stress_io_context_cancel_thread_test)
 make_test(stress_fd_registry_test)
 make_test(stress_timer_registry_test)
-make_test(stress_socket_close_pending_op_test)

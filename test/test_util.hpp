@@ -11,11 +11,16 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <exception>
+#include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 namespace iocoro::test {
@@ -83,6 +88,61 @@ inline auto make_listen_socket_ipv4() -> std::pair<unique_fd, std::uint16_t> {
 
   return {unique_fd{fd}, ntohs(addr.sin_port)};
 }
+
+inline void set_socket_buffer_sizes(int fd, int sndbuf, int rcvbuf) noexcept {
+  if (fd < 0) {
+    return;
+  }
+  if (sndbuf > 0) {
+    (void)::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+  }
+  if (rcvbuf > 0) {
+    (void)::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+  }
+}
+
+template <class Pred>
+inline auto spin_wait_for(Pred&& pred, std::chrono::steady_clock::duration timeout) -> bool {
+  auto const deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (pred()) {
+      return true;
+    }
+    std::this_thread::yield();
+  }
+  return pred();
+}
+
+struct tcp_blackhole_server {
+  unique_fd listen_fd{};
+  std::uint16_t port{};
+  std::jthread thread{};
+
+  tcp_blackhole_server() = default;
+
+  explicit tcp_blackhole_server(std::chrono::milliseconds hold_time, int client_rcvbuf = 4096) {
+    auto [fd, p] = make_listen_socket_ipv4();
+    listen_fd = std::move(fd);
+    port = p;
+    int const lfd = listen_fd.get();
+    if (lfd < 0 || port == 0) {
+      return;
+    }
+
+    thread = std::jthread([lfd, hold_time, client_rcvbuf](std::stop_token st) {
+      (void)st;
+      int client = ::accept(lfd, nullptr, nullptr);
+      if (client < 0) {
+        return;
+      }
+      if (client_rcvbuf > 0) {
+        set_socket_buffer_sizes(client, /*sndbuf=*/-1, /*rcvbuf=*/client_rcvbuf);
+      }
+      std::this_thread::sleep_for(hold_time);
+      (void)::close(client);
+    });
+  }
+};
 
 inline auto make_temp_path(std::string_view prefix) -> std::string {
   static std::atomic<unsigned int> counter{0};

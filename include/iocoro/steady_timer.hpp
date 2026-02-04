@@ -73,11 +73,14 @@ class steady_timer {
   auto async_wait(use_awaitable_t) -> awaitable<result<void>> {
     IOCORO_ENSURE(st_ != nullptr, "steady_timer: missing state");
     auto st = st_;
-    auto const expiry_snapshot = st->expiry();
     // IMPORTANT: timer registration mutates reactor-owned state; do it on the reactor thread.
     // NOTE: If we are already on that thread, avoid an extra hop (keeps run_one()-style
     // loops deterministic w.r.t. register/cancel ordering).
     co_await this_coro::on(any_executor{st->ex});
+    // Snapshot expiry *after* switching to the reactor thread. This avoids races where a foreign
+    // thread updates expiry between the caller's snapshot and the actual registration, which can
+    // otherwise leave a long-lived timer registered without a subsequent cancellation.
+    auto const expiry_snapshot = st->expiry();
     auto r = co_await detail::operation_awaiter{
       [st, expiry_snapshot](detail::reactor_op_ptr rop) {
         return st->register_timer(expiry_snapshot, std::move(rop));
