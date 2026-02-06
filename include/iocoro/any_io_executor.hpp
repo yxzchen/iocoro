@@ -20,7 +20,7 @@ class any_io_executor {
  public:
   any_io_executor() noexcept = default;
 
-  explicit any_io_executor(any_executor ex) noexcept : storage_(ex.storage_) {
+  any_io_executor(any_executor ex) noexcept : storage_(ex.storage_) {
     if (storage_) {
       IOCORO_ENSURE(has_capability(storage_.capabilities(), executor_capability::io),
                     "any_io_executor: requires IO-capable executor");
@@ -30,7 +30,7 @@ class any_io_executor {
   }
 
   template <executor Ex>
-  explicit any_io_executor(Ex ex) noexcept : any_io_executor(any_executor{std::move(ex)}) {}
+  any_io_executor(Ex ex) noexcept : any_io_executor(any_executor{std::move(ex)}) {}
 
   /// Schedule work for later execution.
   void post(detail::unique_function<void()> f) const noexcept {
