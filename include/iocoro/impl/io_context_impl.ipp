@@ -247,7 +247,7 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> even
   auto result = fd_registry_.register_read(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
   wakeup();
-  if (result.token == 0) {
+  if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
   return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::read, result.token);
@@ -261,41 +261,30 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   auto result = fd_registry_.register_write(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
   wakeup();
-  if (result.token == 0) {
+  if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
   return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::write, result.token);
 }
 
-inline auto io_context_impl::arm_fd_interest(int fd) noexcept -> result<void> {
+inline auto io_context_impl::add_fd(int fd) noexcept -> bool {
   if (fd < 0) {
-    return fail(error::invalid_argument);
+    return false;
   }
   try {
-    apply_fd_interest(fd, fd_interest{true, true});
+    backend_->add_fd(fd);
   } catch (...) {
-    return fail(error::internal_error);
+    return false;
   }
   wakeup();
-  return ok();
+  return true;
 }
 
-inline void io_context_impl::disarm_fd_interest(int fd) noexcept {
+inline void io_context_impl::remove_fd(int fd) noexcept {
   if (fd < 0) {
     return;
   }
-  backend_->remove_fd_interest(fd);
-}
-
-inline void io_context_impl::deregister_fd(int fd) {
-  if (running_.load(std::memory_order_acquire)) {
-    IOCORO_ENSURE(running_in_this_thread(),
-                  "io_context_impl::deregister_fd(): must run on io_context thread");
-  }
-  auto removed = fd_registry_.deregister(fd);
-  abort_op(std::move(removed.read), error::operation_aborted);
-  abort_op(std::move(removed.write), error::operation_aborted);
-  wakeup();
+  backend_->remove_fd(fd);
 }
 
 inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,
@@ -385,7 +374,7 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
 
     auto drained = fd_registry_.drain_all();
     for (int fd : drained.fds) {
-      backend_->remove_fd_interest(fd);
+      backend_->remove_fd(fd);
     }
     for (auto& op : drained.ops) {
       abort_op(std::move(op), ec);
@@ -430,14 +419,6 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
 
 inline void io_context_impl::wakeup() {
   backend_->wakeup();
-}
-
-inline void io_context_impl::apply_fd_interest(int fd, fd_interest interest) {
-  if (interest.want_read || interest.want_write) {
-    backend_->update_fd_interest(fd, interest.want_read, interest.want_write);
-  } else {
-    backend_->remove_fd_interest(fd);
-  }
 }
 
 inline void event_handle::cancel() const noexcept {

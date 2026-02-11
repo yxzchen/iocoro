@@ -104,9 +104,9 @@ class backend_throw final : public iocoro::detail::backend_interface {
   explicit backend_throw(std::atomic<int>* remove_calls_, std::atomic<int>* wakeup_calls_) noexcept
       : remove_calls(remove_calls_), wakeup_calls(wakeup_calls_) {}
 
-  void update_fd_interest(int /*fd*/, bool /*want_read*/, bool /*want_write*/) override {}
+  void add_fd(int /*fd*/) override {}
 
-  void remove_fd_interest(int fd) noexcept override {
+  void remove_fd(int fd) noexcept override {
     last_removed_fd = fd;
     if (remove_calls != nullptr) {
       remove_calls->fetch_add(1, std::memory_order_relaxed);
@@ -130,8 +130,8 @@ class backend_scripted final : public iocoro::detail::backend_interface {
   explicit backend_scripted(std::vector<iocoro::detail::backend_event> events)
       : events_(std::move(events)) {}
 
-  void update_fd_interest(int /*fd*/, bool /*want_read*/, bool /*want_write*/) override {}
-  void remove_fd_interest(int /*fd*/) noexcept override {}
+  void add_fd(int /*fd*/) override {}
+  void remove_fd(int /*fd*/) noexcept override {}
 
   auto wait(std::optional<std::chrono::milliseconds> /*timeout*/,
             std::vector<iocoro::detail::backend_event>& out) -> void override {

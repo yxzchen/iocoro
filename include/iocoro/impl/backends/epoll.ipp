@@ -66,14 +66,9 @@ class backend_epoll final : public backend_interface {
     close_if_valid(epoll_fd_);
   }
 
-  void update_fd_interest(int fd, bool want_read, bool want_write) override {
-    std::uint32_t events = static_cast<std::uint32_t>(EPOLLET);
-    if (want_read) {
-      events |= static_cast<std::uint32_t>(EPOLLIN);
-    }
-    if (want_write) {
-      events |= static_cast<std::uint32_t>(EPOLLOUT);
-    }
+  void add_fd(int fd) override {
+    std::uint32_t events = static_cast<std::uint32_t>(
+      EPOLLET | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP);
 
     epoll_event ev{};
     ev.events = events;
@@ -92,7 +87,7 @@ class backend_epoll final : public backend_interface {
     throw std::system_error(errno, std::generic_category(), "epoll_ctl (add/mod) failed");
   }
 
-  void remove_fd_interest(int fd) noexcept override {
+  void remove_fd(int fd) noexcept override {
     if (epoll_fd_ < 0 || fd < 0) {
       return;
     }

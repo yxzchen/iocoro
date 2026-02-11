@@ -27,8 +27,8 @@ class backend_interface {
   backend_interface(backend_interface&&) = delete;
   auto operator=(backend_interface&&) -> backend_interface& = delete;
 
-  virtual void update_fd_interest(int fd, bool want_read, bool want_write) = 0;
-  virtual void remove_fd_interest(int fd) noexcept = 0;
+  virtual void add_fd(int fd) = 0;
+  virtual void remove_fd(int fd) noexcept = 0;
 
   virtual auto wait(std::optional<std::chrono::milliseconds> timeout,
                     std::vector<backend_event>& out) -> void = 0;

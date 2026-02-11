@@ -94,15 +94,8 @@ class backend_uring final : public backend_interface {
     ::io_uring_queue_exit(&ring_);
   }
 
-  void update_fd_interest(int fd, bool want_read, bool want_write) override {
-    int mask = 0;
-    if (want_read) {
-      mask |= POLLIN;
-    }
-    if (want_write) {
-      mask |= POLLOUT;
-    }
-    mask |= (POLLERR | POLLHUP | POLLRDHUP);
+  void add_fd(int fd) override {
+    int constexpr mask = POLLIN | POLLOUT | POLLERR | POLLHUP | POLLRDHUP;
 
     {
       std::scoped_lock lk{poll_mtx_};
@@ -129,7 +122,7 @@ class backend_uring final : public backend_interface {
     wakeup();
   }
 
-  void remove_fd_interest(int fd) noexcept override {
+  void remove_fd(int fd) noexcept override {
     {
       std::scoped_lock lk{poll_mtx_};
       auto it = polls_.find(fd);
