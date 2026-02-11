@@ -70,12 +70,12 @@ inline auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
   std::size_t count = 0;
-  while (!is_stopped() && has_work()) {
-    if (is_stopped()) {
+  while (true) {
+    if (is_stopped() || !has_work()) {
       break;
     }
     count += process_posted();
-    if (is_stopped()) {
+    if (is_stopped() || !has_work()) {
       break;
     }
     count += process_timers();
@@ -102,19 +102,15 @@ inline auto io_context_impl::run_one() -> std::size_t {
     return 0;
   }
 
-  std::size_t count = process_posted();
-  if (count > 0) {
+  std::size_t count;
+  if (count = process_posted(); count > 0) {
     return count;
   }
 
-  count += process_timers();
-  if (count > 0) {
+  if (count = process_timers(); count > 0) {
     return count;
   }
 
-  if (is_stopped() || !has_work()) {
-    return 0;
-  }
   return process_events(next_wait(std::nullopt));
 }
 
@@ -128,18 +124,20 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
   auto const deadline = std::chrono::steady_clock::now() + timeout;
   std::size_t count = 0;
 
-  while (!is_stopped() && has_work()) {
+  while (true) {
     if (std::chrono::steady_clock::now() >= deadline) {
       break;
     }
 
-    if (is_stopped()) {
+    if (is_stopped() || !has_work()) {
       break;
     }
+
     count += process_posted();
-    if (is_stopped()) {
+    if (is_stopped() || !has_work()) {
       break;
     }
+
     count += process_timers();
     if (is_stopped() || !has_work()) {
       break;
@@ -223,7 +221,6 @@ inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point exp
   }
   auto token = timers_.add_timer(expiry, std::move(op));
   auto h = event_handle::make_timer(weak_from_this(), token.index, token.generation);
-  wakeup();
   return h;
 }
 
@@ -233,9 +230,6 @@ inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint64_t gen
   dispatch_reactor([index, generation](io_context_impl& self) mutable noexcept {
     auto res = self.timers_.cancel(timer_registry::timer_token{index, generation});
     abort_op(std::move(res.op), error::operation_aborted);
-    if (res.cancelled) {
-      self.wakeup();
-    }
   });
 }
 
@@ -246,7 +240,6 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> even
   }
   auto result = fd_registry_.register_read(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
-  wakeup();
   if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
@@ -260,7 +253,6 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   }
   auto result = fd_registry_.register_write(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
-  wakeup();
   if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
