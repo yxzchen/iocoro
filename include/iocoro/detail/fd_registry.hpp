@@ -162,7 +162,7 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
   auto slot = slot_for(ops, kind);
   if (*slot.op && *slot.token == token) {
     removed = std::move(*slot.op);
-    *slot.token = 0;
+    *slot.token = invalid_token;
     matched = true;
     --active_count_;
   }
@@ -189,8 +189,8 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
     read = std::move(ops.read_op);
     write = std::move(ops.write_op);
     had_any = static_cast<bool>(read) || static_cast<bool>(write);
-    ops.read_token = 0;
-    ops.write_token = 0;
+    ops.read_token = invalid_token;
+    ops.write_token = invalid_token;
     if (read) {
       --active_count_;
     }
