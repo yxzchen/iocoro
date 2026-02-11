@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstdint>
 #include <memory>
 #include <system_error>
@@ -103,6 +104,12 @@ struct reactor_op_deleter {
 using reactor_op_ptr = std::unique_ptr<reactor_op, reactor_op_deleter>;
 
 template <typename State>
+concept reactor_state_noexcept = requires(State& s, std::error_code ec) {
+  { s.on_complete() } noexcept -> std::same_as<void>;
+  { s.on_abort(ec) } noexcept -> std::same_as<void>;
+};
+
+template <typename State>
 struct reactor_op_block {
   State state;
 
@@ -127,6 +134,9 @@ inline void reactor_destroy(void* p) noexcept {
 
 template <typename State>
 inline reactor_vtable const* reactor_vtable_for() noexcept {
+  static_assert(reactor_state_noexcept<State>,
+                "reactor state must provide noexcept void on_complete() and "
+                "noexcept void on_abort(std::error_code)");
   static const reactor_vtable vt{
     &reactor_on_complete<State>,
     &reactor_on_abort<State>,
