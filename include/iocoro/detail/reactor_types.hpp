@@ -10,6 +10,7 @@ namespace iocoro::detail {
 class io_context_impl;
 
 enum class fd_event_kind : std::uint8_t { read, write };
+static constexpr std::uint64_t invalid_token = 0;
 
 struct event_handle {
   enum class kind : std::uint8_t { none, timer, fd };
@@ -25,8 +26,6 @@ struct event_handle {
 
   std::uint32_t timer_index = 0;
   std::uint64_t timer_generation = 0;
-
-  static constexpr std::uint64_t invalid_token = 0;
 
   static auto make_fd(std::weak_ptr<io_context_impl> impl_, int fd_, fd_event_kind kind_,
                       std::uint64_t token_) noexcept -> event_handle {

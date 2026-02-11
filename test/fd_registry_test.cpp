@@ -55,7 +55,7 @@ TEST(fd_registry_test, old_token_does_not_cancel_new_registration_on_same_fd) {
 
   auto op1 = iocoro::detail::make_reactor_op<count_state>(count_state{&c1, &a1});
   auto r1 = reg.register_read(fd, std::move(op1));
-  ASSERT_NE(r1.token, iocoro::detail::fd_registry::invalid_token);
+  ASSERT_NE(r1.token, iocoro::detail::invalid_token);
 
   auto cancelled = reg.cancel(fd, iocoro::detail::fd_event_kind::read, r1.token);
   ASSERT_TRUE(cancelled.matched);
@@ -64,7 +64,7 @@ TEST(fd_registry_test, old_token_does_not_cancel_new_registration_on_same_fd) {
 
   auto op2 = iocoro::detail::make_reactor_op<count_state>(count_state{&c2, &a2});
   auto r2 = reg.register_read(fd, std::move(op2));
-  ASSERT_NE(r2.token, iocoro::detail::fd_registry::invalid_token);
+  ASSERT_NE(r2.token, iocoro::detail::invalid_token);
   ASSERT_NE(r2.token, r1.token);
 
   // Attempt to cancel using the stale token.

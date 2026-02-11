@@ -15,7 +15,6 @@ struct fd_interest {
 
 class fd_registry {
  public:
-  static constexpr std::uint64_t invalid_token = 0;
   struct ready_result {
     reactor_op_ptr read{};
     reactor_op_ptr write{};
