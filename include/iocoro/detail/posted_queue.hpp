@@ -19,6 +19,7 @@ class posted_queue {
   void post(unique_function<void()> f) {
     std::scoped_lock lk{mtx_};
     queue_.push(std::move(f));
+    pending_count_.fetch_add(1, std::memory_order_release);
   }
 
   auto process() -> std::size_t {
@@ -26,6 +27,10 @@ class posted_queue {
     {
       std::scoped_lock lk{mtx_};
       std::swap(local, queue_);
+    }
+
+    if (local.size() > 0) {
+      (void)pending_count_.fetch_sub(local.size(), std::memory_order_acq_rel);
     }
 
     if (local.empty()) {
@@ -47,13 +52,13 @@ class posted_queue {
 
   // True iff there are queued posted tasks.
   auto has_pending_tasks() const -> bool {
-    std::scoped_lock lk{mtx_};
-    return !queue_.empty();
+    return pending_count_.load(std::memory_order_acquire) > 0;
   }
 
  private:
   mutable std::mutex mtx_{};
   std::queue<unique_function<void()>> queue_{};
+  std::atomic<std::size_t> pending_count_{0};
 };
 
 }  // namespace iocoro::detail
