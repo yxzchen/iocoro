@@ -35,14 +35,23 @@ class condition_event {
   condition_event(condition_event const&) = delete;
   auto operator=(condition_event const&) -> condition_event& = delete;
 
-  condition_event(condition_event&&) noexcept = default;
-  auto operator=(condition_event&&) noexcept -> condition_event& = default;
+  condition_event(condition_event&& other) noexcept
+      : st_(other.st_.exchange(std::shared_ptr<state>{}, std::memory_order_acq_rel)) {}
+
+  auto operator=(condition_event&& other) noexcept -> condition_event& {
+    if (this != &other) {
+      abort_all_waiters();
+      st_.store(other.st_.exchange(std::shared_ptr<state>{}, std::memory_order_acq_rel),
+                std::memory_order_release);
+    }
+    return *this;
+  }
 
   ~condition_event() noexcept { abort_all_waiters(); }
 
   /// Notify a single waiter if present; otherwise accumulate one pending notification.
   void notify() noexcept {
-    auto st = std::atomic_load_explicit(&st_, std::memory_order_acquire);
+    auto st = st_.load(std::memory_order_acquire);
     if (!st) {
       return;
     }
@@ -72,7 +81,7 @@ class condition_event {
   /// - `ok()` if a notification is consumed
   /// - `operation_aborted` if cancelled via stop_token or if the event is destroyed
   auto async_wait() -> awaitable<result<void>> {
-    auto st = std::atomic_load_explicit(&st_, std::memory_order_acquire);
+    auto st = st_.load(std::memory_order_acquire);
     if (!st) {
       co_return unexpected(error::operation_aborted);
     }
@@ -239,8 +248,7 @@ class condition_event {
   };
 
   void abort_all_waiters() noexcept {
-    auto st =
-      std::atomic_exchange_explicit(&st_, std::shared_ptr<state>{}, std::memory_order_acq_rel);
+    auto st = st_.exchange(std::shared_ptr<state>{}, std::memory_order_acq_rel);
     if (!st) {
       return;
     }
@@ -264,7 +272,7 @@ class condition_event {
 
   // `condition_event` can be destroyed concurrently with `notify()/async_wait()` in user code.
   // Access to `st_` must therefore be atomic.
-  std::shared_ptr<state> st_{};
+  std::atomic<std::shared_ptr<state>> st_{};
 };
 
 }  // namespace iocoro
