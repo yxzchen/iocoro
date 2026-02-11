@@ -25,7 +25,7 @@ class timer_registry {
  public:
   struct timer_token {
     std::uint32_t index = 0;
-    std::uint64_t generation = 0;
+    std::uint64_t generation = invalid_generation;
   };
 
   // Token model (ABA defense):
@@ -82,9 +82,6 @@ inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expi
   node.expiry = expiry;
   node.op = std::move(op);
   node.state = timer_state::pending;
-  if (node.generation == 0) {
-    node.generation = 1;
-  }
   ++active_count_;
 
   push_heap(index);
@@ -93,7 +90,7 @@ inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expi
 }
 
 inline auto timer_registry::cancel(timer_token tok) noexcept -> cancel_result {
-  if (tok.generation == 0 || tok.index >= nodes_.size()) {
+  if (tok.generation == invalid_generation || tok.index >= nodes_.size()) {
     return {};
   }
   auto& node = nodes_[tok.index];
@@ -220,9 +217,6 @@ inline auto timer_registry::recycle_node(std::uint32_t index) -> void {
   node.op = {};
   node.state = timer_state::fired;
   ++node.generation;
-  if (node.generation == 0) {
-    node.generation = 1;
-  }
   free_.push_back(index);
   if (active_count_ > 0) {
     --active_count_;

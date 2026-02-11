@@ -11,6 +11,7 @@ class io_context_impl;
 
 enum class fd_event_kind : std::uint8_t { read, write };
 static constexpr std::uint64_t invalid_token = 0;
+static constexpr std::uint64_t invalid_generation = 0;
 
 struct event_handle {
   enum class kind : std::uint8_t { none, timer, fd };
@@ -22,10 +23,10 @@ struct event_handle {
 
   int fd = -1;
   fd_event_kind fd_kind = fd_event_kind::read;
-  std::uint64_t token = 0;
+  std::uint64_t token = invalid_token;
 
   std::uint32_t timer_index = 0;
-  std::uint64_t timer_generation = 0;
+  std::uint64_t timer_generation = invalid_generation;
 
   static auto make_fd(std::weak_ptr<io_context_impl> impl_, int fd_, fd_event_kind kind_,
                       std::uint64_t token_) noexcept -> event_handle {
@@ -58,7 +59,7 @@ struct event_handle {
       case kind::fd:
         return fd >= 0 && token != invalid_token;
       case kind::timer:
-        return timer_generation != 0;
+        return timer_generation != invalid_generation;
       case kind::none:
       default:
         return false;
