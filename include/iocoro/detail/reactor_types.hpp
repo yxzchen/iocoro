@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <system_error>
@@ -9,7 +8,6 @@
 namespace iocoro::detail {
 
 class io_context_impl;
-class timer_registry;
 
 enum class fd_event_kind : std::uint8_t { read, write };
 
@@ -32,35 +30,45 @@ struct event_handle {
 
   static auto make_fd(std::weak_ptr<io_context_impl> impl_, int fd_, fd_event_kind kind_,
                       std::uint64_t token_) noexcept -> event_handle {
-    event_handle out;
-    out.impl = std::move(impl_);
-    out.type = kind::fd;
-    out.fd = fd_;
-    out.fd_kind = kind_;
-    out.token = token_;
-    return out;
+    return event_handle{
+      .impl = std::move(impl_),
+      .type = kind::fd,
+      .fd = fd_,
+      .fd_kind = kind_,
+      .token = token_,
+      .timer_index = 0,
+      .timer_generation = 0,
+    };
   }
 
   static auto make_timer(std::weak_ptr<io_context_impl> impl_, std::uint32_t index,
                          std::uint64_t generation) noexcept -> event_handle {
-    event_handle out;
-    out.impl = std::move(impl_);
-    out.type = kind::timer;
-    out.timer_index = index;
-    out.timer_generation = generation;
-    return out;
+    return event_handle{
+      .impl = std::move(impl_),
+      .type = kind::timer,
+      .fd = -1,
+      .fd_kind = fd_event_kind::read,
+      .token = 0,
+      .timer_index = index,
+      .timer_generation = generation,
+    };
   }
 
   static auto invalid_handle() noexcept -> event_handle { return event_handle{}; }
 
   auto valid() const noexcept -> bool {
-    if (type == kind::fd) {
-      return !impl.expired() && fd >= 0 && token != invalid_token;
+    if (impl.expired()) {
+      return false;
     }
-    if (type == kind::timer) {
-      return !impl.expired() && timer_generation != 0;
+    switch (type) {
+      case kind::fd:
+        return fd >= 0 && token != invalid_token;
+      case kind::timer:
+        return timer_generation != 0;
+      case kind::none:
+      default:
+        return false;
     }
-    return false;
   }
   explicit operator bool() const noexcept { return valid(); }
 
@@ -101,12 +109,10 @@ using reactor_op_ptr = std::unique_ptr<reactor_op, reactor_op_deleter>;
 
 template <typename State>
 struct reactor_op_block {
-  reactor_vtable const* vt;
   State state;
 
   template <typename... Args>
-  explicit reactor_op_block(reactor_vtable const* v, Args&&... args)
-      : vt(v), state(std::forward<Args>(args)...) {}
+  explicit reactor_op_block(Args&&... args) : state(std::forward<Args>(args)...) {}
 };
 
 template <typename State>
@@ -136,9 +142,8 @@ inline reactor_vtable const* reactor_vtable_for() noexcept {
 
 template <typename State, typename... Args>
 inline auto make_reactor_op(Args&&... args) -> reactor_op_ptr {
-  auto* block =
-    new reactor_op_block<State>{reactor_vtable_for<State>(), std::forward<Args>(args)...};
-  auto* op = new reactor_op{block->vt, block};
+  auto* block = new reactor_op_block<State>{std::forward<Args>(args)...};
+  auto* op = new reactor_op{reactor_vtable_for<State>(), block};
   return reactor_op_ptr{op};
 }
 
