@@ -60,7 +60,7 @@ class strand_executor {
     bool const should_schedule = state_->enqueue(std::move(f));
     if (should_schedule) {
       auto st = state_;
-      state_->base.dispatch([st]() noexcept { strand_executor::drain(std::move(st)); });
+      state_->base.post([st]() noexcept { strand_executor::drain(std::move(st)); });
     }
   }
 
