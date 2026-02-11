@@ -58,10 +58,7 @@ class condition_event {
         st->waiters.pop_front();
         w->linked = false;
       } else {
-        // Best-effort and saturating: avoid overflow in pathological "notify without waiters" cases.
-        if (st->pending != std::numeric_limits<std::size_t>::max()) {
-          ++st->pending;
-        }
+        ++st->pending;
         return;
       }
     }
