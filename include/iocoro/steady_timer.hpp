@@ -18,10 +18,12 @@
 
 namespace iocoro {
 
-/// A single-use timer for awaiting a time point.
+/// A timer with at most one pending wait at a time.
 ///
 /// Semantics:
 /// - Each `async_wait()` creates a new timer registration in the underlying `io_context`.
+/// - Starting a new wait while one is pending cancels the previous wait with
+///   `error::operation_aborted`.
 /// - `cancel()` cancels the current pending registration (if any).
 /// - Updating expiry cancels the current pending wait (if any) and affects subsequent waits.
 class steady_timer {
