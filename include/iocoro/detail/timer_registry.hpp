@@ -40,7 +40,7 @@ class timer_registry {
   auto add_timer(std::chrono::steady_clock::time_point expiry, reactor_op_ptr op) -> timer_token;
   auto cancel(timer_token tok) noexcept -> cancel_result;
   auto next_timeout() -> std::optional<std::chrono::milliseconds>;
-  auto process_expired(bool stopped) -> std::size_t;
+  auto process_expired() -> std::size_t;
   auto empty() const -> bool;
 
   // Drain all registered timer operations and clear the registry.
@@ -130,7 +130,7 @@ inline auto timer_registry::next_timeout() -> std::optional<std::chrono::millise
   return std::chrono::duration_cast<std::chrono::milliseconds>(node.expiry - now);
 }
 
-inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
+inline auto timer_registry::process_expired() -> std::size_t {
   std::size_t count = 0;
   struct ready_entry {
     reactor_op_ptr op{};
@@ -145,7 +145,7 @@ inline auto timer_registry::process_expired(bool stopped) -> std::size_t {
   };
 
   for (;;) {
-    if (stopped || heap_.empty()) {
+    if (heap_.empty()) {
       break;
     }
 

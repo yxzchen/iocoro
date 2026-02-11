@@ -67,7 +67,7 @@ TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slo
 
   // Drive the registry so the cancelled node is popped and recycled (generation increments).
   while (!reg.empty()) {
-    (void)reg.process_expired(false);
+    (void)reg.process_expired();
     std::this_thread::sleep_for(std::chrono::milliseconds{1});
   }
 
@@ -83,7 +83,7 @@ TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slo
 
   // Drive expiry; it should complete (not abort) exactly once.
   while (!done2.load(std::memory_order_acquire)) {
-    (void)reg.process_expired(false);
+    (void)reg.process_expired();
     std::this_thread::sleep_for(std::chrono::milliseconds{1});
   }
 

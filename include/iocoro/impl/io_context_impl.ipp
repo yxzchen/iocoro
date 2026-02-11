@@ -71,7 +71,13 @@ inline auto io_context_impl::run() -> std::size_t {
 
   std::size_t count = 0;
   while (!is_stopped() && has_work()) {
+    if (is_stopped()) {
+      break;
+    }
     count += process_posted();
+    if (is_stopped()) {
+      break;
+    }
     count += process_timers();
     if (is_stopped() || !has_work()) {
       break;
@@ -91,6 +97,10 @@ inline auto io_context_impl::run_one() -> std::size_t {
   auto running_guard = detail::make_scope_exit(
     [this]() noexcept { running_.store(false, std::memory_order_release); });
   set_thread_id();
+
+  if (is_stopped() || !has_work()) {
+    return 0;
+  }
 
   std::size_t count = process_posted();
   if (count > 0) {
@@ -123,7 +133,13 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
       break;
     }
 
+    if (is_stopped()) {
+      break;
+    }
     count += process_posted();
+    if (is_stopped()) {
+      break;
+    }
     count += process_timers();
     if (is_stopped() || !has_work()) {
       break;
@@ -323,13 +339,13 @@ inline void io_context_impl::remove_work_guard() noexcept {
 inline auto io_context_impl::process_timers() -> std::size_t {
   IOCORO_ENSURE(running_in_this_thread(),
                 "io_context_impl::process_timers(): must run on io_context thread");
-  return timers_.process_expired(is_stopped());
+  return timers_.process_expired();
 }
 
 inline auto io_context_impl::process_posted() -> std::size_t {
   IOCORO_ENSURE(running_in_this_thread(),
                 "io_context_impl::process_posted(): must run on io_context thread");
-  return posted_.process(is_stopped());
+  return posted_.process();
 }
 
 inline auto io_context_impl::next_wait(

@@ -25,7 +25,7 @@ class posted_queue {
     queue_.push(std::move(f));
   }
 
-  auto process(bool stopped) -> std::size_t {
+  auto process() -> std::size_t {
     std::queue<unique_function<void()>> local;
     {
       std::scoped_lock lk{mtx_};
@@ -38,17 +38,6 @@ class posted_queue {
 
     std::size_t n = 0;
     while (!local.empty()) {
-      if (stopped) {
-        // IMPORTANT: When the event loop is stopped we do not execute user callbacks.
-        // Preserve posted tasks so that `restart()` can resume from a consistent state.
-        std::scoped_lock lk{mtx_};
-        while (!local.empty()) {
-          queue_.push(std::move(local.front()));
-          local.pop();
-        }
-        break;
-      }
-
       auto f = std::move(local.front());
       local.pop();
       if (f) {
@@ -62,13 +51,6 @@ class posted_queue {
       }
     }
 
-    if (!stopped && !local.empty()) {
-      std::scoped_lock lk{mtx_};
-      while (!local.empty()) {
-        queue_.push(std::move(local.front()));
-        local.pop();
-      }
-    }
     return n;
   }
 
