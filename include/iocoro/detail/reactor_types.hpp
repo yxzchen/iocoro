@@ -36,8 +36,6 @@ struct event_handle {
       .fd = fd_,
       .fd_kind = kind_,
       .token = token_,
-      .timer_index = 0,
-      .timer_generation = 0,
     };
   }
 
@@ -46,9 +44,6 @@ struct event_handle {
     return event_handle{
       .impl = std::move(impl_),
       .type = kind::timer,
-      .fd = -1,
-      .fd_kind = fd_event_kind::read,
-      .token = 0,
       .timer_index = index,
       .timer_generation = generation,
     };
