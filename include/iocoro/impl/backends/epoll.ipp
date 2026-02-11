@@ -125,24 +125,23 @@ class backend_epoll final : public backend_interface {
         continue;
       }
 
-      bool const is_error =
-        (ev & (static_cast<std::uint32_t>(EPOLLERR) | static_cast<std::uint32_t>(EPOLLHUP) |
-               static_cast<std::uint32_t>(EPOLLRDHUP))) != 0;
+      bool const has_error = (ev & static_cast<std::uint32_t>(EPOLLERR)) != 0;
+      bool const has_hup =
+        (ev & (static_cast<std::uint32_t>(EPOLLHUP) | static_cast<std::uint32_t>(EPOLLRDHUP))) !=
+        0;
+      bool const has_read = (ev & static_cast<std::uint32_t>(EPOLLIN)) != 0;
+      bool const has_write = (ev & static_cast<std::uint32_t>(EPOLLOUT)) != 0;
 
       backend_event e{};
       e.fd = fd;
-      e.is_error = is_error;
-      e.can_read = is_error || ((ev & static_cast<std::uint32_t>(EPOLLIN)) != 0);
-      e.can_write = is_error || ((ev & static_cast<std::uint32_t>(EPOLLOUT)) != 0);
+      // EPOLLHUP/EPOLLRDHUP may arrive together with unread data. Treat them as readiness so
+      // awaiters can perform the syscall and drain buffered bytes before observing EOF.
+      e.is_error = has_error;
+      e.can_read = has_error || has_hup || has_read;
+      e.can_write = has_error || has_hup || has_write;
 
-      if (is_error) {
-        if (ev & static_cast<std::uint32_t>(EPOLLRDHUP)) {
-          e.ec = error::eof;
-        } else if (ev & static_cast<std::uint32_t>(EPOLLHUP)) {
-          e.ec = error::eof;
-        } else {
-          e.ec = error::connection_reset;
-        }
+      if (has_error) {
+        e.ec = error::connection_reset;
       }
 
       out.push_back(e);

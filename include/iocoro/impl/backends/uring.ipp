@@ -233,24 +233,23 @@ class backend_uring final : public backend_interface {
         return;
       }
 
-      bool const is_error =
-        (res < 0) ||
-        ((ev & (static_cast<std::uint32_t>(POLLERR) | static_cast<std::uint32_t>(POLLHUP) |
-                static_cast<std::uint32_t>(POLLRDHUP))) != 0);
+      bool const has_error = (ev & static_cast<std::uint32_t>(POLLERR)) != 0;
+      bool const has_hup =
+        (ev & (static_cast<std::uint32_t>(POLLHUP) | static_cast<std::uint32_t>(POLLRDHUP))) != 0;
+      bool const has_read = (ev & static_cast<std::uint32_t>(POLLIN)) != 0;
+      bool const has_write = (ev & static_cast<std::uint32_t>(POLLOUT)) != 0;
+      bool const is_error = (res < 0) || has_error;
 
       backend_event e{};
       e.fd = fd;
       e.is_error = is_error;
-      e.can_read = is_error || ((ev & static_cast<std::uint32_t>(POLLIN)) != 0);
-      e.can_write = is_error || ((ev & static_cast<std::uint32_t>(POLLOUT)) != 0);
+      // POLLHUP/POLLRDHUP are treated as readiness to allow callers to drain pending data.
+      e.can_read = is_error || has_hup || has_read;
+      e.can_write = is_error || has_hup || has_write;
 
       if (is_error) {
         if (res < 0) {
           e.ec = std::error_code{-res, std::generic_category()};
-        } else if (ev & static_cast<std::uint32_t>(POLLRDHUP)) {
-          e.ec = error::eof;
-        } else if (ev & static_cast<std::uint32_t>(POLLHUP)) {
-          e.ec = error::eof;
         } else {
           e.ec = error::connection_reset;
         }
