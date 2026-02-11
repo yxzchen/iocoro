@@ -326,11 +326,11 @@ inline void io_context_impl::cancel_event(event_handle h) noexcept {
 }
 
 inline void io_context_impl::add_work_guard() noexcept {
-  posted_.add_work_guard();
+  work_guard_.add();
 }
 
 inline void io_context_impl::remove_work_guard() noexcept {
-  auto const old = posted_.remove_work_guard();
+  auto const old = work_guard_.remove();
   if (old == 1) {
     wakeup();
   }
@@ -367,7 +367,8 @@ inline auto io_context_impl::next_wait(
 }
 
 inline auto io_context_impl::has_work() -> bool {
-  return posted_.has_work() || !timers_.empty() || !fd_registry_.empty();
+  return work_guard_.has_work() || posted_.has_pending_tasks() || !timers_.empty() ||
+         !fd_registry_.empty();
 }
 
 inline auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)

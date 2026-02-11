@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iocoro/detail/unique_function.hpp>
-#include <iocoro/detail/work_guard_counter.hpp>
 
 #include <atomic>
 #include <mutex>
@@ -15,11 +14,8 @@ namespace iocoro::detail {
 // Design constraints:
 // - `post()` may be called from any thread.
 // - Draining (`process()`) happens on the reactor thread.
-// - Fairness: draining is bounded per tick to avoid starving timers/IO.
 class posted_queue {
  public:
-  static constexpr std::size_t max_drain_per_tick = 256;
-
   void post(unique_function<void()> f) {
     std::scoped_lock lk{mtx_};
     queue_.push(std::move(f));
@@ -44,31 +40,12 @@ class posted_queue {
         f();
       }
       ++n;
-
-      // Fairness: do not drain indefinitely; allow timers/IO to run.
-      if (n >= max_drain_per_tick) {
-        break;
-      }
     }
 
     return n;
   }
 
-  void add_work_guard() noexcept { work_guard_.add(); }
-
-  auto remove_work_guard() noexcept -> std::size_t { return work_guard_.remove(); }
-
-  auto work_guard_count() const noexcept -> std::size_t { return work_guard_.count(); }
-
-  auto has_work() const -> bool {
-    if (work_guard_.has_work()) {
-      return true;
-    }
-    std::scoped_lock lk{mtx_};
-    return !queue_.empty();
-  }
-
-  // True iff there are queued posted tasks (does NOT consider work_guard).
+  // True iff there are queued posted tasks.
   auto has_pending_tasks() const -> bool {
     std::scoped_lock lk{mtx_};
     return !queue_.empty();
@@ -77,7 +54,6 @@ class posted_queue {
  private:
   mutable std::mutex mtx_{};
   std::queue<unique_function<void()>> queue_{};
-  work_guard_counter work_guard_{};
 };
 
 }  // namespace iocoro::detail

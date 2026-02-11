@@ -6,6 +6,7 @@
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/timer_registry.hpp>
 #include <iocoro/detail/unique_function.hpp>
+#include <iocoro/detail/work_guard_counter.hpp>
 #include <iocoro/result.hpp>
 
 #include <atomic>
@@ -116,6 +117,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   fd_registry fd_registry_{};
   timer_registry timers_{};
   posted_queue posted_{};
+  work_guard_counter work_guard_{};
   std::vector<backend_event> backend_events_{};
   std::atomic<std::uintptr_t> thread_token_{0};
 };
