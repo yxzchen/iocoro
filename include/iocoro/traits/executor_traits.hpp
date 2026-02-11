@@ -39,7 +39,7 @@ inline constexpr auto has_capability(executor_capability caps, executor_capabili
   return (caps & flag) != executor_capability::none;
 }
 
-/// Minimal executor concept required by IOCoro.
+/// Minimal executor concept required by iocoro.
 template <class Ex>
 concept executor = requires(Ex ex, detail::unique_function<void()> fn) {
   { ex.post(std::move(fn)) } noexcept;
