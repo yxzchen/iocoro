@@ -24,6 +24,7 @@ namespace {
 struct bench_state {
   net::io_context* ioc = nullptr;
   std::atomic<int> remaining_sessions{0};
+  std::atomic<bool> failed{false};
   int msgs_per_session = 0;
   std::vector<std::byte> payload{};
   std::mutex latency_mtx{};
@@ -56,16 +57,33 @@ inline void mark_done(bench_state* st) {
   }
 }
 
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ioc->stop();
+}
+
 auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
   std::vector<std::byte> recv_buf(st->payload.size());
   for (int i = 0; i < st->msgs_per_session; ++i) {
     boost::system::error_code ec;
     auto n = co_await net::async_read(socket, net::buffer(recv_buf), net::redirect_error(use_awaitable, ec));
     if (ec || n != recv_buf.size()) {
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_latency: server read failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_latency: server read size mismatch");
+      }
       co_return;
     }
     n = co_await net::async_write(socket, net::buffer(recv_buf), net::redirect_error(use_awaitable, ec));
     if (ec || n != recv_buf.size()) {
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_latency: server write failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_latency: server write size mismatch");
+      }
       co_return;
     }
   }
@@ -77,7 +95,7 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> awai
     boost::system::error_code ec;
     auto socket = co_await acceptor.async_accept(net::redirect_error(use_awaitable, ec));
     if (ec) {
-      st->ioc->stop();
+      fail_and_stop(st, "asio_tcp_latency: accept failed: " + ec.message());
       co_return;
     }
     co_spawn(ex, echo_session(std::move(socket), st), detached);
@@ -91,7 +109,7 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
   boost::system::error_code ec;
   co_await socket.async_connect(ep, net::redirect_error(use_awaitable, ec));
   if (ec) {
-    ioc.stop();
+    fail_and_stop(st, "asio_tcp_latency: connect failed: " + ec.message());
     co_return;
   }
 
@@ -103,11 +121,21 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
     auto const start = std::chrono::steady_clock::now();
     auto n = co_await net::async_write(socket, net::buffer(st->payload), net::redirect_error(use_awaitable, ec));
     if (ec || n != st->payload.size()) {
-      break;
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_latency: client write failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_latency: client write size mismatch");
+      }
+      co_return;
     }
     n = co_await net::async_read(socket, net::buffer(response), net::redirect_error(use_awaitable, ec));
     if (ec || n != response.size()) {
-      break;
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_latency: client read failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_latency: client read size mismatch");
+      }
+      co_return;
     }
     auto const end = std::chrono::steady_clock::now();
     auto const us = std::chrono::duration<double, std::micro>(end - start).count();
@@ -181,6 +209,21 @@ int main(int argc, char* argv[]) {
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const sample_count = static_cast<std::uint64_t>(samples.size());
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_sessions.load(std::memory_order_acquire) != 0) {
+    std::cerr << "asio_tcp_latency: incomplete run (remaining_sessions="
+              << st.remaining_sessions.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
+  if (sample_count != expected_samples) {
+    std::cerr << "asio_tcp_latency: sample mismatch (expected=" << expected_samples
+              << ", got=" << sample_count << ")\n";
+    return 1;
+  }
+
   auto const p50_us = percentile_sorted(samples, 0.50);
   auto const p95_us = percentile_sorted(samples, 0.95);
   auto const p99_us = percentile_sorted(samples, 0.99);

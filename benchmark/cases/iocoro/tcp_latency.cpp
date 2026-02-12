@@ -19,6 +19,7 @@ using iocoro::ip::tcp;
 struct bench_state {
   iocoro::io_context* ctx = nullptr;
   std::atomic<int> remaining_sessions{0};
+  std::atomic<bool> failed{false};
   int msgs_per_session = 0;
   std::vector<std::byte> payload{};
   std::mutex latency_mtx{};
@@ -51,15 +52,24 @@ inline void mark_done(bench_state* st) {
   }
 }
 
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ctx->stop();
+}
+
 auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void> {
   std::vector<std::byte> recv_buf(st->payload.size());
   for (int i = 0; i < st->msgs_per_session; ++i) {
     auto r = co_await iocoro::io::async_read(socket, iocoro::net::buffer(recv_buf));
     if (!r) {
+      fail_and_stop(st, "iocoro_tcp_latency: server read failed: " + r.error().message());
       co_return;
     }
     auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(recv_buf));
     if (!w) {
+      fail_and_stop(st, "iocoro_tcp_latency: server write failed: " + w.error().message());
       co_return;
     }
   }
@@ -71,7 +81,7 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st)
   for (int i = 0; i < sessions; ++i) {
     auto accepted = co_await acceptor.async_accept();
     if (!accepted) {
-      st->ctx->stop();
+      fail_and_stop(st, "iocoro_tcp_latency: accept failed: " + accepted.error().message());
       co_return;
     }
     iocoro::co_spawn(ex, echo_session(std::move(*accepted), st), iocoro::detached);
@@ -83,7 +93,7 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
-    ctx.stop();
+    fail_and_stop(st, "iocoro_tcp_latency: connect failed: " + cr.error().message());
     co_return;
   }
 
@@ -95,11 +105,13 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
     auto const start = std::chrono::steady_clock::now();
     auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(st->payload));
     if (!w) {
-      break;
+      fail_and_stop(st, "iocoro_tcp_latency: client write failed: " + w.error().message());
+      co_return;
     }
     auto r = co_await iocoro::io::async_read(socket, iocoro::net::buffer(response));
     if (!r) {
-      break;
+      fail_and_stop(st, "iocoro_tcp_latency: client read failed: " + r.error().message());
+      co_return;
     }
     auto const end = std::chrono::steady_clock::now();
     auto const us = std::chrono::duration<double, std::micro>(end - start).count();
@@ -188,6 +200,21 @@ int main(int argc, char* argv[]) {
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const sample_count = static_cast<std::uint64_t>(samples.size());
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_sessions.load(std::memory_order_acquire) != 0) {
+    std::cerr << "iocoro_tcp_latency: incomplete run (remaining_sessions="
+              << st.remaining_sessions.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
+  if (sample_count != expected_samples) {
+    std::cerr << "iocoro_tcp_latency: sample mismatch (expected=" << expected_samples
+              << ", got=" << sample_count << ")\n";
+    return 1;
+  }
+
   auto const p50_us = percentile_sorted(samples, 0.50);
   auto const p95_us = percentile_sorted(samples, 0.95);
   auto const p99_us = percentile_sorted(samples, 0.99);

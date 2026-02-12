@@ -17,10 +17,18 @@ using iocoro::ip::tcp;
 struct bench_state {
   iocoro::io_context* ctx = nullptr;
   std::atomic<int> remaining_sessions{0};
+  std::atomic<bool> failed{false};
   int msgs_per_session = 0;
   std::size_t io_buffer_size = 4096;
   std::string msg{};
 };
+
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ctx->stop();
+}
 
 auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void> {
   std::string buffer(st->io_buffer_size, '\0');
@@ -29,12 +37,14 @@ auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void
   for (int i = 0; i < st->msgs_per_session; ++i) {
     auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
     if (!r) {
+      fail_and_stop(st, "iocoro_tcp_roundtrip: server read failed: " + r.error().message());
       co_return;
     }
 
     auto const n = *r;
     auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(buffer.data(), n));
     if (!w) {
+      fail_and_stop(st, "iocoro_tcp_roundtrip: server write failed: " + w.error().message());
       co_return;
     }
   }
@@ -47,7 +57,7 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st)
   for (int i = 0; i < sessions; ++i) {
     auto accepted = co_await acceptor.async_accept();
     if (!accepted) {
-      st->ctx->stop();
+      fail_and_stop(st, "iocoro_tcp_roundtrip: accept failed: " + accepted.error().message());
       co_return;
     }
     iocoro::co_spawn(ex, echo_session(std::move(*accepted), st), iocoro::detached);
@@ -59,9 +69,7 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
-    if (st->remaining_sessions.fetch_sub(1) == 1) {
-      ctx.stop();
-    }
+    fail_and_stop(st, "iocoro_tcp_roundtrip: connect failed: " + cr.error().message());
     co_return;
   }
 
@@ -71,12 +79,14 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
   for (int i = 0; i < st->msgs_per_session; ++i) {
     auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(st->msg));
     if (!w) {
-      break;
+      fail_and_stop(st, "iocoro_tcp_roundtrip: client write failed: " + w.error().message());
+      co_return;
     }
 
     auto r = co_await iocoro::io::async_read_until(socket, buf, '\n', 0);
     if (!r) {
-      break;
+      fail_and_stop(st, "iocoro_tcp_roundtrip: client read failed: " + r.error().message());
+      co_return;
     }
   }
 
@@ -148,6 +158,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ctx.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_sessions.load(std::memory_order_acquire) != 0) {
+    std::cerr << "iocoro_tcp_roundtrip: incomplete run (remaining_sessions="
+              << st.remaining_sessions.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const rps = elapsed_s > 0.0 ? static_cast<double>(total_roundtrips) / elapsed_s : 0.0;

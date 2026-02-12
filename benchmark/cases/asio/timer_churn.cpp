@@ -18,6 +18,7 @@ namespace {
 struct bench_state {
   net::io_context* ioc = nullptr;
   std::atomic<int> remaining_sessions{0};
+  std::atomic<bool> failed{false};
   int waits_per_session = 0;
 };
 
@@ -27,6 +28,13 @@ inline void mark_done(bench_state* st) {
   }
 }
 
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ioc->stop();
+}
+
 auto timer_session(net::any_io_executor ex, bench_state* st) -> awaitable<void> {
   net::steady_timer timer{ex};
   for (int i = 0; i < st->waits_per_session; ++i) {
@@ -34,7 +42,7 @@ auto timer_session(net::any_io_executor ex, bench_state* st) -> awaitable<void> 
     boost::system::error_code ec;
     (void)co_await timer.async_wait(net::redirect_error(use_awaitable, ec));
     if (ec) {
-      st->ioc->stop();
+      fail_and_stop(st, "asio_timer_churn: timer wait failed: " + ec.message());
       co_return;
     }
   }
@@ -76,6 +84,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ioc.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_sessions.load(std::memory_order_acquire) != 0) {
+    std::cerr << "asio_timer_churn: incomplete run (remaining_sessions="
+              << st.remaining_sessions.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const ops_s = elapsed_s > 0.0 ? static_cast<double>(total_waits) / elapsed_s : 0.0;

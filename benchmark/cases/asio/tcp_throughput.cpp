@@ -22,6 +22,7 @@ namespace {
 struct bench_state {
   net::io_context* ioc = nullptr;
   std::atomic<int> remaining_events{0};
+  std::atomic<bool> failed{false};
   std::uint64_t bytes_per_session = 0;
   std::size_t chunk_bytes = 0;
 };
@@ -30,6 +31,13 @@ inline void mark_done(bench_state* st) {
   if (st->remaining_events.fetch_sub(1, std::memory_order_acq_rel) == 1) {
     st->ioc->stop();
   }
+}
+
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ioc->stop();
 }
 
 auto server_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
@@ -43,7 +51,11 @@ auto server_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
     auto n =
       co_await socket.async_read_some(net::buffer(read_buf.data(), to_read), net::redirect_error(use_awaitable, ec));
     if (ec || n == 0) {
-      st->ioc->stop();
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_throughput: server read failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_throughput: server read returned 0");
+      }
       co_return;
     }
     remaining -= static_cast<std::uint64_t>(n);
@@ -58,7 +70,7 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> awai
     boost::system::error_code ec;
     auto socket = co_await acceptor.async_accept(net::redirect_error(use_awaitable, ec));
     if (ec) {
-      st->ioc->stop();
+      fail_and_stop(st, "asio_tcp_throughput: accept failed: " + ec.message());
       co_return;
     }
     co_spawn(ex, server_session(std::move(socket), st), detached);
@@ -72,7 +84,7 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
   boost::system::error_code ec;
   co_await socket.async_connect(ep, net::redirect_error(use_awaitable, ec));
   if (ec) {
-    ioc.stop();
+    fail_and_stop(st, "asio_tcp_throughput: connect failed: " + ec.message());
     co_return;
   }
 
@@ -85,7 +97,11 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
     auto n =
       co_await net::async_write(socket, net::buffer(payload.data(), to_send), net::redirect_error(use_awaitable, ec));
     if (ec || n == 0) {
-      ioc.stop();
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_throughput: client write failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_throughput: client write returned 0");
+      }
       co_return;
     }
     remaining -= static_cast<std::uint64_t>(n);
@@ -144,6 +160,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ioc.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_events.load(std::memory_order_acquire) != 0) {
+    std::cerr << "asio_tcp_throughput: incomplete run (remaining_events="
+              << st.remaining_events.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const throughput_mib_s =
