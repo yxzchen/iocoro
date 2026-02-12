@@ -16,6 +16,7 @@ using iocoro::ip::udp;
 struct bench_state {
   iocoro::io_context* ctx = nullptr;
   std::atomic<int> remaining_events{0};
+  std::atomic<bool> failed{false};
   int msgs_per_session = 0;
   std::size_t msg_bytes = 0;
 };
@@ -26,6 +27,13 @@ inline void mark_done(bench_state* st) {
   }
 }
 
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ctx->stop();
+}
+
 auto server_session(udp::socket socket, bench_state* st)
   -> iocoro::awaitable<void> {
   std::vector<std::byte> buffer(st->msg_bytes);
@@ -33,12 +41,20 @@ auto server_session(udp::socket socket, bench_state* st)
   for (int i = 0; i < st->msgs_per_session; ++i) {
     auto r = co_await socket.async_receive_from(iocoro::net::buffer(buffer), src);
     if (!r || *r != buffer.size()) {
-      st->ctx->stop();
+      if (!r) {
+        fail_and_stop(st, "iocoro_udp_send_receive: server receive failed: " + r.error().message());
+      } else {
+        fail_and_stop(st, "iocoro_udp_send_receive: server receive size mismatch");
+      }
       co_return;
     }
     auto w = co_await socket.async_send_to(iocoro::net::buffer(buffer), src);
     if (!w || *w != buffer.size()) {
-      st->ctx->stop();
+      if (!w) {
+        fail_and_stop(st, "iocoro_udp_send_receive: server send failed: " + w.error().message());
+      } else {
+        fail_and_stop(st, "iocoro_udp_send_receive: server send size mismatch");
+      }
       co_return;
     }
   }
@@ -53,12 +69,20 @@ auto client_session(udp::socket socket, udp::endpoint destination, bench_state* 
   for (int i = 0; i < st->msgs_per_session; ++i) {
     auto w = co_await socket.async_send_to(iocoro::net::buffer(payload), destination);
     if (!w || *w != payload.size()) {
-      st->ctx->stop();
+      if (!w) {
+        fail_and_stop(st, "iocoro_udp_send_receive: client send failed: " + w.error().message());
+      } else {
+        fail_and_stop(st, "iocoro_udp_send_receive: client send size mismatch");
+      }
       co_return;
     }
     auto r = co_await socket.async_receive_from(iocoro::net::buffer(ack), src);
     if (!r || *r != ack.size()) {
-      st->ctx->stop();
+      if (!r) {
+        fail_and_stop(st, "iocoro_udp_send_receive: client receive failed: " + r.error().message());
+      } else {
+        fail_and_stop(st, "iocoro_udp_send_receive: client receive size mismatch");
+      }
       co_return;
     }
   }
@@ -154,6 +178,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ctx.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_events.load(std::memory_order_acquire) != 0) {
+    std::cerr << "iocoro_udp_send_receive: incomplete run (remaining_events="
+              << st.remaining_events.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const pps = elapsed_s > 0.0 ? static_cast<double>(total_messages) / elapsed_s : 0.0;

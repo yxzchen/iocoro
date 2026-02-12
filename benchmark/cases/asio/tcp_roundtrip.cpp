@@ -23,10 +23,18 @@ namespace {
 struct bench_state {
   net::io_context* ioc = nullptr;
   std::atomic<int> remaining_sessions{0};
+  std::atomic<bool> failed{false};
   int msgs_per_session = 0;
   std::size_t io_buffer_size = 4096;
   std::string msg{};
 };
+
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ioc->stop();
+}
 
 auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
   std::string buffer;
@@ -34,8 +42,21 @@ auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
   auto dbuf = net::dynamic_buffer(buffer, st->io_buffer_size);
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
-    auto n = co_await net::async_read_until(socket, dbuf, '\n', use_awaitable);
-    co_await net::async_write(socket, net::buffer(buffer.data(), n), use_awaitable);
+    boost::system::error_code ec;
+    auto n = co_await net::async_read_until(socket, dbuf, '\n', net::redirect_error(use_awaitable, ec));
+    if (ec) {
+      fail_and_stop(st, "asio_tcp_roundtrip: server read failed: " + ec.message());
+      co_return;
+    }
+    auto w = co_await net::async_write(socket, net::buffer(buffer.data(), n), net::redirect_error(use_awaitable, ec));
+    if (ec || w != n) {
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_roundtrip: server write failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_roundtrip: server write size mismatch");
+      }
+      co_return;
+    }
     dbuf.consume(n);
   }
 }
@@ -43,7 +64,12 @@ auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
 auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> awaitable<void> {
   auto ex = co_await net::this_coro::executor;
   for (int i = 0; i < sessions; ++i) {
-    tcp::socket socket = co_await acceptor.async_accept(use_awaitable);
+    boost::system::error_code ec;
+    auto socket = co_await acceptor.async_accept(net::redirect_error(use_awaitable, ec));
+    if (ec) {
+      fail_and_stop(st, "asio_tcp_roundtrip: accept failed: " + ec.message());
+      co_return;
+    }
     co_spawn(ex, echo_session(std::move(socket), st), detached);
   }
 }
@@ -52,15 +78,32 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
   auto ex = co_await net::this_coro::executor;
 
   tcp::socket socket{ex};
-  co_await socket.async_connect(ep, use_awaitable);
+  boost::system::error_code ec;
+  co_await socket.async_connect(ep, net::redirect_error(use_awaitable, ec));
+  if (ec) {
+    fail_and_stop(st, "asio_tcp_roundtrip: connect failed: " + ec.message());
+    co_return;
+  }
 
   std::string buffer;
   buffer.reserve(st->io_buffer_size);
   auto dbuf = net::dynamic_buffer(buffer, st->io_buffer_size);
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
-    co_await net::async_write(socket, net::buffer(st->msg), use_awaitable);
-    auto n = co_await net::async_read_until(socket, dbuf, '\n', use_awaitable);
+    auto w = co_await net::async_write(socket, net::buffer(st->msg), net::redirect_error(use_awaitable, ec));
+    if (ec || w != st->msg.size()) {
+      if (ec) {
+        fail_and_stop(st, "asio_tcp_roundtrip: client write failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_tcp_roundtrip: client write size mismatch");
+      }
+      co_return;
+    }
+    auto n = co_await net::async_read_until(socket, dbuf, '\n', net::redirect_error(use_awaitable, ec));
+    if (ec) {
+      fail_and_stop(st, "asio_tcp_roundtrip: client read failed: " + ec.message());
+      co_return;
+    }
     dbuf.consume(n);
   }
 
@@ -118,6 +161,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ioc.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_sessions.load(std::memory_order_acquire) != 0) {
+    std::cerr << "asio_tcp_roundtrip: incomplete run (remaining_sessions="
+              << st.remaining_sessions.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const rps = elapsed_s > 0.0 ? static_cast<double>(total_roundtrips) / elapsed_s : 0.0;

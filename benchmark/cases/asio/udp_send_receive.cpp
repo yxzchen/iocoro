@@ -21,6 +21,7 @@ namespace {
 struct bench_state {
   net::io_context* ioc = nullptr;
   std::atomic<int> remaining_events{0};
+  std::atomic<bool> failed{false};
   int msgs_per_session = 0;
   std::size_t msg_bytes = 0;
 };
@@ -29,6 +30,13 @@ inline void mark_done(bench_state* st) {
   if (st->remaining_events.fetch_sub(1, std::memory_order_acq_rel) == 1) {
     st->ioc->stop();
   }
+}
+
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ioc->stop();
 }
 
 auto server_session(udp::socket socket, bench_state* st)
@@ -40,13 +48,21 @@ auto server_session(udp::socket socket, bench_state* st)
     auto n = co_await socket.async_receive_from(net::buffer(buffer), src,
                                                 net::redirect_error(use_awaitable, ec));
     if (ec || n != buffer.size()) {
-      st->ioc->stop();
+      if (ec) {
+        fail_and_stop(st, "asio_udp_send_receive: server receive failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_udp_send_receive: server receive size mismatch");
+      }
       co_return;
     }
     n = co_await socket.async_send_to(net::buffer(buffer), src,
                                             net::redirect_error(use_awaitable, ec));
     if (ec || n != buffer.size()) {
-      st->ioc->stop();
+      if (ec) {
+        fail_and_stop(st, "asio_udp_send_receive: server send failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_udp_send_receive: server send size mismatch");
+      }
       co_return;
     }
   }
@@ -63,12 +79,20 @@ auto client_session(udp::socket socket, udp::endpoint destination, bench_state* 
     auto n =
       co_await socket.async_send_to(net::buffer(payload), destination, net::redirect_error(use_awaitable, ec));
     if (ec || n != payload.size()) {
-      st->ioc->stop();
+      if (ec) {
+        fail_and_stop(st, "asio_udp_send_receive: client send failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_udp_send_receive: client send size mismatch");
+      }
       co_return;
     }
     n = co_await socket.async_receive_from(net::buffer(ack), src, net::redirect_error(use_awaitable, ec));
     if (ec || n != ack.size()) {
-      st->ioc->stop();
+      if (ec) {
+        fail_and_stop(st, "asio_udp_send_receive: client receive failed: " + ec.message());
+      } else {
+        fail_and_stop(st, "asio_udp_send_receive: client receive size mismatch");
+      }
       co_return;
     }
   }
@@ -171,6 +195,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ioc.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_events.load(std::memory_order_acquire) != 0) {
+    std::cerr << "asio_udp_send_receive: incomplete run (remaining_events="
+              << st.remaining_events.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const pps = elapsed_s > 0.0 ? static_cast<double>(total_messages) / elapsed_s : 0.0;

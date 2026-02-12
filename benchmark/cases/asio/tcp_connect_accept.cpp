@@ -19,6 +19,7 @@ namespace {
 struct bench_state {
   net::io_context* ioc = nullptr;
   std::atomic<int> remaining_events{0};
+  std::atomic<bool> failed{false};
 };
 
 inline void mark_done(bench_state* st) {
@@ -27,12 +28,19 @@ inline void mark_done(bench_state* st) {
   }
 }
 
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ioc->stop();
+}
+
 auto accept_loop(tcp::acceptor& acceptor, int connections, bench_state* st) -> awaitable<void> {
   for (int i = 0; i < connections; ++i) {
     boost::system::error_code ec;
     auto socket = co_await acceptor.async_accept(net::redirect_error(use_awaitable, ec));
     if (ec) {
-      st->ioc->stop();
+      fail_and_stop(st, "asio_tcp_connect_accept: accept failed: " + ec.message());
       co_return;
     }
     mark_done(st);
@@ -46,7 +54,7 @@ auto client_once(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> awa
   boost::system::error_code ec;
   co_await socket.async_connect(ep, net::redirect_error(use_awaitable, ec));
   if (ec) {
-    ioc.stop();
+    fail_and_stop(st, "asio_tcp_connect_accept: connect failed: " + ec.message());
     co_return;
   }
   mark_done(st);
@@ -81,6 +89,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ioc.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_events.load(std::memory_order_acquire) != 0) {
+    std::cerr << "asio_tcp_connect_accept: incomplete run (remaining_events="
+              << st.remaining_events.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const cps = elapsed_s > 0.0 ? static_cast<double>(connections) / elapsed_s : 0.0;

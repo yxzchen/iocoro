@@ -14,6 +14,7 @@ using iocoro::ip::tcp;
 struct bench_state {
   iocoro::io_context* ctx = nullptr;
   std::atomic<int> remaining_events{0};
+  std::atomic<bool> failed{false};
 };
 
 inline void mark_done(bench_state* st) {
@@ -22,11 +23,19 @@ inline void mark_done(bench_state* st) {
   }
 }
 
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ctx->stop();
+}
+
 auto accept_loop(tcp::acceptor& acceptor, int connections, bench_state* st) -> iocoro::awaitable<void> {
   for (int i = 0; i < connections; ++i) {
     auto accepted = co_await acceptor.async_accept();
     if (!accepted) {
-      st->ctx->stop();
+      fail_and_stop(
+        st, "iocoro_tcp_connect_accept: accept failed: " + accepted.error().message());
       co_return;
     }
     mark_done(st);
@@ -37,7 +46,8 @@ auto client_once(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st) -> 
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
-    st->ctx->stop();
+    fail_and_stop(
+      st, "iocoro_tcp_connect_accept: connect failed: " + cr.error().message());
     co_return;
   }
   mark_done(st);
@@ -86,6 +96,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ctx.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_events.load(std::memory_order_acquire) != 0) {
+    std::cerr << "iocoro_tcp_connect_accept: incomplete run (remaining_events="
+              << st.remaining_events.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const cps = elapsed_s > 0.0 ? static_cast<double>(connections) / elapsed_s : 0.0;

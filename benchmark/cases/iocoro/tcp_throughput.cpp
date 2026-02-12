@@ -17,6 +17,7 @@ using iocoro::ip::tcp;
 struct bench_state {
   iocoro::io_context* ctx = nullptr;
   std::atomic<int> remaining_events{0};
+  std::atomic<bool> failed{false};
   std::uint64_t bytes_per_session = 0;
   std::size_t chunk_bytes = 0;
 };
@@ -25,6 +26,13 @@ inline void mark_done(bench_state* st) {
   if (st->remaining_events.fetch_sub(1, std::memory_order_acq_rel) == 1) {
     st->ctx->stop();
   }
+}
+
+inline void fail_and_stop(bench_state* st, std::string message) {
+  if (!st->failed.exchange(true, std::memory_order_acq_rel)) {
+    std::cerr << message << "\n";
+  }
+  st->ctx->stop();
 }
 
 auto server_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void> {
@@ -36,7 +44,11 @@ auto server_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<vo
       static_cast<std::size_t>(std::min<std::uint64_t>(remaining, read_buf.size()));
     auto r = co_await socket.async_read_some(iocoro::net::buffer(read_buf.data(), to_read));
     if (!r || *r == 0) {
-      st->ctx->stop();
+      if (!r) {
+        fail_and_stop(st, "iocoro_tcp_throughput: server read failed: " + r.error().message());
+      } else {
+        fail_and_stop(st, "iocoro_tcp_throughput: server read returned 0");
+      }
       co_return;
     }
     remaining -= static_cast<std::uint64_t>(*r);
@@ -50,7 +62,7 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> ioco
   for (int i = 0; i < sessions; ++i) {
     auto accepted = co_await acceptor.async_accept();
     if (!accepted) {
-      st->ctx->stop();
+      fail_and_stop(st, "iocoro_tcp_throughput: accept failed: " + accepted.error().message());
       co_return;
     }
     iocoro::co_spawn(ex, server_session(std::move(*accepted), st), iocoro::detached);
@@ -62,7 +74,7 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
-    ctx.stop();
+    fail_and_stop(st, "iocoro_tcp_throughput: connect failed: " + cr.error().message());
     co_return;
   }
 
@@ -73,7 +85,11 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
       static_cast<std::size_t>(std::min<std::uint64_t>(remaining, payload.size()));
     auto w = co_await iocoro::io::async_write(socket, iocoro::net::buffer(payload.data(), to_send));
     if (!w || *w == 0) {
-      ctx.stop();
+      if (!w) {
+        fail_and_stop(st, "iocoro_tcp_throughput: client write failed: " + w.error().message());
+      } else {
+        fail_and_stop(st, "iocoro_tcp_throughput: client write returned 0");
+      }
       co_return;
     }
     remaining -= static_cast<std::uint64_t>(*w);
@@ -146,6 +162,15 @@ int main(int argc, char* argv[]) {
   auto const start = std::chrono::steady_clock::now();
   ctx.run();
   auto const end = std::chrono::steady_clock::now();
+
+  if (st.failed.load(std::memory_order_acquire)) {
+    return 1;
+  }
+  if (st.remaining_events.load(std::memory_order_acquire) != 0) {
+    std::cerr << "iocoro_tcp_throughput: incomplete run (remaining_events="
+              << st.remaining_events.load(std::memory_order_relaxed) << ")\n";
+    return 1;
+  }
 
   auto const elapsed_s = std::chrono::duration<double>(end - start).count();
   auto const throughput_mib_s =
