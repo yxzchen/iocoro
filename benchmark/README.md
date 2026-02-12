@@ -24,11 +24,12 @@ Run all benchmark suites with one command:
 The unified runner executes:
 - `scripts/run_tcp_roundtrip_baseline.sh`
 - `scripts/run_tcp_connect_accept_baseline.sh`
-- `scripts/validate_perf_report.py` for both reports
+- `scripts/run_tcp_throughput_baseline.sh`
+- `scripts/validate_perf_report.py` for all reports
 
 Timeout options:
-- `--timeout-sec` applies to both suites.
-- `--roundtrip-timeout-sec` and `--connect-timeout-sec` can override per-suite.
+- `--timeout-sec` applies to all suites.
+- `--roundtrip-timeout-sec`, `--connect-timeout-sec`, and `--throughput-timeout-sec` can override per-suite.
 
 ## TCP roundtrip baseline runner
 
@@ -96,11 +97,45 @@ File: `benchmark/baselines/tcp_connect_accept_thresholds.txt`
 
 The gate compares `iocoro_cps_median / asio_cps_median` against `min_ratio_vs_asio`.
 
+## TCP throughput baseline runner
+
+Use `run_tcp_throughput_baseline.sh` to run `iocoro_tcp_throughput` and
+`asio_tcp_throughput` across session/transfer-size scenarios and aggregate median `throughput_mib_s`.
+
+Example:
+
+```bash
+./benchmark/scripts/run_tcp_throughput_baseline.sh \
+  --build-dir build \
+  --iterations 5 \
+  --warmup 1 \
+  --run-timeout-sec 120 \
+  --baseline benchmark/baselines/tcp_throughput_thresholds.txt \
+  --report benchmark/reports/throughput_report.json
+```
+
+Throughput scenarios are `sessions:bytes_per_session:chunk_bytes`.
+
+## TCP throughput threshold format
+
+File: `benchmark/baselines/tcp_throughput_thresholds.txt`
+
+```
+# sessions bytes_per_session chunk_bytes min_ratio_vs_asio
+1 16777216 16384 0.55
+8 4194304 16384 0.60
+32 1048576 8192 0.60
+```
+
+The gate compares
+`iocoro_throughput_mib_s_median / asio_throughput_mib_s_median` against `min_ratio_vs_asio`.
+
 ## Report schemas
 
 Schema files:
 - `benchmark/schemas/perf_report.schema.json`
 - `benchmark/schemas/connect_accept_report.schema.json`
+- `benchmark/schemas/throughput_report.schema.json`
 
 Validate a generated report:
 
@@ -114,4 +149,10 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/connect_accept_report.schema.json \
   --report benchmark/reports/connect_accept_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/throughput_report.schema.json \
+  --report benchmark/reports/throughput_report.json
 ```

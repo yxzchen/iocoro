@@ -12,20 +12,26 @@ ITERATIONS=5
 WARMUP=1
 ROUNDTRIP_SCENARIOS=""
 CONNECT_SCENARIOS=""
+THROUGHPUT_SCENARIOS=""
 ROUNDTRIP_TIMEOUT_SEC=60
 CONNECT_TIMEOUT_SEC=120
+THROUGHPUT_TIMEOUT_SEC=120
 TIMEOUT_SEC=""
 ROUNDTRIP_TIMEOUT_SET=false
 CONNECT_TIMEOUT_SET=false
+THROUGHPUT_TIMEOUT_SET=false
 ENABLE_BASELINE=true
 ENABLE_SCHEMA_VALIDATE=true
 
 ROUNDTRIP_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_roundtrip_thresholds.txt"
 CONNECT_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_connect_accept_thresholds.txt"
+THROUGHPUT_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_throughput_thresholds.txt"
 ROUNDTRIP_REPORT="$PROJECT_DIR/benchmark/reports/perf_report.json"
 CONNECT_REPORT="$PROJECT_DIR/benchmark/reports/connect_accept_report.json"
+THROUGHPUT_REPORT="$PROJECT_DIR/benchmark/reports/throughput_report.json"
 ROUNDTRIP_SUMMARY="$PROJECT_DIR/benchmark/reports/perf_summary.txt"
 CONNECT_SUMMARY="$PROJECT_DIR/benchmark/reports/connect_accept_summary.txt"
+THROUGHPUT_SUMMARY="$PROJECT_DIR/benchmark/reports/throughput_summary.txt"
 
 usage() {
   cat <<'EOF'
@@ -34,6 +40,7 @@ Usage: benchmark/scripts/run_all_perf_benchmarks.sh [options]
 Run all benchmark suites:
 - TCP roundtrip
 - TCP connect/accept
+- TCP throughput
 
 Options:
   --build-dir DIR             CMake build dir (default: ./build)
@@ -41,13 +48,16 @@ Options:
   --warmup N                  Warmup runs per scenario (default: 1)
   --roundtrip-scenarios LIST  Override roundtrip scenarios (sessions:msgs:msg_bytes tuples)
   --connect-scenarios LIST    Override connect scenarios (connection counts)
-  --timeout-sec N             Per-process timeout for both suites (0=disable)
+  --throughput-scenarios LIST Override throughput scenarios (sessions:bytes_per_session:chunk_bytes tuples)
+  --timeout-sec N             Per-process timeout for all suites (0=disable)
   --roundtrip-timeout-sec N   Per-process timeout override for roundtrip suite
   --connect-timeout-sec N     Per-process timeout override for connect suite
+  --throughput-timeout-sec N  Per-process timeout override for throughput suite
   --no-baseline               Disable regression gate (no threshold checks)
   --no-schema-validate        Skip JSON schema validation
   --roundtrip-report FILE     Roundtrip report path (default: benchmark/reports/perf_report.json)
   --connect-report FILE       Connect/accept report path (default: benchmark/reports/connect_accept_report.json)
+  --throughput-report FILE    Throughput report path (default: benchmark/reports/throughput_report.json)
   -h, --help                  Show this help
 EOF
 }
@@ -74,6 +84,10 @@ while [[ $# -gt 0 ]]; do
       CONNECT_SCENARIOS="$2"
       shift 2
       ;;
+    --throughput-scenarios)
+      THROUGHPUT_SCENARIOS="$2"
+      shift 2
+      ;;
     --roundtrip-timeout-sec)
       ROUNDTRIP_TIMEOUT_SEC="$2"
       ROUNDTRIP_TIMEOUT_SET=true
@@ -82,6 +96,11 @@ while [[ $# -gt 0 ]]; do
     --connect-timeout-sec)
       CONNECT_TIMEOUT_SEC="$2"
       CONNECT_TIMEOUT_SET=true
+      shift 2
+      ;;
+    --throughput-timeout-sec)
+      THROUGHPUT_TIMEOUT_SEC="$2"
+      THROUGHPUT_TIMEOUT_SET=true
       shift 2
       ;;
     --timeout-sec)
@@ -102,6 +121,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --connect-report)
       CONNECT_REPORT="$2"
+      shift 2
+      ;;
+    --throughput-report)
+      THROUGHPUT_REPORT="$2"
       shift 2
       ;;
     -h|--help)
@@ -127,17 +150,24 @@ fi
 if [[ -n "$TIMEOUT_SEC" && "$CONNECT_TIMEOUT_SET" == false ]]; then
   CONNECT_TIMEOUT_SEC="$TIMEOUT_SEC"
 fi
+if [[ -n "$TIMEOUT_SEC" && "$THROUGHPUT_TIMEOUT_SET" == false ]]; then
+  THROUGHPUT_TIMEOUT_SEC="$TIMEOUT_SEC"
+fi
 bench_require_non_negative_int "--roundtrip-timeout-sec" "$ROUNDTRIP_TIMEOUT_SEC"
 bench_require_non_negative_int "--connect-timeout-sec" "$CONNECT_TIMEOUT_SEC"
+bench_require_non_negative_int "--throughput-timeout-sec" "$THROUGHPUT_TIMEOUT_SEC"
 
 BUILD_DIR="$(bench_to_abs_path "$PROJECT_DIR" "$BUILD_DIR")"
 ROUNDTRIP_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$ROUNDTRIP_REPORT")"
 CONNECT_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$CONNECT_REPORT")"
+THROUGHPUT_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$THROUGHPUT_REPORT")"
 
 ROUNDTRIP_SUMMARY="$(dirname -- "$ROUNDTRIP_REPORT")/perf_summary.txt"
 CONNECT_SUMMARY="$(dirname -- "$CONNECT_REPORT")/connect_accept_summary.txt"
+THROUGHPUT_SUMMARY="$(dirname -- "$THROUGHPUT_REPORT")/throughput_summary.txt"
 mkdir -p "$(dirname -- "$ROUNDTRIP_REPORT")"
 mkdir -p "$(dirname -- "$CONNECT_REPORT")"
+mkdir -p "$(dirname -- "$THROUGHPUT_REPORT")"
 
 roundtrip_cmd=(
   "$SCRIPT_DIR/run_tcp_roundtrip_baseline.sh"
@@ -169,6 +199,21 @@ if [[ "$ENABLE_BASELINE" == true ]]; then
   connect_cmd+=(--baseline "$CONNECT_BASELINE")
 fi
 
+throughput_cmd=(
+  "$SCRIPT_DIR/run_tcp_throughput_baseline.sh"
+  --build-dir "$BUILD_DIR"
+  --iterations "$ITERATIONS"
+  --warmup "$WARMUP"
+  --run-timeout-sec "$THROUGHPUT_TIMEOUT_SEC"
+  --report "$THROUGHPUT_REPORT"
+)
+if [[ -n "$THROUGHPUT_SCENARIOS" ]]; then
+  throughput_cmd+=(--scenarios "$THROUGHPUT_SCENARIOS")
+fi
+if [[ "$ENABLE_BASELINE" == true ]]; then
+  throughput_cmd+=(--baseline "$THROUGHPUT_BASELINE")
+fi
+
 echo "Running full benchmark suite"
 echo "  build_dir: $BUILD_DIR"
 echo "  iterations: $ITERATIONS, warmup: $WARMUP"
@@ -180,6 +225,8 @@ echo
 
 "${connect_cmd[@]}" | tee "$CONNECT_SUMMARY"
 
+"${throughput_cmd[@]}" | tee "$THROUGHPUT_SUMMARY"
+
 if [[ "$ENABLE_SCHEMA_VALIDATE" == true ]]; then
   python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/perf_report.schema.json" \
@@ -188,11 +235,17 @@ if [[ "$ENABLE_SCHEMA_VALIDATE" == true ]]; then
   python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/connect_accept_report.schema.json" \
     --report "$CONNECT_REPORT"
+
+  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+    --schema "$PROJECT_DIR/benchmark/schemas/throughput_report.schema.json" \
+    --report "$THROUGHPUT_REPORT"
 fi
 
 echo
 echo "Benchmark suite completed"
 echo "  roundtrip report: $ROUNDTRIP_REPORT"
 echo "  connect report  : $CONNECT_REPORT"
+echo "  throughput report: $THROUGHPUT_REPORT"
 echo "  roundtrip summary: $ROUNDTRIP_SUMMARY"
 echo "  connect summary  : $CONNECT_SUMMARY"
+echo "  throughput summary: $THROUGHPUT_SUMMARY"

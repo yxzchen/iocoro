@@ -125,7 +125,7 @@ Build benchmarks:
 
 ### Performance baseline, gate, and observability
 
-Run the full benchmark suite (roundtrip + connect/accept):
+Run the full benchmark suite (roundtrip + connect/accept + throughput):
 
 ```bash
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
@@ -155,6 +155,16 @@ Run TCP connect/accept benchmark matrix:
   --report benchmark/reports/connect_accept_report.json
 ```
 
+Run TCP throughput benchmark matrix:
+
+```bash
+./benchmark/scripts/run_tcp_throughput_baseline.sh \
+  --build-dir build \
+  --run-timeout-sec 180 \
+  --baseline benchmark/baselines/tcp_throughput_thresholds.txt \
+  --report benchmark/reports/throughput_report.json
+```
+
 Validate report schemas:
 
 ```bash
@@ -167,6 +177,12 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/connect_accept_report.schema.json \
   --report benchmark/reports/connect_accept_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/throughput_report.schema.json \
+  --report benchmark/reports/throughput_report.json
 ```
 
 ## License
