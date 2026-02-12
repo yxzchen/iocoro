@@ -12,4 +12,7 @@ make_example(hello_io_context)
 make_example(tcp_echo_server)
 make_example(tcp_echo_client)
 make_example(switch_executor)
-
+make_example(tcp_timeout_cancel_client)
+make_example(tcp_line_chat)
+make_example(tcp_graceful_shutdown)
+make_example(udp_echo_server_client)
