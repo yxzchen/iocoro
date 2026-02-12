@@ -175,7 +175,7 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
   }
 
   for (;;) {
-    if (res->closing()) {
+    if (!send_op_.is_epoch_current(my_epoch) || res->closing()) {
       co_return unexpected(error::operation_aborted);
     }
 
@@ -242,7 +242,7 @@ inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer
   }
 
   for (;;) {
-    if (res->closing()) {
+    if (!receive_op_.is_epoch_current(my_epoch) || res->closing()) {
       co_return unexpected(error::operation_aborted);
     }
 

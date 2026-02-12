@@ -103,7 +103,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   auto ec = std::error_code{};
 
   for (;;) {
-    if (res->closing()) {
+    if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
       std::scoped_lock lk{mtx_};
       state_ = conn_state::disconnected;
       co_return fail(error::operation_aborted);
@@ -259,7 +259,7 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   }
 
   for (;;) {
-    if (res->closing()) {
+    if (!read_op_.is_epoch_current(my_epoch) || res->closing()) {
       co_return unexpected(error::operation_aborted);
     }
 
@@ -323,7 +323,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
   }
 
   for (;;) {
-    if (res->closing()) {
+    if (!write_op_.is_epoch_current(my_epoch) || res->closing()) {
       co_return unexpected(error::operation_aborted);
     }
 
