@@ -50,7 +50,7 @@ template <async_write_stream Stream>
 
 template <async_write_stream Stream>
 [[nodiscard]] auto async_write(Stream& s, net::const_buffer buf) -> awaitable<result<std::size_t>> {
-  co_return co_await async_write(s, buf.as_span());
+  return async_write(s, buf.as_span());
 }
 
 }  // namespace iocoro::io

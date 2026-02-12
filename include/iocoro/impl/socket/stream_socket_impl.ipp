@@ -33,15 +33,12 @@ inline void stream_socket_impl::cancel_connect() noexcept {
 }
 
 inline auto stream_socket_impl::close() noexcept -> result<void> {
-  {
-    std::scoped_lock lk{mtx_};
-    read_op_.cancel();
-    write_op_.cancel();
-    connect_op_.cancel();
-    state_ = conn_state::disconnected;
-    shutdown_ = {};
-    // NOTE: do not touch active flags here; their owner is the coroutine.
-  }
+  read_op_.cancel();
+  write_op_.cancel();
+  connect_op_.cancel();
+  state_.store(conn_state::disconnected, std::memory_order_release);
+  shutdown_.read.store(false, std::memory_order_release);
+  shutdown_.write.store(false, std::memory_order_release);
 
   // Best-effort: push peer-observable shutdown before logical close.
   auto res = base_.acquire_resource();
@@ -88,33 +85,32 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (connect_op_.active) {
+    if (!connect_op_.try_start(my_epoch)) {
       co_return fail(error::busy);
     }
-    if (state_ == conn_state::connecting) {
+    auto const state = state_.load(std::memory_order_acquire);
+    if (state == conn_state::connecting) {
       co_return fail(error::busy);
     }
-    if (state_ == conn_state::connected) {
+    if (state == conn_state::connected) {
       co_return fail(error::already_connected);
     }
-    connect_op_.active = true;
-    state_ = conn_state::connecting;
-    my_epoch = connect_op_.epoch.load(std::memory_order_acquire);
+    state_.store(conn_state::connecting, std::memory_order_release);
+    shutdown_.read.store(false, std::memory_order_release);
+    shutdown_.write.store(false, std::memory_order_release);
   }
 
-  auto connect_guard = detail::make_scope_exit([this] { connect_op_.finish(mtx_); });
+  auto connect_guard = detail::make_scope_exit([this] { connect_op_.finish(); });
   auto ec = std::error_code{};
 
   for (;;) {
     if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
-      std::scoped_lock lk{mtx_};
-      state_ = conn_state::disconnected;
+      state_.store(conn_state::disconnected, std::memory_order_release);
       co_return fail(error::operation_aborted);
     }
 
     if (::connect(fd, addr, len) == 0) {
-      std::scoped_lock lk{mtx_};
-      state_ = conn_state::connected;
+      state_.store(conn_state::connected, std::memory_order_release);
       co_return ok();
     }
     if (errno == EINTR) {
@@ -124,8 +120,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
       break;
     }
     ec = map_socket_errno(errno);
-    std::scoped_lock lk{mtx_};
-    state_ = conn_state::disconnected;
+    state_.store(conn_state::disconnected, std::memory_order_release);
     co_return fail(ec);
   }
 
@@ -157,32 +152,28 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   if (is_loopback(addr, len)) {
     if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
       ec = map_socket_errno(errno);
-      std::scoped_lock lk{mtx_};
-      state_ = conn_state::disconnected;
+      state_.store(conn_state::disconnected, std::memory_order_release);
       co_return fail(ec);
     }
     if (so_error != 0 && so_error != EINPROGRESS) {
       ec = map_socket_errno(so_error);
-      std::scoped_lock lk{mtx_};
-      state_ = conn_state::disconnected;
+      state_.store(conn_state::disconnected, std::memory_order_release);
       co_return fail(ec);
     }
     if (so_error == 0) {
       sockaddr_storage peer{};
       socklen_t peer_len = sizeof(peer);
       if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peer), &peer_len) == 0) {
-        std::scoped_lock lk{mtx_};
         if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
-          state_ = conn_state::disconnected;
+          state_.store(conn_state::disconnected, std::memory_order_release);
           co_return fail(error::operation_aborted);
         }
-        state_ = conn_state::connected;
+        state_.store(conn_state::connected, std::memory_order_release);
         co_return ok();
       }
       if (errno != ENOTCONN) {
         ec = map_socket_errno(errno);
-        std::scoped_lock lk{mtx_};
-        state_ = conn_state::disconnected;
+        state_.store(conn_state::disconnected, std::memory_order_release);
         co_return fail(ec);
       }
     }
@@ -191,15 +182,13 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   auto wait_r = co_await base_.wait_write_ready(res);
   if (!wait_r) {
     if (wait_r.error() != error::eof && wait_r.error() != error::connection_reset) {
-      std::scoped_lock lk{mtx_};
-      state_ = conn_state::disconnected;
+      state_.store(conn_state::disconnected, std::memory_order_release);
       co_return fail(wait_r.error());
     }
   }
 
   if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
-    std::scoped_lock lk{mtx_};
-    state_ = conn_state::disconnected;
+    state_.store(conn_state::disconnected, std::memory_order_release);
     co_return fail(error::operation_aborted);
   }
 
@@ -207,25 +196,20 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   optlen = sizeof(so_error);
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
     ec = map_socket_errno(errno);
-    std::scoped_lock lk{mtx_};
-    state_ = conn_state::disconnected;
+    state_.store(conn_state::disconnected, std::memory_order_release);
     co_return fail(ec);
   }
   if (so_error != 0) {
     ec = map_socket_errno(so_error);
-    std::scoped_lock lk{mtx_};
-    state_ = conn_state::disconnected;
+    state_.store(conn_state::disconnected, std::memory_order_release);
     co_return fail(ec);
   }
 
-  {
-    std::scoped_lock lk{mtx_};
-    if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
-      state_ = conn_state::disconnected;
-      co_return fail(error::operation_aborted);
-    }
-    state_ = conn_state::connected;
+  if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
+    state_.store(conn_state::disconnected, std::memory_order_release);
+    co_return fail(error::operation_aborted);
   }
+  state_.store(conn_state::connected, std::memory_order_release);
   co_return ok();
 }
 
@@ -243,22 +227,17 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;
-  {
-    std::scoped_lock lk{mtx_};
-    if (state_ != conn_state::connected) {
-      co_return unexpected(error::not_connected);
-    }
-    if (shutdown_.read) {
-      co_return 0;
-    }
-    if (read_op_.active) {
-      co_return unexpected(error::busy);
-    }
-    read_op_.active = true;
-    my_epoch = read_op_.epoch.load(std::memory_order_acquire);
+  if (state_.load(std::memory_order_acquire) != conn_state::connected) {
+    co_return unexpected(error::not_connected);
+  }
+  if (shutdown_.read.load(std::memory_order_acquire)) {
+    co_return 0;
+  }
+  if (!read_op_.try_start(my_epoch)) {
+    co_return unexpected(error::busy);
   }
 
-  auto guard = detail::make_scope_exit([this] { read_op_.finish(mtx_); });
+  auto guard = detail::make_scope_exit([this] { read_op_.finish(); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -310,22 +289,17 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
   auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;
-  {
-    std::scoped_lock lk{mtx_};
-    if (state_ != conn_state::connected) {
-      co_return unexpected(error::not_connected);
-    }
-    if (shutdown_.write) {
-      co_return unexpected(error::broken_pipe);
-    }
-    if (write_op_.active) {
-      co_return unexpected(error::busy);
-    }
-    write_op_.active = true;
-    my_epoch = write_op_.epoch.load(std::memory_order_acquire);
+  if (state_.load(std::memory_order_acquire) != conn_state::connected) {
+    co_return unexpected(error::not_connected);
+  }
+  if (shutdown_.write.load(std::memory_order_acquire)) {
+    co_return unexpected(error::broken_pipe);
+  }
+  if (!write_op_.try_start(my_epoch)) {
+    co_return unexpected(error::busy);
   }
 
-  auto guard = detail::make_scope_exit([this] { write_op_.finish(mtx_); });
+  auto guard = detail::make_scope_exit([this] { write_op_.finish(); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -383,16 +357,13 @@ inline auto stream_socket_impl::shutdown(shutdown_type what) -> result<void> {
     return fail(map_socket_errno(errno));
   }
 
-  {
-    std::scoped_lock lk{mtx_};
-    if (what == shutdown_type::receive) {
-      shutdown_.read = true;
-    } else if (what == shutdown_type::send) {
-      shutdown_.write = true;
-    } else {
-      shutdown_.read = true;
-      shutdown_.write = true;
-    }
+  if (what == shutdown_type::receive) {
+    shutdown_.read.store(true, std::memory_order_release);
+  } else if (what == shutdown_type::send) {
+    shutdown_.write.store(true, std::memory_order_release);
+  } else {
+    shutdown_.read.store(true, std::memory_order_release);
+    shutdown_.write.store(true, std::memory_order_release);
   }
   return ok();
 }
