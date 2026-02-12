@@ -70,8 +70,14 @@ inline auto io_context_impl::run() -> std::size_t {
   set_thread_id();
 
   std::size_t count = 0;
-  while (!is_stopped() && has_work()) {
+  while (true) {
+    if (is_stopped() || !has_work()) {
+      break;
+    }
     count += process_posted();
+    if (is_stopped() || !has_work()) {
+      break;
+    }
     count += process_timers();
     if (is_stopped() || !has_work()) {
       break;
@@ -92,19 +98,19 @@ inline auto io_context_impl::run_one() -> std::size_t {
     [this]() noexcept { running_.store(false, std::memory_order_release); });
   set_thread_id();
 
-  std::size_t count = process_posted();
-  if (count > 0) {
-    return count;
-  }
-
-  count += process_timers();
-  if (count > 0) {
-    return count;
-  }
-
   if (is_stopped() || !has_work()) {
     return 0;
   }
+
+  std::size_t count;
+  if (count = process_posted(); count > 0) {
+    return count;
+  }
+
+  if (count = process_timers(); count > 0) {
+    return count;
+  }
+
   return process_events(next_wait(std::nullopt));
 }
 
@@ -118,12 +124,20 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
   auto const deadline = std::chrono::steady_clock::now() + timeout;
   std::size_t count = 0;
 
-  while (!is_stopped() && has_work()) {
+  while (true) {
     if (std::chrono::steady_clock::now() >= deadline) {
       break;
     }
 
+    if (is_stopped() || !has_work()) {
+      break;
+    }
+
     count += process_posted();
+    if (is_stopped() || !has_work()) {
+      break;
+    }
+
     count += process_timers();
     if (is_stopped() || !has_work()) {
       break;
@@ -207,7 +221,6 @@ inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point exp
   }
   auto token = timers_.add_timer(expiry, std::move(op));
   auto h = event_handle::make_timer(weak_from_this(), token.index, token.generation);
-  wakeup();
   return h;
 }
 
@@ -217,9 +230,6 @@ inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint64_t gen
   dispatch_reactor([index, generation](io_context_impl& self) mutable noexcept {
     auto res = self.timers_.cancel(timer_registry::timer_token{index, generation});
     abort_op(std::move(res.op), error::operation_aborted);
-    if (res.cancelled) {
-      self.wakeup();
-    }
   });
 }
 
@@ -230,8 +240,7 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> even
   }
   auto result = fd_registry_.register_read(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
-  wakeup();
-  if (result.token == 0) {
+  if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
   return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::read, result.token);
@@ -244,42 +253,30 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   }
   auto result = fd_registry_.register_write(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
-  wakeup();
-  if (result.token == 0) {
+  if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
   return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::write, result.token);
 }
 
-inline auto io_context_impl::arm_fd_interest(int fd) noexcept -> result<void> {
+inline auto io_context_impl::add_fd(int fd) noexcept -> bool {
   if (fd < 0) {
-    return fail(error::invalid_argument);
+    return false;
   }
   try {
-    apply_fd_interest(fd, fd_interest{true, true});
+    backend_->add_fd(fd);
   } catch (...) {
-    return fail(error::internal_error);
+    return false;
   }
   wakeup();
-  return ok();
+  return true;
 }
 
-inline void io_context_impl::disarm_fd_interest(int fd) noexcept {
+inline void io_context_impl::remove_fd(int fd) noexcept {
   if (fd < 0) {
     return;
   }
-  backend_->remove_fd_interest(fd);
-}
-
-inline void io_context_impl::deregister_fd(int fd) {
-  if (running_.load(std::memory_order_acquire)) {
-    IOCORO_ENSURE(running_in_this_thread(),
-                  "io_context_impl::deregister_fd(): must run on io_context thread");
-  }
-  auto removed = fd_registry_.deregister(fd);
-  abort_op(std::move(removed.read), error::operation_aborted);
-  abort_op(std::move(removed.write), error::operation_aborted);
-  wakeup();
+  backend_->remove_fd(fd);
 }
 
 inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,
@@ -310,11 +307,11 @@ inline void io_context_impl::cancel_event(event_handle h) noexcept {
 }
 
 inline void io_context_impl::add_work_guard() noexcept {
-  posted_.add_work_guard();
+  work_guard_.add();
 }
 
 inline void io_context_impl::remove_work_guard() noexcept {
-  auto const old = posted_.remove_work_guard();
+  auto const old = work_guard_.remove();
   if (old == 1) {
     wakeup();
   }
@@ -323,13 +320,13 @@ inline void io_context_impl::remove_work_guard() noexcept {
 inline auto io_context_impl::process_timers() -> std::size_t {
   IOCORO_ENSURE(running_in_this_thread(),
                 "io_context_impl::process_timers(): must run on io_context thread");
-  return timers_.process_expired(is_stopped());
+  return timers_.process_expired();
 }
 
 inline auto io_context_impl::process_posted() -> std::size_t {
   IOCORO_ENSURE(running_in_this_thread(),
                 "io_context_impl::process_posted(): must run on io_context thread");
-  return posted_.process(is_stopped());
+  return posted_.process();
 }
 
 inline auto io_context_impl::next_wait(
@@ -351,7 +348,8 @@ inline auto io_context_impl::next_wait(
 }
 
 inline auto io_context_impl::has_work() -> bool {
-  return posted_.has_work() || !timers_.empty() || !fd_registry_.empty();
+  return work_guard_.has_work() || posted_.has_pending_tasks() || !timers_.empty() ||
+         !fd_registry_.empty();
 }
 
 inline auto io_context_impl::process_events(std::optional<std::chrono::milliseconds> max_wait)
@@ -368,7 +366,7 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
 
     auto drained = fd_registry_.drain_all();
     for (int fd : drained.fds) {
-      backend_->remove_fd_interest(fd);
+      backend_->remove_fd(fd);
     }
     for (auto& op : drained.ops) {
       abort_op(std::move(op), ec);
@@ -413,14 +411,6 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
 
 inline void io_context_impl::wakeup() {
   backend_->wakeup();
-}
-
-inline void io_context_impl::apply_fd_interest(int fd, fd_interest interest) {
-  if (interest.want_read || interest.want_write) {
-    backend_->update_fd_interest(fd, interest.want_read, interest.want_write);
-  } else {
-    backend_->remove_fd_interest(fd);
-  }
 }
 
 inline void event_handle::cancel() const noexcept {

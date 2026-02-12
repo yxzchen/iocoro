@@ -50,9 +50,12 @@ class thread_pool {
 
   auto get_executor() noexcept -> executor_type;
 
-  /// Stop accepting new tasks and wake workers (idempotent).
+  /// Stop accepting new tasks and transition to draining mode (idempotent).
   ///
-  /// IMPORTANT: already-queued tasks are not guaranteed to run after `stop()`.
+  /// Draining semantics:
+  /// - New tasks posted after `stop()` are dropped.
+  /// - Already-queued tasks may continue to run while workers are active.
+  /// - Workers exit once queue is empty and work_guard count reaches zero.
   void stop() noexcept;
 
   /// Join all worker threads (idempotent).
@@ -68,19 +71,20 @@ class thread_pool {
  private:
   enum class state_t : std::uint8_t { running, draining, stopped };
 
-  mutable std::mutex cv_mutex_;
-  std::condition_variable cv_;
-  std::deque<detail::unique_function<void()>> queue_;
+  struct shared_state {
+    mutable std::mutex cv_mutex{};
+    std::condition_variable cv{};
+    std::deque<detail::unique_function<void()>> queue{};
+    state_t state{state_t::running};
+    detail::work_guard_counter work_guard{};
+    std::atomic<std::shared_ptr<exception_handler_t>> on_task_exception{};
+  };
 
-  state_t state_{state_t::running};
-  detail::work_guard_counter work_guard_;
-
+  std::shared_ptr<shared_state> state_{};
   std::size_t n_threads_{0};
-  std::atomic<std::shared_ptr<exception_handler_t>> on_task_exception_{};
-
   std::vector<std::thread> threads_;
 
-  static void worker_loop(thread_pool* pool, std::size_t index);
+  static void worker_loop(std::shared_ptr<shared_state> state, std::size_t index);
 };
 
 /// A lightweight executor that schedules work onto a thread_pool.
@@ -89,7 +93,7 @@ class thread_pool {
 class thread_pool::executor_type {
  public:
   executor_type() noexcept = default;
-  explicit executor_type(thread_pool* pool) noexcept : pool_(pool) {}
+  explicit executor_type(std::shared_ptr<shared_state> state) noexcept : state_(std::move(state)) {}
 
   executor_type(executor_type const&) noexcept = default;
   auto operator=(executor_type const&) noexcept -> executor_type& = default;
@@ -97,7 +101,7 @@ class thread_pool::executor_type {
   auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
   void post(detail::unique_function<void()> f) const noexcept {
-    if (!pool_) {
+    if (!state_) {
       return;
     }
 
@@ -106,17 +110,17 @@ class thread_pool::executor_type {
       fn();
     }};
     {
-      std::scoped_lock lock{pool_->cv_mutex_};
-      if (pool_->state_ != state_t::running) {
+      std::scoped_lock lock{state_->cv_mutex};
+      if (state_->state != state_t::running) {
         return;
       }
-      pool_->queue_.emplace_back(std::move(task));
+      state_->queue.emplace_back(std::move(task));
     }
-    pool_->cv_.notify_one();
+    state_->cv.notify_one();
   }
 
   void dispatch(detail::unique_function<void()> f) const noexcept {
-    if (!pool_) {
+    if (!state_) {
       return;
     }
 
@@ -124,7 +128,18 @@ class thread_pool::executor_type {
     if (cur_any) {
       auto const* cur = detail::any_executor_access::target<executor_type>(cur_any);
       if (cur != nullptr && (*cur == *this)) {
-        f();
+        try {
+          f();
+        } catch (...) {
+          auto handler_ptr = state_->on_task_exception.load(std::memory_order_acquire);
+          if (handler_ptr) {
+            try {
+              (*handler_ptr)(std::current_exception());
+            } catch (...) {
+              // Swallow exceptions from handler to preserve noexcept behavior.
+            }
+          }
+        }
         return;
       }
     }
@@ -134,17 +149,17 @@ class thread_pool::executor_type {
 
   /// True if the pool has been stopped (or this executor is empty).
   auto stopped() const noexcept -> bool {
-    if (!pool_) {
+    if (!state_) {
       return true;
     }
-    std::scoped_lock lock{pool_->cv_mutex_};
-    return pool_->state_ != state_t::running;
+    std::scoped_lock lock{state_->cv_mutex};
+    return state_->state != state_t::running;
   }
 
-  explicit operator bool() const noexcept { return pool_ != nullptr; }
+  explicit operator bool() const noexcept { return state_ != nullptr; }
 
   friend auto operator==(executor_type const& a, executor_type const& b) noexcept -> bool {
-    return a.pool_ == b.pool_;
+    return a.state_.get() == b.state_.get();
   }
   friend auto operator!=(executor_type const& a, executor_type const& b) noexcept -> bool {
     return !(a == b);
@@ -154,21 +169,21 @@ class thread_pool::executor_type {
   friend class work_guard<executor_type>;
 
   void add_work_guard() const noexcept {
-    if (pool_) {
-      pool_->work_guard_.add();
+    if (state_) {
+      state_->work_guard.add();
     }
   }
 
   void remove_work_guard() const noexcept {
-    if (pool_) {
-      auto const old = pool_->work_guard_.remove();
+    if (state_) {
+      auto const old = state_->work_guard.remove();
       if (old == 1) {
-        pool_->cv_.notify_all();
+        state_->cv.notify_all();
       }
     }
   }
 
-  thread_pool* pool_{nullptr};
+  std::shared_ptr<shared_state> state_{};
 };
 
 }  // namespace iocoro

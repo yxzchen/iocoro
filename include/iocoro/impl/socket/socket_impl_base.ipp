@@ -45,10 +45,9 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
   }
 
   if (opened) {
-    auto const reg = ctx_impl_->arm_fd_interest(fd);
-    if (!reg) {
+    if (!ctx_impl_->add_fd(fd)) {
       (void)close();
-      return reg;
+      return fail(error::internal_error);
     }
     return ok();
   }
@@ -85,7 +84,7 @@ inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
   rh.cancel();
   wh.cancel();
   if (old_fd >= 0) {
-    ctx_impl_->disarm_fd_interest(old_fd);
+    ctx_impl_->remove_fd(old_fd);
     (void)::close(old_fd);
   }
 
@@ -104,10 +103,9 @@ inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
   }
 
   if (assigned) {
-    auto const reg = ctx_impl_->arm_fd_interest(fd);
-    if (!reg) {
+    if (!ctx_impl_->add_fd(fd)) {
       (void)close();
-      return reg;
+      return fail(error::internal_error);
     }
     return ok();
   }
@@ -179,7 +177,7 @@ inline auto socket_impl_base::close() noexcept -> result<void> {
   rh.cancel();
   wh.cancel();
   if (fd >= 0) {
-    ctx_impl_->disarm_fd_interest(fd);
+    ctx_impl_->remove_fd(fd);
     for (;;) {
       if (::close(fd) == 0) {
         break;
@@ -211,7 +209,7 @@ inline auto socket_impl_base::release() noexcept -> int {
   rh.cancel();
   wh.cancel();
   if (fd >= 0) {
-    ctx_impl_->disarm_fd_interest(fd);
+    ctx_impl_->remove_fd(fd);
   }
   return fd;
 }

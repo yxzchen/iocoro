@@ -6,7 +6,7 @@
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/timer_registry.hpp>
 #include <iocoro/detail/unique_function.hpp>
-#include <iocoro/result.hpp>
+#include <iocoro/detail/work_guard_counter.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -59,10 +59,8 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
 
   auto register_fd_read(int fd, reactor_op_ptr op) -> event_handle;
   auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
-  void deregister_fd(int fd);
-
-  auto arm_fd_interest(int fd) noexcept -> result<void>;
-  void disarm_fd_interest(int fd) noexcept;
+  auto add_fd(int fd) noexcept -> bool;
+  void remove_fd(int fd) noexcept;
 
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
 
@@ -104,8 +102,6 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   // Abort a reactor op. Must only be called on the reactor thread.
   static void abort_op(reactor_op_ptr op, std::error_code ec) noexcept;
 
-  void apply_fd_interest(int fd, fd_interest interest);
-
   std::unique_ptr<backend_interface> backend_;
 
   std::atomic<bool> stopped_{false};
@@ -116,6 +112,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   fd_registry fd_registry_{};
   timer_registry timers_{};
   posted_queue posted_{};
+  work_guard_counter work_guard_{};
   std::vector<backend_event> backend_events_{};
   std::atomic<std::uintptr_t> thread_token_{0};
 };

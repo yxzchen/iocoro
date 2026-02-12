@@ -8,36 +8,26 @@
 
 namespace iocoro::detail {
 
-struct fd_interest {
-  bool want_read = false;
-  bool want_write = false;
-};
-
 class fd_registry {
  public:
-  static constexpr std::uint64_t invalid_token = 0;
   struct ready_result {
     reactor_op_ptr read{};
     reactor_op_ptr write{};
-    fd_interest interest{};
   };
 
   struct register_result {
     std::uint64_t token = 0;
     reactor_op_ptr replaced{};
-    fd_interest interest{};
   };
 
   struct cancel_result {
     reactor_op_ptr removed{};
-    fd_interest interest{};
     bool matched = false;
   };
 
   struct deregister_result {
     reactor_op_ptr read{};
     reactor_op_ptr write{};
-    fd_interest interest{};
     bool had_any = false;
   };
 
@@ -87,10 +77,6 @@ class fd_registry {
     return slot_ref{&ops.write_op, &ops.write_token};
   }
 
-  auto interest_for(fd_ops const& ops) const noexcept -> fd_interest {
-    return fd_interest{ops.read_op != nullptr, ops.write_op != nullptr};
-  }
-
   auto register_impl(int fd, reactor_op_ptr op, fd_event_kind kind) -> register_result;
   void trim_tail(std::size_t fd_index);
 
@@ -115,7 +101,6 @@ inline auto fd_registry::register_write(int fd, reactor_op_ptr op) -> register_r
 inline auto fd_registry::register_impl(int fd, reactor_op_ptr op, fd_event_kind kind)
   -> register_result {
   reactor_op_ptr old{};
-  fd_interest interest{};
   std::uint64_t token = 0;
 
   if (fd < 0) {
@@ -144,15 +129,12 @@ inline auto fd_registry::register_impl(int fd, reactor_op_ptr op, fd_event_kind 
     --active_count_;
   }
   old = std::exchange(*slot.op, std::move(op));
-  interest = interest_for(ops);
-
-  return register_result{token, std::move(old), interest};
+  return register_result{token, std::move(old)};
 }
 
 inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token) noexcept
   -> cancel_result {
   reactor_op_ptr removed{};
-  fd_interest interest{};
   bool matched = false;
 
   if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
@@ -163,7 +145,7 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
   auto slot = slot_for(ops, kind);
   if (*slot.op && *slot.token == token) {
     removed = std::move(*slot.op);
-    *slot.token = 0;
+    *slot.token = invalid_token;
     matched = true;
     --active_count_;
   }
@@ -172,12 +154,11 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token)
     return cancel_result{};
   }
 
-  interest = interest_for(ops);
   if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
     trim_tail(static_cast<std::size_t>(fd));
   }
 
-  return cancel_result{std::move(removed), interest, matched};
+  return cancel_result{std::move(removed), matched};
 }
 
 inline auto fd_registry::deregister(int fd) -> deregister_result {
@@ -190,8 +171,8 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
     read = std::move(ops.read_op);
     write = std::move(ops.write_op);
     had_any = static_cast<bool>(read) || static_cast<bool>(write);
-    ops.read_token = 0;
-    ops.write_token = 0;
+    ops.read_token = invalid_token;
+    ops.write_token = invalid_token;
     if (read) {
       --active_count_;
     }
@@ -203,13 +184,12 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
     }
   }
 
-  return deregister_result{std::move(read), std::move(write), fd_interest{}, had_any};
+  return deregister_result{std::move(read), std::move(write), had_any};
 }
 
 inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> ready_result {
   reactor_op_ptr read{};
   reactor_op_ptr write{};
-  fd_interest interest{};
 
   if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
     return ready_result{};
@@ -231,12 +211,11 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
     }
   }
 
-  interest = interest_for(ops);
   if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
     trim_tail(static_cast<std::size_t>(fd));
   }
 
-  return ready_result{std::move(read), std::move(write), interest};
+  return ready_result{std::move(read), std::move(write)};
 }
 
 inline auto fd_registry::empty() const -> bool {

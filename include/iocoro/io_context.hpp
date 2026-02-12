@@ -133,7 +133,7 @@ class io_context {
   /// Return an IO-capable executor associated with this context.
   ///
   /// Posting or dispatching through this executor schedules work onto this `io_context`.
-  auto get_executor() noexcept -> any_io_executor { return any_io_executor{executor_type{impl_}}; }
+  auto get_executor() noexcept -> any_io_executor { return executor_type{impl_}; }
 
  private:
   std::shared_ptr<detail::io_context_impl> impl_;
