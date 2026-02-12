@@ -1,13 +1,32 @@
 find_package(Threads REQUIRED)
 find_package(Boost REQUIRED)
 
-add_executable(iocoro_tcp_roundtrip iocoro_tcp_roundtrip.cpp)
-target_link_libraries(iocoro_tcp_roundtrip PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_tcp_roundtrip PRIVATE cxx_std_20)
-target_compile_options(iocoro_tcp_roundtrip PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+function(add_iocoro_benchmark name)
+  add_executable(iocoro_${name} cases/iocoro/${name}.cpp)
+  target_link_libraries(iocoro_${name} PRIVATE iocoro::iocoro Threads::Threads)
+  target_compile_features(iocoro_${name} PRIVATE cxx_std_20)
+  target_compile_options(iocoro_${name} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+endfunction()
 
-add_executable(asio_tcp_roundtrip asio_tcp_roundtrip.cpp)
-target_link_libraries(asio_tcp_roundtrip PRIVATE Threads::Threads)
-target_compile_features(asio_tcp_roundtrip PRIVATE cxx_std_20)
-target_compile_options(asio_tcp_roundtrip PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_tcp_roundtrip PRIVATE ${Boost_INCLUDE_DIRS})
+function(add_asio_benchmark name)
+  add_executable(asio_${name} cases/asio/${name}.cpp)
+  target_link_libraries(asio_${name} PRIVATE Threads::Threads)
+  target_compile_features(asio_${name} PRIVATE cxx_std_20)
+  target_compile_options(asio_${name} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+  target_include_directories(asio_${name} PRIVATE ${Boost_INCLUDE_DIRS})
+endfunction()
+
+set(BENCHMARK_NAMES
+  tcp_roundtrip
+  tcp_connect_accept
+  tcp_throughput
+  udp_send_receive
+  timer_churn
+  tcp_latency
+  thread_pool_scaling
+)
+
+foreach(bench_name IN LISTS BENCHMARK_NAMES)
+  add_iocoro_benchmark(${bench_name})
+  add_asio_benchmark(${bench_name})
+endforeach()

@@ -120,7 +120,7 @@ jobs:
           cmake --build /tmp/iocoro-consumer/build -j
           /tmp/iocoro-consumer/build/consumer
 
-  build-benchmarks:
+  perf-regression-gate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -129,10 +129,37 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config g++ libboost-dev
+          sudo apt-get install -y cmake ninja-build pkg-config g++ libboost-dev python3-jsonschema
 
       - name: Build benchmarks
         run: |
-          chmod +x ./build.sh
-          ./build.sh -c -r -b
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DIOCORO_BUILD_BENCHMARKS=ON
+          cmake --build build -j
 
+      - name: Run perf baseline gate
+        run: |
+          ./benchmark/scripts/run_all_perf_benchmarks.sh \
+            --build-dir build \
+            --iterations 3 \
+            --warmup 1 \
+            --timeout-sec 180
+
+      - name: Upload perf artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-regression-report
+          path: |
+            benchmark/reports/perf_report.json
+            benchmark/reports/perf_summary.txt
+            benchmark/reports/latency_report.json
+            benchmark/reports/latency_summary.txt
+            benchmark/reports/connect_accept_report.json
+            benchmark/reports/connect_accept_summary.txt
+            benchmark/reports/throughput_report.json
+            benchmark/reports/throughput_summary.txt
+            benchmark/reports/udp_report.json
+            benchmark/reports/udp_summary.txt
+            benchmark/reports/timer_report.json
+            benchmark/reports/timer_summary.txt
+            benchmark/reports/thread_pool_report.json
+            benchmark/reports/thread_pool_summary.txt

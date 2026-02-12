@@ -123,6 +123,30 @@ Build benchmarks:
 ./build.sh -b
 ```
 
+### Performance baseline, gate, and observability
+
+Run the full benchmark suite:
+
+```bash
+./benchmark/scripts/run_all_perf_benchmarks.sh \
+  --build-dir build \
+  --iterations 3 \
+  --warmup 1 \
+  --timeout-sec 180
+```
+
+Default behavior of `run_all_perf_benchmarks.sh`:
+
+- Runs all benchmark suites.
+- Applies baseline gate and schema validation.
+
+Useful toggles:
+
+- `--no-baseline`
+- `--no-schema-validate`
+
+For full benchmark details, see `benchmark/README.md`.
+
 ## License
 
 MIT License. See `LICENSE`.
