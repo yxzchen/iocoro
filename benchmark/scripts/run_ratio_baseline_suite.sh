@@ -22,11 +22,6 @@ RATIO_MODE="direct"
 RATIO_FIELD="ratio_vs_asio"
 RATIO_LABEL=""
 RUN_TIMEOUT_DEFAULT=120
-SCENARIO_MIN_ARITY=""
-SCENARIO_DEFAULT_VALUES_CSV=""
-BASELINE_LEGACY_ARITY=0
-BASELINE_LEGACY_MATCH_INDEX=0
-BASELINE_LEGACY_MATCH_VALUE=""
 
 BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
@@ -113,26 +108,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run-timeout-default)
       RUN_TIMEOUT_DEFAULT="$2"
-      shift 2
-      ;;
-    --scenario-min-arity)
-      SCENARIO_MIN_ARITY="$2"
-      shift 2
-      ;;
-    --scenario-default-values)
-      SCENARIO_DEFAULT_VALUES_CSV="$2"
-      shift 2
-      ;;
-    --baseline-legacy-arity)
-      BASELINE_LEGACY_ARITY="$2"
-      shift 2
-      ;;
-    --baseline-legacy-match-index)
-      BASELINE_LEGACY_MATCH_INDEX="$2"
-      shift 2
-      ;;
-    --baseline-legacy-match-value)
-      BASELINE_LEGACY_MATCH_VALUE="$2"
       shift 2
       ;;
     --build-dir)
@@ -235,8 +210,6 @@ fi
 bench_require_positive_int "--iterations" "$ITERATIONS"
 bench_require_non_negative_int "--warmup" "$WARMUP"
 bench_require_non_negative_int "--run-timeout-sec" "$RUN_TIMEOUT_SEC"
-bench_require_non_negative_int "--baseline-legacy-arity" "$BASELINE_LEGACY_ARITY"
-bench_require_non_negative_int "--baseline-legacy-match-index" "$BASELINE_LEGACY_MATCH_INDEX"
 
 BUILD_DIR="$(bench_to_abs_path "$PROJECT_DIR" "$BUILD_DIR")"
 IOCORO_BIN="$BUILD_DIR/benchmark/$IOCORO_TARGET"
@@ -270,29 +243,6 @@ if [[ "$SCENARIO_ARITY" -le 0 ]]; then
   exit 1
 fi
 
-if [[ -z "$SCENARIO_MIN_ARITY" ]]; then
-  SCENARIO_MIN_ARITY="$SCENARIO_ARITY"
-fi
-bench_require_positive_int "--scenario-min-arity" "$SCENARIO_MIN_ARITY"
-if [[ "$SCENARIO_MIN_ARITY" -gt "$SCENARIO_ARITY" ]]; then
-  echo "--scenario-min-arity must be <= scenario field count" >&2
-  exit 1
-fi
-
-SCENARIO_DEFAULT_VALUES=()
-if [[ -n "$SCENARIO_DEFAULT_VALUES_CSV" ]]; then
-  IFS=',' read -r -a SCENARIO_DEFAULT_VALUES <<<"$SCENARIO_DEFAULT_VALUES_CSV"
-  if [[ ${#SCENARIO_DEFAULT_VALUES[@]} -ne "$SCENARIO_ARITY" ]]; then
-    echo "--scenario-default-values must have $SCENARIO_ARITY comma-separated entries" >&2
-    exit 1
-  fi
-fi
-
-if [[ "$BASELINE_LEGACY_MATCH_INDEX" -gt 0 && "$BASELINE_LEGACY_MATCH_INDEX" -gt "$SCENARIO_ARITY" ]]; then
-  echo "--baseline-legacy-match-index must be <= scenario field count" >&2
-  exit 1
-fi
-
 check_threshold() {
   if [[ -z "$BASELINE_FILE" ]]; then
     echo ""
@@ -302,44 +252,24 @@ check_threshold() {
   local key
   key="$(IFS='|'; echo "$*")"
   awk -v arity="$SCENARIO_ARITY" \
-      -v key="$key" \
-      -v legacy_arity="$BASELINE_LEGACY_ARITY" \
-      -v legacy_match_idx="$BASELINE_LEGACY_MATCH_INDEX" \
-      -v legacy_match_val="$BASELINE_LEGACY_MATCH_VALUE" '
+      -v key="$key" '
     BEGIN { split(key, want, /\|/); }
     $1 ~ /^#/ { next }
     {
-      if (NF >= arity + 1) {
-        ok = 1
-        for (i = 1; i <= arity; ++i) {
-          if ($i != want[i]) {
-            ok = 0
-            break
-          }
-        }
-        if (ok) {
-          print $(arity + 1)
-          found = 1
-          exit
+      if (NF < arity + 1) {
+        next
+      }
+      ok = 1
+      for (i = 1; i <= arity; ++i) {
+        if ($i != want[i]) {
+          ok = 0
+          break
         }
       }
-
-      if (legacy_arity > 0 && NF >= legacy_arity + 1) {
-        legacy_ok = 1
-        for (i = 1; i <= legacy_arity; ++i) {
-          if ($i != want[i]) {
-            legacy_ok = 0
-            break
-          }
-        }
-        if (legacy_ok) {
-          if (legacy_match_idx > 0 && want[legacy_match_idx] != legacy_match_val) {
-            next
-          }
-          print $(legacy_arity + 1)
-          found = 1
-          exit
-        }
+      if (ok) {
+        print $(arity + 1)
+        found = 1
+        exit
       }
     }
     END { if (!found) print "" }
@@ -373,21 +303,12 @@ echo
 IFS=',' read -r -a SCENARIO_ITEMS <<<"$SCENARIOS"
 for item in "${SCENARIO_ITEMS[@]}"; do
   IFS=':' read -r -a RAW_VALUES <<<"$item"
-  if [[ ${#RAW_VALUES[@]} -lt "$SCENARIO_MIN_ARITY" || ${#RAW_VALUES[@]} -gt "$SCENARIO_ARITY" ]]; then
+  if [[ ${#RAW_VALUES[@]} -ne "$SCENARIO_ARITY" ]]; then
     echo "Invalid scenario: $item (expected $SCENARIO_FORMAT)" >&2
     exit 1
   fi
 
   VALUES=("${RAW_VALUES[@]}")
-  if [[ ${#VALUES[@]} -lt "$SCENARIO_ARITY" ]]; then
-    if [[ ${#SCENARIO_DEFAULT_VALUES[@]} -ne "$SCENARIO_ARITY" ]]; then
-      echo "Invalid scenario: $item (missing trailing fields and no defaults configured)" >&2
-      exit 1
-    fi
-    for ((idx = ${#VALUES[@]}; idx < SCENARIO_ARITY; ++idx)); do
-      VALUES+=("${SCENARIO_DEFAULT_VALUES[$idx]}")
-    done
-  fi
 
   for value in "${VALUES[@]}"; do
     if [[ -z "$value" ]]; then
