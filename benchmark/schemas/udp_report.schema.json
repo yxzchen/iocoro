@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iocoro.dev/schemas/udp_report.schema.json",
+  "title": "iocoro udp send receive perf report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "timestamp_utc",
+    "build_dir",
+    "iterations",
+    "warmup",
+    "scenarios"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "timestamp_utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "build_dir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "iterations": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "warmup": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessions",
+          "msgs",
+          "msg_bytes",
+          "iocoro_pps_runs",
+          "asio_pps_runs",
+          "iocoro_pps_median",
+          "asio_pps_median",
+          "ratio_vs_asio",
+          "min_ratio",
+          "pass"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "msgs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "msg_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "iocoro_pps_runs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "asio_pps_runs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "iocoro_pps_median": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "asio_pps_median": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "ratio_vs_asio": {
+            "type": "number",
+            "minimum": 0
+          },
+          "min_ratio": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "pass": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

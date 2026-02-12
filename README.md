@@ -125,7 +125,7 @@ Build benchmarks:
 
 ### Performance baseline, gate, and observability
 
-Run the full benchmark suite (roundtrip + connect/accept + throughput):
+Run the full benchmark suite (roundtrip + connect/accept + throughput + udp):
 
 ```bash
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
@@ -165,6 +165,16 @@ Run TCP throughput benchmark matrix:
   --report benchmark/reports/throughput_report.json
 ```
 
+Run UDP send/receive benchmark matrix:
+
+```bash
+./benchmark/scripts/run_udp_send_receive_baseline.sh \
+  --build-dir build \
+  --run-timeout-sec 180 \
+  --baseline benchmark/baselines/udp_send_receive_thresholds.txt \
+  --report benchmark/reports/udp_report.json
+```
+
 Validate report schemas:
 
 ```bash
@@ -183,6 +193,12 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/throughput_report.schema.json \
   --report benchmark/reports/throughput_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/udp_report.schema.json \
+  --report benchmark/reports/udp_report.json
 ```
 
 ## License

@@ -25,11 +25,12 @@ The unified runner executes:
 - `scripts/run_tcp_roundtrip_baseline.sh`
 - `scripts/run_tcp_connect_accept_baseline.sh`
 - `scripts/run_tcp_throughput_baseline.sh`
+- `scripts/run_udp_send_receive_baseline.sh`
 - `scripts/validate_perf_report.py` for all reports
 
 Timeout options:
 - `--timeout-sec` applies to all suites.
-- `--roundtrip-timeout-sec`, `--connect-timeout-sec`, and `--throughput-timeout-sec` can override per-suite.
+- `--roundtrip-timeout-sec`, `--connect-timeout-sec`, `--throughput-timeout-sec`, and `--udp-timeout-sec` can override per-suite.
 
 ## TCP roundtrip baseline runner
 
@@ -130,12 +131,47 @@ File: `benchmark/baselines/tcp_throughput_thresholds.txt`
 The gate compares
 `iocoro_throughput_mib_s_median / asio_throughput_mib_s_median` against `min_ratio_vs_asio`.
 
+## UDP send/receive baseline runner
+
+Use `run_udp_send_receive_baseline.sh` to run `iocoro_udp_send_receive` and
+`asio_udp_send_receive` across datagram scenarios and aggregate median `pps`.
+
+Example:
+
+```bash
+./benchmark/scripts/run_udp_send_receive_baseline.sh \
+  --build-dir build \
+  --iterations 5 \
+  --warmup 1 \
+  --run-timeout-sec 120 \
+  --baseline benchmark/baselines/udp_send_receive_thresholds.txt \
+  --report benchmark/reports/udp_report.json
+```
+
+UDP scenarios are `sessions:msgs:msg_bytes`.
+
+## UDP send/receive threshold format
+
+File: `benchmark/baselines/udp_send_receive_thresholds.txt`
+
+```
+# sessions msgs msg_bytes min_ratio_vs_asio
+1 50000 64 0.55
+8 20000 64 0.60
+32 5000 64 0.60
+8 10000 1024 0.60
+32 2000 4096 0.55
+```
+
+The gate compares `iocoro_pps_median / asio_pps_median` against `min_ratio_vs_asio`.
+
 ## Report schemas
 
 Schema files:
 - `benchmark/schemas/perf_report.schema.json`
 - `benchmark/schemas/connect_accept_report.schema.json`
 - `benchmark/schemas/throughput_report.schema.json`
+- `benchmark/schemas/udp_report.schema.json`
 
 Validate a generated report:
 
@@ -155,4 +191,10 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/throughput_report.schema.json \
   --report benchmark/reports/throughput_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/udp_report.schema.json \
+  --report benchmark/reports/udp_report.json
 ```

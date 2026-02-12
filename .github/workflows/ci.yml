@@ -155,3 +155,5 @@ jobs:
             benchmark/reports/connect_accept_summary.txt
             benchmark/reports/throughput_report.json
             benchmark/reports/throughput_summary.txt
+            benchmark/reports/udp_report.json
+            benchmark/reports/udp_summary.txt
