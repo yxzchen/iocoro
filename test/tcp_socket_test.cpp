@@ -93,6 +93,32 @@ TEST(tcp_socket_test, connect_to_closed_port_returns_error) {
   EXPECT_FALSE(static_cast<bool>(*r));
 }
 
+TEST(tcp_socket_test, connect_with_mismatched_family_on_open_socket_returns_invalid_argument) {
+  auto [listen_fd, port] = iocoro::test::make_listen_socket_ipv4();
+  ASSERT_GE(listen_fd.get(), 0);
+  ASSERT_NE(port, 0);
+  listen_fd.reset();
+
+  iocoro::io_context ctx;
+  iocoro::ip::tcp::socket sock{ctx};
+  iocoro::ip::tcp::endpoint ep4{iocoro::ip::address_v4::loopback(), port};
+  iocoro::ip::tcp::endpoint ep6{iocoro::ip::address_v6::loopback(), port};
+
+  auto first = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
+    co_return co_await sock.async_connect(ep4);
+  }());
+  ASSERT_TRUE(first);
+  ASSERT_FALSE(*first);
+
+  auto second = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
+    co_return co_await sock.async_connect(ep6);
+  }());
+
+  ASSERT_TRUE(second);
+  ASSERT_FALSE(*second);
+  EXPECT_EQ(second->error(), iocoro::error::invalid_argument);
+}
+
 TEST(tcp_socket_test, stress_close_while_read_pending_aborts_without_hang) {
   auto [listen_fd, port] = iocoro::test::make_listen_socket_ipv4();
   ASSERT_GE(listen_fd.get(), 0);

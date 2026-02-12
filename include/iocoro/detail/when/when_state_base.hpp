@@ -19,9 +19,9 @@ namespace iocoro::detail {
 template <class T>
 using when_value_t = std::conditional_t<std::is_void_v<T>, std::monostate, std::remove_cvref_t<T>>;
 
-// Shared state base for when_all/when_any.
-// - when_all: remaining = n (number of all tasks)
-// - when_any: remaining = 1 (only one completion needed)
+// Shared state base for fan-in combinators.
+// - Counting mode (default): remaining = n (number of completions to wait for).
+// - One-shot mode can be implemented by derived states overriding try_complete()/is_done().
 struct when_state_base {
   any_executor ex{};
   std::mutex m;
@@ -36,6 +36,8 @@ struct when_state_base {
 
   explicit when_state_base(std::size_t n) { remaining.store(n, std::memory_order_relaxed); }
 
+  bool is_done() const noexcept { return (remaining.load(std::memory_order_acquire) == 0); }
+
   void set_exception(std::exception_ptr ep) noexcept {
     std::scoped_lock lk{m};
     if (!first_ep) {
@@ -43,7 +45,16 @@ struct when_state_base {
     }
   }
 
-  bool try_complete() noexcept { return (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1); }
+  bool try_complete() noexcept {
+    auto old = remaining.load(std::memory_order_acquire);
+    while (old != 0) {
+      if (remaining.compare_exchange_weak(old, old - 1, std::memory_order_acq_rel,
+                                          std::memory_order_acquire)) {
+        return (old == 1);
+      }
+    }
+    return false;
+  }
 
   void complete() noexcept {
     // Publish completion and, if a waiter exists, resume it exactly once.
@@ -86,12 +97,12 @@ struct when_awaiter {
 
   std::shared_ptr<State> st;
 
-  bool await_ready() const noexcept { return (st->remaining.load(std::memory_order_relaxed) == 0); }
+  bool await_ready() const noexcept { return st->is_done(); }
 
   template <class Promise>
     requires requires(Promise& p) { p.get_executor(); }
   bool await_suspend(std::coroutine_handle<Promise> h) {
-    if (st->remaining.load(std::memory_order_acquire) == 0) {
+    if (st->is_done()) {
       return false;
     }
 

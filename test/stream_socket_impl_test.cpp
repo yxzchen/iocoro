@@ -112,3 +112,50 @@ TEST(stream_socket_impl_test, concurrent_reads_return_busy_and_cancel_aborts) {
 
   (void)::close(peer);
 }
+
+TEST(stream_socket_impl_test, close_aborts_pending_read) {
+  iocoro::io_context ctx;
+  iocoro::detail::socket::stream_socket_impl impl{ctx.get_executor()};
+
+  int fds[2]{-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+  ASSERT_GE(fds[0], 0);
+  ASSERT_GE(fds[1], 0);
+
+  auto ec = impl.assign(fds[0]);
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
+  int peer = fds[1];
+
+  std::array<std::byte, 8> buf{};
+  std::mutex m;
+  std::condition_variable cv;
+  std::atomic<bool> done{false};
+  std::optional<iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr>> result;
+
+  iocoro::co_spawn(
+    ctx.get_executor(),
+    [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+      co_return co_await impl.async_read_some(std::span{buf});
+    },
+    [&](iocoro::expected<iocoro::result<std::size_t>, std::exception_ptr> r) {
+      result = std::move(r);
+      std::scoped_lock lk{m};
+      done.store(true);
+      cv.notify_all();
+    });
+
+  (void)ctx.run_for(std::chrono::milliseconds{1});
+  auto close_result = impl.close();
+  ASSERT_TRUE(close_result) << close_result.error().message();
+  ctx.run();
+
+  std::unique_lock lk{m};
+  cv.wait(lk, [&] { return done.load(); });
+
+  ASSERT_TRUE(result);
+  ASSERT_TRUE(*result);
+  ASSERT_FALSE(**result);
+  EXPECT_EQ(result->value().error(), iocoro::error::operation_aborted);
+
+  (void)::close(peer);
+}

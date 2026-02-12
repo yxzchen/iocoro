@@ -42,15 +42,29 @@ inline auto stream_socket_impl::close() noexcept -> result<void> {
     shutdown_ = {};
     // NOTE: do not touch active flags here; their owner is the coroutine.
   }
+
+  // Best-effort: push peer-observable shutdown before logical close.
+  auto res = base_.acquire_resource();
+  if (res) {
+    auto const fd = res->native_handle();
+    if (fd >= 0) {
+      (void)::shutdown(fd, SHUT_RDWR);
+    }
+  }
+
   return base_.close();
 }
 
 inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     return fail(error::not_open);
   }
-  if (::bind(fd, addr, len) != 0) {
+  if (res->closing()) {
+    return fail(error::operation_aborted);
+  }
+
+  if (::bind(res->native_handle(), addr, len) != 0) {
     return fail(map_socket_errno(errno));
   }
   return ok();
@@ -58,11 +72,19 @@ inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> res
 
 inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len)
   -> awaitable<result<void>> {
-  if (!is_open()) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     co_return fail(error::not_open);
   }
+  if (res->closing()) {
+    co_return fail(error::operation_aborted);
+  }
 
-  auto const fd = base_.native_handle();
+  auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return fail(error::operation_aborted);
+  }
+  auto const fd = res->native_handle();
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
@@ -80,14 +102,16 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     my_epoch = connect_op_.epoch.load(std::memory_order_acquire);
   }
 
-  // Ensure the "connect owner" flag is always released by the owning coroutine.
   auto connect_guard = detail::make_scope_exit([this] { connect_op_.finish(mtx_); });
-
-  // We intentionally keep syscall logic outside the mutex.
   auto ec = std::error_code{};
 
-  // Attempt immediate connect.
   for (;;) {
+    if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
+      std::scoped_lock lk{mtx_};
+      state_ = conn_state::disconnected;
+      co_return fail(error::operation_aborted);
+    }
+
     if (::connect(fd, addr, len) == 0) {
       std::scoped_lock lk{mtx_};
       state_ = conn_state::connected;
@@ -131,8 +155,6 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   };
 
   if (is_loopback(addr, len)) {
-    // If the connect finished before we registered for write readiness (ET),
-    // SO_ERROR is ready. This avoids a missed write event for fast localhost connects.
     if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
       ec = map_socket_errno(errno);
       std::scoped_lock lk{mtx_};
@@ -150,7 +172,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
       socklen_t peer_len = sizeof(peer);
       if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peer), &peer_len) == 0) {
         std::scoped_lock lk{mtx_};
-        if (!connect_op_.is_epoch_current(my_epoch)) {
+        if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
           state_ = conn_state::disconnected;
           co_return fail(error::operation_aborted);
         }
@@ -166,14 +188,8 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     }
   }
 
-  // Wait for writability, then check SO_ERROR.
-  auto wait_r = co_await base_.wait_write_ready();
+  auto wait_r = co_await base_.wait_write_ready(res);
   if (!wait_r) {
-    // The reactor may report an "error readiness" event (e.g. EPOLLERR/EPOLLHUP) while a
-    // non-blocking connect is in progress. In that case, the real reason must be retrieved
-    // from SO_ERROR (e.g. ECONNREFUSED).
-    //
-    // Only treat non-readiness errors as fatal here.
     if (wait_r.error() != error::eof && wait_r.error() != error::connection_reset) {
       std::scoped_lock lk{mtx_};
       state_ = conn_state::disconnected;
@@ -181,8 +197,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
     }
   }
 
-  // If cancel()/close() happened while we were waiting, treat as aborted.
-  if (!connect_op_.is_epoch_current(my_epoch)) {
+  if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
     std::scoped_lock lk{mtx_};
     state_ = conn_state::disconnected;
     co_return fail(error::operation_aborted);
@@ -205,7 +220,7 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 
   {
     std::scoped_lock lk{mtx_};
-    if (!connect_op_.is_epoch_current(my_epoch)) {
+    if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
       state_ = conn_state::disconnected;
       co_return fail(error::operation_aborted);
     }
@@ -216,10 +231,16 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
 
 inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   -> awaitable<result<std::size_t>> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     co_return unexpected(error::not_open);
   }
+
+  auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
+  auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;
   {
@@ -244,27 +265,29 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   }
 
   for (;;) {
+    if (!read_op_.is_epoch_current(my_epoch) || res->closing()) {
+      co_return unexpected(error::operation_aborted);
+    }
+
     auto n = ::read(fd, buffer.data(), buffer.size());
     if (n > 0) {
       co_return n;
     }
     if (n == 0) {
-      co_return 0;  // EOF
+      co_return 0;
     }
     if (errno == EINTR) {
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto r = co_await base_.wait_read_ready();
+      auto r = co_await base_.wait_read_ready(res);
       if (!r) {
-        // If wait returned EOF, it means the connection was closed.
-        // Return 0 to indicate EOF (standard POSIX semantics).
         if (r.error() == error::eof) {
           co_return 0;
         }
         co_return unexpected(r.error());
       }
-      if (!read_op_.is_epoch_current(my_epoch)) {
+      if (!read_op_.is_epoch_current(my_epoch) || res->closing()) {
         co_return unexpected(error::operation_aborted);
       }
       continue;
@@ -275,10 +298,16 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
 
 inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buffer)
   -> awaitable<result<std::size_t>> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     co_return unexpected(error::not_open);
   }
+
+  auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
+  auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;
   {
@@ -303,23 +332,24 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
   }
 
   for (;;) {
-    // Note: On Linux, writing to a socket whose peer has closed the connection
-    // may raise SIGPIPE and terminate the process when using ::write().
-    // Therefore, this implementation uses ::send(..., MSG_NOSIGNAL) instead.
+    if (!write_op_.is_epoch_current(my_epoch) || res->closing()) {
+      co_return unexpected(error::operation_aborted);
+    }
+
+    // On Linux, ::write() can raise SIGPIPE for closed peers.
     auto n = ::send(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
     if (n >= 0) {
-      // Note: write returning 0 is uncommon; treat it as a successful 0-byte write.
       co_return n;
     }
     if (errno == EINTR) {
       continue;
     }
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      auto r = co_await base_.wait_write_ready();
+      auto r = co_await base_.wait_write_ready(res);
       if (!r) {
         co_return unexpected(r.error());
       }
-      if (!write_op_.is_epoch_current(my_epoch)) {
+      if (!write_op_.is_epoch_current(my_epoch) || res->closing()) {
         co_return unexpected(error::operation_aborted);
       }
       continue;
@@ -329,9 +359,12 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
 }
 
 inline auto stream_socket_impl::shutdown(shutdown_type what) -> result<void> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     return fail(error::not_open);
+  }
+  if (res->closing()) {
+    return fail(error::operation_aborted);
   }
 
   int how = SHUT_RDWR;
@@ -343,14 +376,13 @@ inline auto stream_socket_impl::shutdown(shutdown_type what) -> result<void> {
     how = SHUT_RDWR;
   }
 
-  if (::shutdown(fd, how) != 0) {
+  if (::shutdown(res->native_handle(), how) != 0) {
     if (errno == ENOTCONN) {
       return fail(error::not_connected);
     }
     return fail(map_socket_errno(errno));
   }
 
-  // Update logical shutdown state only after syscall succeeds.
   {
     std::scoped_lock lk{mtx_};
     if (what == shutdown_type::receive) {

@@ -14,6 +14,7 @@
 #include <concepts>
 #include <functional>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 namespace iocoro::net {
@@ -55,25 +56,34 @@ class basic_acceptor {
   ///
   /// This is the recommended user-facing entry point for acceptors.
   auto listen(endpoint const& ep, int backlog = 0) -> result<void> {
-    return listen(ep, backlog, [](basic_acceptor&) {});
+    return listen(ep, backlog, [](basic_acceptor&) -> result<void> { return ok(); });
   }
 
   /// Open + (configure) + bind + listen in one step.
   ///
   /// `configure` runs after open() succeeds and before bind() is called.
   /// This enables pre-bind socket options like SO_REUSEADDR.
+  /// `configure` must return `result<void>`; failures are propagated and abort listen().
   template <class Configure>
-    requires std::invocable<Configure, basic_acceptor&>
+    requires std::invocable<Configure, basic_acceptor&> &&
+             std::same_as<std::remove_cvref_t<std::invoke_result_t<Configure, basic_acceptor&>>,
+                          result<void>>
   auto listen(endpoint const& ep, int backlog, Configure&& configure) -> result<void> {
     auto open_r = ok();
     if (!is_open()) {
       open_r = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
+    } else {
+      auto family_r = ::iocoro::detail::socket::get_socket_family(handle_.native_handle());
+      if (!family_r) {
+        return unexpected(family_r.error());
+      }
+      if (*family_r != ep.family()) {
+        return fail(error::invalid_argument);
+      }
     }
     return open_r
-      .and_then([&] {
-        std::invoke(std::forward<Configure>(configure), *this);
-        return handle_.impl().bind(ep.data(), ep.size());
-      })
+      .and_then([&] { return std::invoke(std::forward<Configure>(configure), *this); })
+      .and_then([&] { return handle_.impl().bind(ep.data(), ep.size()); })
       .and_then([&] { return handle_.impl().listen(backlog); });
   }
 

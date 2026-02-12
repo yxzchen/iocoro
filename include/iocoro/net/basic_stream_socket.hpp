@@ -62,6 +62,14 @@ class basic_stream_socket {
       if (!r) {
         co_return r;
       }
+    } else {
+      auto family_r = ::iocoro::detail::socket::get_socket_family(handle_.native_handle());
+      if (!family_r) {
+        co_return unexpected(family_r.error());
+      }
+      if (*family_r != ep.family()) {
+        co_return fail(error::invalid_argument);
+      }
     }
     co_return co_await handle_.impl().async_connect(ep.data(), ep.size());
   }

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <iocoro/co_sleep.hpp>
+#include <iocoro/detail/when/when_any_state.hpp>
 #include <iocoro/when_any.hpp>
 
 #include "test_util.hpp"
@@ -149,4 +150,13 @@ TEST(when_any_test, returns_while_other_tasks_still_run) {
   }());
 
   ASSERT_TRUE(r);
+}
+
+TEST(when_any_test, internal_state_try_complete_is_one_shot) {
+  iocoro::detail::when_any_variadic_state<int, int> st;
+
+  EXPECT_FALSE(st.is_done());
+  EXPECT_TRUE(st.try_complete());
+  EXPECT_TRUE(st.is_done());
+  EXPECT_FALSE(st.try_complete());
 }

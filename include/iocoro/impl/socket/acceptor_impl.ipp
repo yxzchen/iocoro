@@ -5,7 +5,10 @@
 namespace iocoro::detail::socket {
 
 inline void acceptor_impl::cancel_read() noexcept {
-  accept_op_.cancel();
+  {
+    std::scoped_lock lk{mtx_};
+    accept_op_.cancel();
+  }
   base_.cancel_read();
 }
 
@@ -29,25 +32,33 @@ inline auto acceptor_impl::open(int domain, int type, int protocol) -> result<vo
 }
 
 inline auto acceptor_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     return fail(error::not_open);
   }
-  if (::bind(fd, addr, len) != 0) {
+  if (res->closing()) {
+    return fail(error::operation_aborted);
+  }
+
+  if (::bind(res->native_handle(), addr, len) != 0) {
     return fail(map_socket_errno(errno));
   }
   return ok();
 }
 
 inline auto acceptor_impl::listen(int backlog) -> result<void> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     return fail(error::not_open);
   }
+  if (res->closing()) {
+    return fail(error::operation_aborted);
+  }
+
   if (backlog <= 0) {
     backlog = SOMAXCONN;
   }
-  if (::listen(fd, backlog) != 0) {
+  if (::listen(res->native_handle(), backlog) != 0) {
     return fail(map_socket_errno(errno));
   }
   {
@@ -58,12 +69,16 @@ inline auto acceptor_impl::listen(int backlog) -> result<void> {
 }
 
 inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
-  auto const listen_fd = base_.native_handle();
-  if (listen_fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     co_return unexpected(error::not_open);
   }
 
-  // Single async_accept constraint: only one in-flight accept allowed.
+  auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
+
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
@@ -77,19 +92,17 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
     my_epoch = accept_op_.epoch.load(std::memory_order_acquire);
   }
 
-  // RAII guard to ensure accept operation is marked finished on all exit paths.
   auto guard = detail::make_scope_exit([this] { accept_op_.finish(mtx_); });
 
   for (;;) {
-    // Cancellation check to close the "cancel between accept() and wait_read_ready()" race.
-    if (!accept_op_.is_epoch_current(my_epoch)) {
+    if (!accept_op_.is_epoch_current(my_epoch) || res->closing()) {
       co_return unexpected(error::operation_aborted);
     }
 
 #if defined(__linux__)
-    int fd = ::accept4(listen_fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    int fd = ::accept4(res->native_handle(), nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
-    int fd = ::accept(listen_fd, nullptr, nullptr);
+    int fd = ::accept(res->native_handle(), nullptr, nullptr);
     if (fd >= 0) {
       if (!set_cloexec(fd) || !set_nonblocking(fd)) {
         auto ec = map_socket_errno(errno);
@@ -100,7 +113,7 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
 #endif
 
     if (fd >= 0) {
-      if (!accept_op_.is_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch) || res->closing()) {
         (void)::close(fd);
         co_return unexpected(error::operation_aborted);
       }
@@ -112,14 +125,14 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      if (!accept_op_.is_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch) || res->closing()) {
         co_return unexpected(error::operation_aborted);
       }
-      auto r = co_await base_.wait_read_ready();
-      if (!r) {
-        co_return unexpected(r.error());
+      auto wait = co_await base_.wait_read_ready(res);
+      if (!wait) {
+        co_return unexpected(wait.error());
       }
-      if (!accept_op_.is_epoch_current(my_epoch)) {
+      if (!accept_op_.is_epoch_current(my_epoch) || res->closing()) {
         co_return unexpected(error::operation_aborted);
       }
       continue;

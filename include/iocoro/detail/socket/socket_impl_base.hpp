@@ -3,6 +3,7 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
+#include <iocoro/detail/socket/fd_resource.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
 #include <iocoro/error.hpp>
@@ -11,8 +12,6 @@
 #include <iocoro/this_coro.hpp>
 
 #include <atomic>
-#include <coroutine>
-#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <system_error>
@@ -26,22 +25,58 @@ namespace iocoro::detail::socket {
 /// Base class for socket-like implementations.
 ///
 /// Responsibilities:
-/// - Own the native handle (fd) lifecycle (open/close/release).
-/// - Own IO executor binding (used to register reactor ops / post completions).
-/// - Provide thread-safe cancel/close primitives.
+/// - Own IO executor binding.
+/// - Manage native-fd lifecycle via shared `fd_resource`.
+/// - Provide thread-safe cancel/close/release primitives.
 ///
-/// Concurrency contract (minimal; enforced by derived classes):
-/// - `cancel()` and `close()` are thread-safe and may be called from any thread.
-/// - Starting async operations (read/write/connect/...) must either be internally serialized
-///   or return `error::busy` when conflicting ops are in-flight.
+/// Semantics:
+/// - `close()` is logical-close: blocks new operations and cancels pending waits.
+/// - Physical `::close(fd)` happens when the last holder of the old `fd_resource` is released.
 class socket_impl_base {
  public:
   using event_handle = io_context_impl::event_handle;
 
-  struct fd_handle {
-    int fd = -1;
-    std::uint64_t gen = 0;
-    explicit operator bool() const noexcept { return fd >= 0 && gen != 0; }
+  class operation_guard {
+   public:
+    operation_guard() noexcept = default;
+    explicit operation_guard(std::shared_ptr<fd_resource> res) noexcept : res_(std::move(res)) {
+      if (res_) {
+        res_->add_inflight();
+      }
+    }
+
+    operation_guard(operation_guard const&) = delete;
+    auto operator=(operation_guard const&) -> operation_guard& = delete;
+
+    operation_guard(operation_guard&& other) noexcept : res_(std::move(other.res_)) {}
+    auto operator=(operation_guard&& other) noexcept -> operation_guard& {
+      if (this != &other) {
+        reset();
+        res_ = std::move(other.res_);
+      }
+      return *this;
+    }
+
+    ~operation_guard() noexcept { reset(); }
+
+    explicit operator bool() const noexcept { return static_cast<bool>(res_); }
+
+    auto resource() const noexcept -> std::shared_ptr<fd_resource> const& { return res_; }
+
+    void reset() noexcept {
+      if (res_) {
+        res_->remove_inflight();
+        res_.reset();
+      }
+    }
+
+   private:
+    struct adopt_t {};
+    explicit operation_guard(std::shared_ptr<fd_resource> res, adopt_t) noexcept
+        : res_(std::move(res)) {}
+
+    friend class socket_impl_base;
+    std::shared_ptr<fd_resource> res_{};
   };
 
   socket_impl_base() noexcept = delete;
@@ -61,40 +96,38 @@ class socket_impl_base {
   auto get_io_context_impl() const noexcept -> io_context_impl* { return ctx_impl_; }
   auto get_executor() const noexcept -> any_io_executor { return ex_; }
 
-  /// Native handle snapshot. Returns -1 if not open.
-  ///
-  /// IMPORTANT:
-  /// - This is a snapshot that may become invalid immediately after return.
-  /// - The atomic is used to avoid data races for lock-free reads; it does not guarantee
-  ///   any consistency beyond that.
-  auto native_handle() const noexcept -> int { return fd_.load(std::memory_order_acquire); }
-  auto native_handle_gen() const noexcept -> std::uint64_t {
-    return fd_gen_.load(std::memory_order_acquire);
+  /// Native handle snapshot. Returns -1 if closed.
+  auto native_handle() const noexcept -> int {
+    auto res = acquire_resource();
+    if (!res) {
+      return -1;
+    }
+    return res->native_handle();
   }
 
-  /// Acquire a stable (fd, generation) snapshot.
-  /// The generation increments whenever the underlying fd instance changes
-  /// (open/assign/close/release).
-  auto acquire_fd_handle() const noexcept -> fd_handle {
-    return fd_handle{native_handle(), native_handle_gen()};
-  }
-
-  /// Returns true if the socket is in the 'open' state and has a valid fd.
-  /// Returns false during 'opening' (fd not yet assigned) and 'closed' states.
   auto is_open() const noexcept -> bool { return native_handle() >= 0; }
 
-  /// Open a new socket and set it non-blocking + close-on-exec (best-effort).
-  ///
-  /// Returns:
-  /// - {} on success
-  /// - error::already_open if already open
-  /// - error::busy if another open/assign is in progress
-  /// - std::error_code(errno, generic_category()) for sys failures
-  auto open(int domain, int type, int protocol) noexcept -> result<void>;
+  auto acquire_resource() const noexcept -> std::shared_ptr<fd_resource> {
+    return res_.load(std::memory_order_acquire);
+  }
 
-  /// Adopt an existing native handle (e.g. accept()).
-  ///
-  /// Note: cancels/clears any pending registrations currently stored in this object.
+  auto make_operation_guard(std::shared_ptr<fd_resource> const& res) noexcept -> operation_guard {
+    if (!res) {
+      return {};
+    }
+
+    std::scoped_lock lk{lifecycle_mtx_};
+    auto current = res_.load(std::memory_order_acquire);
+    if (!current || current.get() != res.get() || current->closing() ||
+        current->native_handle() < 0) {
+      return {};
+    }
+
+    current->add_inflight();
+    return operation_guard{std::move(current), operation_guard::adopt_t{}};
+  }
+
+  auto open(int domain, int type, int protocol) noexcept -> result<void>;
   auto assign(int fd) noexcept -> result<void>;
 
   template <class Option>
@@ -124,136 +157,93 @@ class socket_impl_base {
     return ok();
   }
 
-  /// Cancel any in-flight read or write operations.
   void cancel() noexcept;
-
-  /// Cancel pending read-side operations (best-effort).
-  ///
-  /// Semantics:
-  /// - Cancels the currently stored read-side registration handle (if any).
-  /// - Does NOT affect write-side operations.
   void cancel_read() noexcept;
-
-  /// Cancel pending write-side operations (best-effort).
-  ///
-  /// Semantics:
-  /// - Cancels the currently stored write-side registration handle (if any).
-  /// - Does NOT affect read-side operations.
   void cancel_write() noexcept;
 
-  /// Close the socket (best-effort, idempotent).
   auto close() noexcept -> result<void>;
 
   auto has_pending_operations() const noexcept -> bool {
-    std::scoped_lock lk{mtx_};
-    return read_handle_.valid() || write_handle_.valid();
+    auto res = acquire_resource();
+    return res && res->inflight_count() > 0;
   }
 
   /// Release ownership of the native handle without closing it.
   ///
-  /// IMPORTANT: This deregisters the fd from the reactor, so any pending operations will be
-  /// cancelled. The caller is responsible for managing the returned fd, including closing it.
-  auto release() noexcept -> int;
+  /// Returns:
+  /// - fd on success
+  /// - error::busy if there are in-flight operations
+  /// - error::not_open if already closed
+  auto release() noexcept -> result<int>;
 
-  /// Publish the current handle for the "read readiness" waiter.
-  ///
-  /// Ownership / contract:
-  /// - `socket_impl_base` stores exactly ONE handle per direction (read/write).
-  /// - Each call overwrites the previous handle; only the most-recent handle is retained.
-  /// - `cancel()` / `close()` / `release()` will atomically `exchange()` the stored handle
-  ///   and call `handle.cancel()` outside the lock.
-  ///
-  /// Therefore, higher layers MUST enforce that, per-direction, there is at most one
-  /// in-flight waiter that relies on this handle for cancellation.
-  void set_read_handle(fd_handle fh, event_handle h) noexcept {
-    bool accept = false;
-    {
-      std::scoped_lock lk{mtx_};
-      // Only publish the handle if the fd instance hasn't changed.
-      if (state_ == fd_state::open && fh.fd == native_handle() && fh.gen == native_handle_gen()) {
-        read_handle_ = h;
-        accept = true;
-      }
-    }
-    if (!accept && h) {
-      h.cancel();
-    }
-  }
-
-  /// Publish the current handle for the "write readiness" waiter.
-  /// See `set_read_handle()` for the ownership/contract details.
-  void set_write_handle(fd_handle fh, event_handle h) noexcept {
-    bool accept = false;
-    {
-      std::scoped_lock lk{mtx_};
-      if (state_ == fd_state::open && fh.fd == native_handle() && fh.gen == native_handle_gen()) {
-        write_handle_ = h;
-        accept = true;
-      }
-    }
-    if (!accept && h) {
-      h.cancel();
-    }
-  }
-
-  /// Wait until the native fd becomes readable (read readiness).
   auto wait_read_ready() -> awaitable<result<void>> {
-    auto fh = acquire_fd_handle();
-    if (!fh) {
+    auto res = acquire_resource();
+    co_return co_await wait_read_ready(res);
+  }
+
+  auto wait_write_ready() -> awaitable<result<void>> {
+    auto res = acquire_resource();
+    co_return co_await wait_write_ready(res);
+  }
+
+  auto wait_read_ready(std::shared_ptr<fd_resource> const& res) -> awaitable<result<void>> {
+    auto inflight = make_operation_guard(res);
+    if (!inflight) {
+      if (res && res->closing()) {
+        co_return unexpected(error::operation_aborted);
+      }
       co_return unexpected(error::not_open);
     }
+    auto pinned = inflight.resource();
 
     co_await this_coro::on(any_executor{ex_});
-    auto r = co_await detail::operation_awaiter{[this, fh](detail::reactor_op_ptr rop) mutable {
-      auto h = ctx_impl_->register_fd_read(fh.fd, std::move(rop));
-      set_read_handle(fh, h);
+    auto r = co_await detail::operation_awaiter{[this, pinned](detail::reactor_op_ptr rop) mutable {
+      auto h = ctx_impl_->register_fd_read(pinned->native_handle(), std::move(rop));
+      pinned->set_read_handle(h);
       return h;
     }};
+    if (r && pinned->closing()) {
+      co_return unexpected(error::operation_aborted);
+    }
     co_return r;
   }
 
-  /// Wait until the native fd becomes writable (write readiness).
-  auto wait_write_ready() -> awaitable<result<void>> {
-    auto fh = acquire_fd_handle();
-    if (!fh) {
+  auto wait_write_ready(std::shared_ptr<fd_resource> const& res) -> awaitable<result<void>> {
+    auto inflight = make_operation_guard(res);
+    if (!inflight) {
+      if (res && res->closing()) {
+        co_return unexpected(error::operation_aborted);
+      }
       co_return unexpected(error::not_open);
     }
+    auto pinned = inflight.resource();
 
     co_await this_coro::on(any_executor{ex_});
-    auto r = co_await detail::operation_awaiter{[this, fh](detail::reactor_op_ptr rop) mutable {
-      auto h = ctx_impl_->register_fd_write(fh.fd, std::move(rop));
-      set_write_handle(fh, h);
+    auto r = co_await detail::operation_awaiter{[this, pinned](detail::reactor_op_ptr rop) mutable {
+      auto h = ctx_impl_->register_fd_write(pinned->native_handle(), std::move(rop));
+      pinned->set_write_handle(h);
       return h;
     }};
+    if (r && pinned->closing()) {
+      co_return unexpected(error::operation_aborted);
+    }
     co_return r;
   }
 
  private:
-  /// Socket resource lifecycle state (fd-level).
-  ///
-  /// Design intent:
-  /// - Lifecycle operations are mutex-serialized for internal state/handle bookkeeping.
-  /// - The mutex is NOT held across external/system boundaries (reactor calls, ::close, etc.).
-  /// - I/O operations are handled in higher layers with a lightweight path.
-  ///
-  /// Note: this state is intentionally minimal and protocol-agnostic. Protocol semantics
-  /// (connecting/connected/shutdown state/etc.) belong in higher-level implementations.
-  enum class fd_state : std::uint8_t { closed, opening, open };
+  static void mark_closing(std::shared_ptr<fd_resource> const& res) noexcept {
+    if (!res) {
+      return;
+    }
+    res->mark_closing();
+    res->cancel_all_handles();
+  }
 
   any_io_executor ex_{};
   io_context_impl* ctx_impl_{};
 
-  mutable std::mutex mtx_{};
-
-  // fd_ is written under mtx_ in lifecycle operations; native_handle() reads a race-free snapshot.
-  std::atomic<int> fd_{-1};
-  // Generation counter for the currently installed fd instance.
-  // Incremented whenever the underlying fd identity changes.
-  std::atomic<std::uint64_t> fd_gen_{1};
-  fd_state state_{fd_state::closed};
-
-  event_handle read_handle_{};
-  event_handle write_handle_{};
+  mutable std::mutex lifecycle_mtx_{};
+  std::atomic<std::shared_ptr<fd_resource>> res_{};
 };
 
 }  // namespace iocoro::detail::socket

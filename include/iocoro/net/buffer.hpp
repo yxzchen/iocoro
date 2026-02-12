@@ -122,11 +122,13 @@ inline constexpr auto buffer_size(mutable_buffer b) noexcept -> std::size_t {
 }
 
 template <class T>
+  requires std::is_pointer_v<T>
 inline auto buffer_cast(const_buffer b) noexcept -> T {
   return static_cast<T>(b.data());
 }
 
 template <class T>
+  requires std::is_pointer_v<T>
 inline auto buffer_cast(mutable_buffer b) noexcept -> T {
   return static_cast<T>(b.data());
 }

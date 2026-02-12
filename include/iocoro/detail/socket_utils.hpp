@@ -100,6 +100,19 @@ auto get_local_endpoint(int fd) -> result<Endpoint> {
   return Endpoint::from_native(reinterpret_cast<sockaddr*>(&ss), len);
 }
 
+inline auto get_socket_family(int fd) -> result<int> {
+  if (fd < 0) {
+    return unexpected(error::not_open);
+  }
+
+  sockaddr_storage ss{};
+  socklen_t len = sizeof(ss);
+  if (::getsockname(fd, reinterpret_cast<sockaddr*>(&ss), &len) != 0) {
+    return unexpected(map_socket_errno(errno));
+  }
+  return static_cast<int>(ss.ss_family);
+}
+
 template <class Endpoint>
 auto get_remote_endpoint(int fd) -> result<Endpoint> {
   if (fd < 0) {

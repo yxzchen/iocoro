@@ -63,6 +63,14 @@ class basic_datagram_socket {
     auto open_r = ok();
     if (!handle_.impl().is_open()) {
       open_r = handle_.impl().open(local_ep.family(), Protocol::type(), Protocol::protocol());
+    } else {
+      auto family_r = ::iocoro::detail::socket::get_socket_family(handle_.native_handle());
+      if (!family_r) {
+        return unexpected(family_r.error());
+      }
+      if (*family_r != local_ep.family()) {
+        return fail(error::invalid_argument);
+      }
     }
     return open_r.and_then([&] { return handle_.impl().bind(local_ep.data(), local_ep.size()); });
   }
@@ -77,6 +85,14 @@ class basic_datagram_socket {
     auto open_r = ok();
     if (!handle_.impl().is_open()) {
       open_r = handle_.impl().open(remote_ep.family(), Protocol::type(), Protocol::protocol());
+    } else {
+      auto family_r = ::iocoro::detail::socket::get_socket_family(handle_.native_handle());
+      if (!family_r) {
+        return unexpected(family_r.error());
+      }
+      if (*family_r != remote_ep.family()) {
+        return fail(error::invalid_argument);
+      }
     }
     return open_r.and_then(
       [&] { return handle_.impl().connect(remote_ep.data(), remote_ep.size()); });
