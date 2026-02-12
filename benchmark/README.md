@@ -4,7 +4,7 @@ Directory layout:
 
 - `apps/`: benchmark binaries source files.
 - `scripts/`: benchmark runners and report validator.
-- `scripts/common.sh`: shared shell helpers used by all runners.
+- `scripts/run_ratio_baseline_suite.sh`: shared ratio-benchmark runner used by suite wrappers.
 - `baselines/`: regression gate thresholds.
 - `schemas/`: JSON schemas for benchmark reports.
 - `reports/`: generated reports (runtime output, not committed).

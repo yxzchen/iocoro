@@ -5,7 +5,35 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_DIR="$(cd -- "${BENCH_DIR}/.." && pwd)"
-source "$SCRIPT_DIR/common.sh"
+
+bench_require_non_negative_int() {
+  local name="$1"
+  local value="$2"
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    echo "$name must be a non-negative integer" >&2
+    return 1
+  fi
+}
+
+bench_require_positive_int() {
+  local name="$1"
+  local value="$2"
+  bench_require_non_negative_int "$name" "$value" || return 1
+  if [[ "$value" -le 0 ]]; then
+    echo "$name must be > 0" >&2
+    return 1
+  fi
+}
+
+bench_to_abs_path() {
+  local project_dir="$1"
+  local path="$2"
+  if [[ "$path" == /* ]]; then
+    printf '%s\n' "$path"
+  else
+    printf '%s\n' "$project_dir/$path"
+  fi
+}
 
 BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
