@@ -1,79 +1,32 @@
 find_package(Threads REQUIRED)
 find_package(Boost REQUIRED)
 
-add_executable(iocoro_tcp_roundtrip apps/iocoro/tcp_roundtrip.cpp)
-target_link_libraries(iocoro_tcp_roundtrip PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_tcp_roundtrip PRIVATE cxx_std_20)
-target_compile_options(iocoro_tcp_roundtrip PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+function(add_iocoro_benchmark name)
+  add_executable(iocoro_${name} apps/iocoro/${name}.cpp)
+  target_link_libraries(iocoro_${name} PRIVATE iocoro::iocoro Threads::Threads)
+  target_compile_features(iocoro_${name} PRIVATE cxx_std_20)
+  target_compile_options(iocoro_${name} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+endfunction()
 
-add_executable(asio_tcp_roundtrip apps/asio/tcp_roundtrip.cpp)
-target_link_libraries(asio_tcp_roundtrip PRIVATE Threads::Threads)
-target_compile_features(asio_tcp_roundtrip PRIVATE cxx_std_20)
-target_compile_options(asio_tcp_roundtrip PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_tcp_roundtrip PRIVATE ${Boost_INCLUDE_DIRS})
+function(add_asio_benchmark name)
+  add_executable(asio_${name} apps/asio/${name}.cpp)
+  target_link_libraries(asio_${name} PRIVATE Threads::Threads)
+  target_compile_features(asio_${name} PRIVATE cxx_std_20)
+  target_compile_options(asio_${name} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+  target_include_directories(asio_${name} PRIVATE ${Boost_INCLUDE_DIRS})
+endfunction()
 
-add_executable(iocoro_tcp_connect_accept apps/iocoro/tcp_connect_accept.cpp)
-target_link_libraries(iocoro_tcp_connect_accept PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_tcp_connect_accept PRIVATE cxx_std_20)
-target_compile_options(iocoro_tcp_connect_accept PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+set(BENCHMARK_NAMES
+  tcp_roundtrip
+  tcp_connect_accept
+  tcp_throughput
+  udp_send_receive
+  timer_churn
+  tcp_latency
+  thread_pool_scaling
+)
 
-add_executable(asio_tcp_connect_accept apps/asio/tcp_connect_accept.cpp)
-target_link_libraries(asio_tcp_connect_accept PRIVATE Threads::Threads)
-target_compile_features(asio_tcp_connect_accept PRIVATE cxx_std_20)
-target_compile_options(asio_tcp_connect_accept PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_tcp_connect_accept PRIVATE ${Boost_INCLUDE_DIRS})
-
-add_executable(iocoro_tcp_throughput apps/iocoro/tcp_throughput.cpp)
-target_link_libraries(iocoro_tcp_throughput PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_tcp_throughput PRIVATE cxx_std_20)
-target_compile_options(iocoro_tcp_throughput PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-
-add_executable(asio_tcp_throughput apps/asio/tcp_throughput.cpp)
-target_link_libraries(asio_tcp_throughput PRIVATE Threads::Threads)
-target_compile_features(asio_tcp_throughput PRIVATE cxx_std_20)
-target_compile_options(asio_tcp_throughput PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_tcp_throughput PRIVATE ${Boost_INCLUDE_DIRS})
-
-add_executable(iocoro_udp_send_receive apps/iocoro/udp_send_receive.cpp)
-target_link_libraries(iocoro_udp_send_receive PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_udp_send_receive PRIVATE cxx_std_20)
-target_compile_options(iocoro_udp_send_receive PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-
-add_executable(asio_udp_send_receive apps/asio/udp_send_receive.cpp)
-target_link_libraries(asio_udp_send_receive PRIVATE Threads::Threads)
-target_compile_features(asio_udp_send_receive PRIVATE cxx_std_20)
-target_compile_options(asio_udp_send_receive PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_udp_send_receive PRIVATE ${Boost_INCLUDE_DIRS})
-
-add_executable(iocoro_timer_churn apps/iocoro/timer_churn.cpp)
-target_link_libraries(iocoro_timer_churn PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_timer_churn PRIVATE cxx_std_20)
-target_compile_options(iocoro_timer_churn PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-
-add_executable(asio_timer_churn apps/asio/timer_churn.cpp)
-target_link_libraries(asio_timer_churn PRIVATE Threads::Threads)
-target_compile_features(asio_timer_churn PRIVATE cxx_std_20)
-target_compile_options(asio_timer_churn PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_timer_churn PRIVATE ${Boost_INCLUDE_DIRS})
-
-add_executable(iocoro_tcp_latency apps/iocoro/tcp_latency.cpp)
-target_link_libraries(iocoro_tcp_latency PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_tcp_latency PRIVATE cxx_std_20)
-target_compile_options(iocoro_tcp_latency PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-
-add_executable(asio_tcp_latency apps/asio/tcp_latency.cpp)
-target_link_libraries(asio_tcp_latency PRIVATE Threads::Threads)
-target_compile_features(asio_tcp_latency PRIVATE cxx_std_20)
-target_compile_options(asio_tcp_latency PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_tcp_latency PRIVATE ${Boost_INCLUDE_DIRS})
-
-add_executable(iocoro_thread_pool_scaling apps/iocoro/thread_pool_scaling.cpp)
-target_link_libraries(iocoro_thread_pool_scaling PRIVATE iocoro::iocoro Threads::Threads)
-target_compile_features(iocoro_thread_pool_scaling PRIVATE cxx_std_20)
-target_compile_options(iocoro_thread_pool_scaling PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-
-add_executable(asio_thread_pool_scaling apps/asio/thread_pool_scaling.cpp)
-target_link_libraries(asio_thread_pool_scaling PRIVATE Threads::Threads)
-target_compile_features(asio_thread_pool_scaling PRIVATE cxx_std_20)
-target_compile_options(asio_thread_pool_scaling PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-target_include_directories(asio_thread_pool_scaling PRIVATE ${Boost_INCLUDE_DIRS})
+foreach(bench_name IN LISTS BENCHMARK_NAMES)
+  add_iocoro_benchmark(${bench_name})
+  add_asio_benchmark(${bench_name})
+endforeach()
