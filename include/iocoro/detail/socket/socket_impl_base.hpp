@@ -59,6 +59,10 @@ class socket_impl_base {
 
     ~operation_guard() noexcept { reset(); }
 
+    explicit operator bool() const noexcept { return static_cast<bool>(res_); }
+
+    auto resource() const noexcept -> std::shared_ptr<fd_resource> const& { return res_; }
+
     void reset() noexcept {
       if (res_) {
         res_->remove_inflight();
@@ -67,6 +71,11 @@ class socket_impl_base {
     }
 
    private:
+    struct adopt_t {};
+    explicit operation_guard(std::shared_ptr<fd_resource> res, adopt_t) noexcept
+        : res_(std::move(res)) {}
+
+    friend class socket_impl_base;
     std::shared_ptr<fd_resource> res_{};
   };
 
@@ -103,7 +112,19 @@ class socket_impl_base {
   }
 
   auto make_operation_guard(std::shared_ptr<fd_resource> const& res) noexcept -> operation_guard {
-    return operation_guard{res};
+    if (!res) {
+      return {};
+    }
+
+    std::scoped_lock lk{lifecycle_mtx_};
+    auto current = res_.load(std::memory_order_acquire);
+    if (!current || current.get() != res.get() || current->closing() ||
+        current->native_handle() < 0) {
+      return {};
+    }
+
+    current->add_inflight();
+    return operation_guard{std::move(current), operation_guard::adopt_t{}};
   }
 
   auto open(int domain, int type, int protocol) noexcept -> result<void>;
@@ -166,42 +187,44 @@ class socket_impl_base {
   }
 
   auto wait_read_ready(std::shared_ptr<fd_resource> const& res) -> awaitable<result<void>> {
-    if (!res || res->native_handle() < 0) {
+    auto inflight = make_operation_guard(res);
+    if (!inflight) {
+      if (res && res->closing()) {
+        co_return unexpected(error::operation_aborted);
+      }
       co_return unexpected(error::not_open);
     }
-    if (res->closing()) {
-      co_return unexpected(error::operation_aborted);
-    }
+    auto pinned = inflight.resource();
 
-    auto inflight = make_operation_guard(res);
     co_await this_coro::on(any_executor{ex_});
-    auto r = co_await detail::operation_awaiter{[this, res](detail::reactor_op_ptr rop) mutable {
-      auto h = ctx_impl_->register_fd_read(res->native_handle(), std::move(rop));
-      res->set_read_handle(h);
+    auto r = co_await detail::operation_awaiter{[this, pinned](detail::reactor_op_ptr rop) mutable {
+      auto h = ctx_impl_->register_fd_read(pinned->native_handle(), std::move(rop));
+      pinned->set_read_handle(h);
       return h;
     }};
-    if (r && res->closing()) {
+    if (r && pinned->closing()) {
       co_return unexpected(error::operation_aborted);
     }
     co_return r;
   }
 
   auto wait_write_ready(std::shared_ptr<fd_resource> const& res) -> awaitable<result<void>> {
-    if (!res || res->native_handle() < 0) {
+    auto inflight = make_operation_guard(res);
+    if (!inflight) {
+      if (res && res->closing()) {
+        co_return unexpected(error::operation_aborted);
+      }
       co_return unexpected(error::not_open);
     }
-    if (res->closing()) {
-      co_return unexpected(error::operation_aborted);
-    }
+    auto pinned = inflight.resource();
 
-    auto inflight = make_operation_guard(res);
     co_await this_coro::on(any_executor{ex_});
-    auto r = co_await detail::operation_awaiter{[this, res](detail::reactor_op_ptr rop) mutable {
-      auto h = ctx_impl_->register_fd_write(res->native_handle(), std::move(rop));
-      res->set_write_handle(h);
+    auto r = co_await detail::operation_awaiter{[this, pinned](detail::reactor_op_ptr rop) mutable {
+      auto h = ctx_impl_->register_fd_write(pinned->native_handle(), std::move(rop));
+      pinned->set_write_handle(h);
       return h;
     }};
-    if (r && res->closing()) {
+    if (r && pinned->closing()) {
       co_return unexpected(error::operation_aborted);
     }
     co_return r;

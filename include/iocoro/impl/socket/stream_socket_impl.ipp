@@ -81,6 +81,9 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t le
   }
 
   auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return fail(error::operation_aborted);
+  }
   auto const fd = res->native_handle();
   std::uint64_t my_epoch = 0;
   {
@@ -234,6 +237,9 @@ inline auto stream_socket_impl::async_read_some(std::span<std::byte> buffer)
   }
 
   auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
   auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;
@@ -298,6 +304,9 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
   }
 
   auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
   auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;

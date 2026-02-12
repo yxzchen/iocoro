@@ -106,6 +106,9 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
   }
 
   auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
   auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;
@@ -223,6 +226,9 @@ inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer
   }
 
   auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
   auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;

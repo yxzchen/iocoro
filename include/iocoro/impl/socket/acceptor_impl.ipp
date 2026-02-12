@@ -75,6 +75,9 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
   }
 
   auto inflight = base_.make_operation_guard(res);
+  if (!inflight) {
+    co_return unexpected(error::operation_aborted);
+  }
 
   std::uint64_t my_epoch = 0;
   {
