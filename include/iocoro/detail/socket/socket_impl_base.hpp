@@ -66,8 +66,7 @@ class socket_impl_base {
     }
 
    private:
-    struct adopt_t {};
-    explicit operation_guard(std::shared_ptr<fd_resource> res, adopt_t) noexcept
+    explicit operation_guard(std::shared_ptr<fd_resource> res) noexcept
         : res_(std::move(res)) {}
 
     friend class socket_impl_base;
@@ -119,7 +118,7 @@ class socket_impl_base {
     }
 
     current->add_inflight();
-    return operation_guard{std::move(current), operation_guard::adopt_t{}};
+    return operation_guard{std::move(current)};
   }
 
   auto open(int domain, int type, int protocol) noexcept -> result<void>;
