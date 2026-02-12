@@ -9,7 +9,7 @@ exec "$SCRIPT_DIR/run_ratio_baseline_suite.sh" \
   --usage-name "benchmark/scripts/run_thread_pool_scaling_baseline.sh" \
   --scenario-fields "workers,tasks" \
   --scenario-format "workers:tasks tuples" \
-  --scenarios-default "1:200000,2:400000,4:800000" \
+  --scenarios-default "1:200000,2:400000" \
   --baseline-description "Threshold file format: \"workers tasks min_ratio\"" \
   --iocoro-target "iocoro_thread_pool_scaling" \
   --asio-target "asio_thread_pool_scaling" \

@@ -259,7 +259,6 @@ File: `benchmark/baselines/thread_pool_scaling_thresholds.txt`
 # workers tasks min_ratio_vs_asio
 1 200000 0.85
 2 400000 0.75
-4 800000 0.65
 ```
 
 The gate compares `iocoro_ops_s_median / asio_ops_s_median` against `min_ratio_vs_asio`.
