@@ -5,7 +5,8 @@
 namespace iocoro {
 
 inline auto thread_pool::get_executor() noexcept -> executor_type {
-  return executor_type{state_};
+  auto st = state_;
+  return executor_type{std::move(st)};
 }
 
 inline auto thread_pool::size() const noexcept -> std::size_t {
