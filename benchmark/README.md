@@ -28,3 +28,15 @@ File: `benchmark/baseline/tcp_roundtrip_thresholds.txt`
 ```
 
 The gate compares `iocoro_rps_median / asio_rps_median` against `min_ratio_vs_asio`.
+
+## Perf report schema
+
+Schema file: `benchmark/perf_report.schema.json`
+
+Validate a generated report:
+
+```bash
+python3 benchmark/validate_perf_report.py \
+  --schema benchmark/perf_report.schema.json \
+  --report benchmark/perf_report.json
+```

@@ -129,7 +129,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config g++ libboost-dev
+          sudo apt-get install -y cmake ninja-build pkg-config g++ libboost-dev python3-jsonschema
 
       - name: Build benchmarks
         run: |
@@ -144,6 +144,12 @@ jobs:
             --warmup 1 \
             --baseline benchmark/baseline/tcp_roundtrip_thresholds.txt \
             --report benchmark/perf_report.json | tee benchmark/perf_summary.txt
+
+      - name: Validate perf report schema
+        run: |
+          python3 benchmark/validate_perf_report.py \
+            --schema benchmark/perf_report.schema.json \
+            --report benchmark/perf_report.json
 
       - name: Upload perf artifacts
         uses: actions/upload-artifact@v4

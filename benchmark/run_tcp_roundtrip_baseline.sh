@@ -251,6 +251,7 @@ if [[ -n "$REPORT_FILE" ]]; then
   timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   {
     printf '{\n'
+    printf '  "schema_version": 1,\n'
     printf '  "timestamp_utc": "%s",\n' "$timestamp"
     printf '  "build_dir": "%s",\n' "$BUILD_DIR"
     printf '  "iterations": %s,\n' "$ITERATIONS"
