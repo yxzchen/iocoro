@@ -2,8 +2,8 @@
 
 Directory layout:
 
-- `apps/asio/`: Boost.Asio benchmark binaries source files.
-- `apps/iocoro/`: iocoro benchmark binaries source files.
+- `cases/asio/`: Boost.Asio benchmark binaries source files.
+- `cases/iocoro/`: iocoro benchmark binaries source files.
 - `scripts/`: benchmark runners and report validator.
 - `scripts/run_ratio_baseline_suite.sh`: shared ratio-benchmark runner used by suite wrappers.
 - `baselines/`: regression gate thresholds.
