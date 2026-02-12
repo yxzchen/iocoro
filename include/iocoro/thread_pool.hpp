@@ -101,37 +101,39 @@ class thread_pool::executor_type {
   auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
   void post(detail::unique_function<void()> f) const noexcept {
-    if (!state_) {
+    auto st = state_;
+    if (!st) {
       return;
     }
 
-    auto task = detail::unique_function<void()>{[ex = *this, fn = std::move(f)]() mutable {
-      detail::executor_guard g{any_executor{ex}};
+    auto task = detail::unique_function<void()>{[st, fn = std::move(f)]() mutable {
+      detail::executor_guard g{any_executor{executor_type{st}}};
       fn();
     }};
     {
-      std::scoped_lock lock{state_->cv_mutex};
-      if (state_->state != state_t::running) {
+      std::scoped_lock lock{st->cv_mutex};
+      if (st->state != state_t::running) {
         return;
       }
-      state_->queue.emplace_back(std::move(task));
+      st->queue.emplace_back(std::move(task));
     }
-    state_->cv.notify_one();
+    st->cv.notify_one();
   }
 
   void dispatch(detail::unique_function<void()> f) const noexcept {
-    if (!state_) {
+    auto st = state_;
+    if (!st) {
       return;
     }
 
     auto const cur_any = detail::get_current_executor();
     if (cur_any) {
       auto const* cur = detail::any_executor_access::target<executor_type>(cur_any);
-      if (cur != nullptr && (*cur == *this)) {
+      if (cur != nullptr && cur->state_.get() == st.get()) {
         try {
           f();
         } catch (...) {
-          auto handler_ptr = state_->on_task_exception.load(std::memory_order_acquire);
+          auto handler_ptr = st->on_task_exception.load(std::memory_order_acquire);
           if (handler_ptr) {
             try {
               (*handler_ptr)(std::current_exception());
@@ -149,11 +151,12 @@ class thread_pool::executor_type {
 
   /// True if the pool has been stopped (or this executor is empty).
   auto stopped() const noexcept -> bool {
-    if (!state_) {
+    auto st = state_;
+    if (!st) {
       return true;
     }
-    std::scoped_lock lock{state_->cv_mutex};
-    return state_->state != state_t::running;
+    std::scoped_lock lock{st->cv_mutex};
+    return st->state != state_t::running;
   }
 
   explicit operator bool() const noexcept { return state_ != nullptr; }
@@ -169,16 +172,18 @@ class thread_pool::executor_type {
   friend class work_guard<executor_type>;
 
   void add_work_guard() const noexcept {
-    if (state_) {
-      state_->work_guard.add();
+    auto st = state_;
+    if (st) {
+      st->work_guard.add();
     }
   }
 
   void remove_work_guard() const noexcept {
-    if (state_) {
-      auto const old = state_->work_guard.remove();
+    auto st = state_;
+    if (st) {
+      auto const old = st->work_guard.remove();
       if (old == 1) {
-        state_->cv.notify_all();
+        st->cv.notify_all();
       }
     }
   }
