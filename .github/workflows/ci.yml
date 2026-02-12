@@ -138,35 +138,12 @@ jobs:
 
       - name: Run perf baseline gate
         run: |
-          ./benchmark/scripts/run_tcp_roundtrip_baseline.sh \
+          ./benchmark/scripts/run_all_perf_benchmarks.sh \
             --build-dir build \
             --iterations 3 \
             --warmup 1 \
-            --run-timeout-sec 120 \
-            --baseline benchmark/baselines/tcp_roundtrip_thresholds.txt \
-            --report benchmark/reports/perf_report.json | tee benchmark/reports/perf_summary.txt
-
-      - name: Validate roundtrip report schema
-        run: |
-          python3 benchmark/scripts/validate_perf_report.py \
-            --schema benchmark/schemas/perf_report.schema.json \
-            --report benchmark/reports/perf_report.json
-
-      - name: Run connect-accept baseline gate
-        run: |
-          ./benchmark/scripts/run_tcp_connect_accept_baseline.sh \
-            --build-dir build \
-            --iterations 3 \
-            --warmup 1 \
-            --run-timeout-sec 180 \
-            --baseline benchmark/baselines/tcp_connect_accept_thresholds.txt \
-            --report benchmark/reports/connect_accept_report.json | tee benchmark/reports/connect_accept_summary.txt
-
-      - name: Validate connect-accept report schema
-        run: |
-          python3 benchmark/scripts/validate_perf_report.py \
-            --schema benchmark/schemas/connect_accept_report.schema.json \
-            --report benchmark/reports/connect_accept_report.json
+            --roundtrip-timeout-sec 120 \
+            --connect-timeout-sec 180
 
       - name: Upload perf artifacts
         uses: actions/upload-artifact@v4

@@ -8,6 +8,22 @@ Directory layout:
 - `schemas/`: JSON schemas for benchmark reports.
 - `reports/`: generated reports (runtime output, not committed).
 
+## Unified runner
+
+Run all benchmark suites with one command:
+
+```bash
+./benchmark/scripts/run_all_perf_benchmarks.sh \
+  --build-dir build \
+  --iterations 3 \
+  --warmup 1
+```
+
+The unified runner executes:
+- `scripts/run_tcp_roundtrip_baseline.sh`
+- `scripts/run_tcp_connect_accept_baseline.sh`
+- `scripts/validate_perf_report.py` for both reports
+
 ## TCP roundtrip baseline runner
 
 Use `run_tcp_roundtrip_baseline.sh` to run `iocoro_tcp_roundtrip` and `asio_tcp_roundtrip`

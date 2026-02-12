@@ -125,6 +125,15 @@ Build benchmarks:
 
 ### Performance baseline, gate, and observability
 
+Run the full benchmark suite (roundtrip + connect/accept):
+
+```bash
+./benchmark/scripts/run_all_perf_benchmarks.sh \
+  --build-dir build \
+  --iterations 3 \
+  --warmup 1
+```
+
 Run TCP roundtrip benchmark matrix:
 
 ```bash
