@@ -136,7 +136,7 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
   }
 
   if (is_connected) {
-    if (!dest_addr || dest_len <= 0) {
+    if (dest_addr && dest_len <= 0) {
       co_return unexpected(error::invalid_argument);
     }
 
@@ -171,9 +171,11 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
       return std::memcmp(a, b, static_cast<std::size_t>(alen)) == 0;
     };
 
-    if (!same_destination(dest_addr, dest_len, reinterpret_cast<sockaddr const*>(&connected_addr),
-                          connected_addr_len)) {
-      co_return unexpected(error::invalid_argument);
+    if (dest_addr) {
+      if (!same_destination(dest_addr, dest_len, reinterpret_cast<sockaddr const*>(&connected_addr),
+                            connected_addr_len)) {
+        co_return unexpected(error::invalid_argument);
+      }
     }
   }
 
