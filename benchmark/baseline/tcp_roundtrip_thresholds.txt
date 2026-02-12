@@ -1,0 +1,4 @@
+# sessions msgs min_ratio_vs_asio
+1 5000 0.60
+8 2000 0.72
+32 500 0.72

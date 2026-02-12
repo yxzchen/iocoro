@@ -120,7 +120,7 @@ jobs:
           cmake --build /tmp/iocoro-consumer/build -j
           /tmp/iocoro-consumer/build/consumer
 
-  build-benchmarks:
+  perf-regression-gate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -133,6 +133,22 @@ jobs:
 
       - name: Build benchmarks
         run: |
-          chmod +x ./build.sh
-          ./build.sh -c -r -b
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DIOCORO_BUILD_BENCHMARKS=ON
+          cmake --build build -j
 
+      - name: Run perf baseline gate
+        run: |
+          ./benchmark/run_tcp_roundtrip_baseline.sh \
+            --build-dir build \
+            --iterations 3 \
+            --warmup 1 \
+            --baseline benchmark/baseline/tcp_roundtrip_thresholds.txt \
+            --report benchmark/perf_report.json | tee benchmark/perf_summary.txt
+
+      - name: Upload perf artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-regression-report
+          path: |
+            benchmark/perf_report.json
+            benchmark/perf_summary.txt
