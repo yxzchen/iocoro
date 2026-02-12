@@ -35,6 +35,35 @@ bench_to_abs_path() {
   fi
 }
 
+run_step_with_summary() {
+  local label="$1"
+  local summary_file="$2"
+  shift 2
+
+  set +e
+  "$@" | tee "$summary_file"
+  local code=$?
+  set -e
+
+  if [[ $code -ne 0 ]]; then
+    FAILED_STEPS+=("$label")
+  fi
+}
+
+run_step_no_summary() {
+  local label="$1"
+  shift
+
+  set +e
+  "$@"
+  local code=$?
+  set -e
+
+  if [[ $code -ne 0 ]]; then
+    FAILED_STEPS+=("$label")
+  fi
+}
+
 BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
 WARMUP=1
@@ -84,6 +113,7 @@ THROUGHPUT_SUMMARY="$PROJECT_DIR/benchmark/reports/throughput_summary.txt"
 UDP_SUMMARY="$PROJECT_DIR/benchmark/reports/udp_summary.txt"
 TIMER_SUMMARY="$PROJECT_DIR/benchmark/reports/timer_summary.txt"
 THREADPOOL_SUMMARY="$PROJECT_DIR/benchmark/reports/thread_pool_summary.txt"
+FAILED_STEPS=()
 
 usage() {
   cat <<'EOF'
@@ -429,46 +459,40 @@ echo "  baseline_gate: $ENABLE_BASELINE"
 echo "  schema_validate: $ENABLE_SCHEMA_VALIDATE"
 echo
 
-"${roundtrip_cmd[@]}" | tee "$ROUNDTRIP_SUMMARY"
-
-"${latency_cmd[@]}" | tee "$LATENCY_SUMMARY"
-
-"${connect_cmd[@]}" | tee "$CONNECT_SUMMARY"
-
-"${throughput_cmd[@]}" | tee "$THROUGHPUT_SUMMARY"
-
-"${udp_cmd[@]}" | tee "$UDP_SUMMARY"
-
-"${timer_cmd[@]}" | tee "$TIMER_SUMMARY"
-
-"${threadpool_cmd[@]}" | tee "$THREADPOOL_SUMMARY"
+run_step_with_summary "tcp_roundtrip" "$ROUNDTRIP_SUMMARY" "${roundtrip_cmd[@]}"
+run_step_with_summary "tcp_latency" "$LATENCY_SUMMARY" "${latency_cmd[@]}"
+run_step_with_summary "tcp_connect_accept" "$CONNECT_SUMMARY" "${connect_cmd[@]}"
+run_step_with_summary "tcp_throughput" "$THROUGHPUT_SUMMARY" "${throughput_cmd[@]}"
+run_step_with_summary "udp_send_receive" "$UDP_SUMMARY" "${udp_cmd[@]}"
+run_step_with_summary "timer_churn" "$TIMER_SUMMARY" "${timer_cmd[@]}"
+run_step_with_summary "thread_pool_scaling" "$THREADPOOL_SUMMARY" "${threadpool_cmd[@]}"
 
 if [[ "$ENABLE_SCHEMA_VALIDATE" == true ]]; then
-  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+  run_step_no_summary "schema_perf" python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/perf_report.schema.json" \
     --report "$ROUNDTRIP_REPORT"
 
-  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+  run_step_no_summary "schema_latency" python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/latency_report.schema.json" \
     --report "$LATENCY_REPORT"
 
-  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+  run_step_no_summary "schema_connect_accept" python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/connect_accept_report.schema.json" \
     --report "$CONNECT_REPORT"
 
-  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+  run_step_no_summary "schema_throughput" python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/throughput_report.schema.json" \
     --report "$THROUGHPUT_REPORT"
 
-  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+  run_step_no_summary "schema_udp" python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/udp_report.schema.json" \
     --report "$UDP_REPORT"
 
-  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+  run_step_no_summary "schema_timer" python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/timer_report.schema.json" \
     --report "$TIMER_REPORT"
 
-  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+  run_step_no_summary "schema_thread_pool" python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/thread_pool_report.schema.json" \
     --report "$THREADPOOL_REPORT"
 fi
@@ -489,3 +513,12 @@ echo "  throughput summary: $THROUGHPUT_SUMMARY"
 echo "  udp summary      : $UDP_SUMMARY"
 echo "  timer summary    : $TIMER_SUMMARY"
 echo "  threadpool summary: $THREADPOOL_SUMMARY"
+
+if [[ ${#FAILED_STEPS[@]} -gt 0 ]]; then
+  echo
+  echo "One or more benchmark steps failed:" >&2
+  for step in "${FAILED_STEPS[@]}"; do
+    echo "  - $step" >&2
+  done
+  exit 1
+fi
