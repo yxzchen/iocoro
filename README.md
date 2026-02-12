@@ -125,7 +125,7 @@ Build benchmarks:
 
 ### Performance baseline, gate, and observability
 
-Run the full benchmark suite (roundtrip + connect/accept + throughput + udp):
+Run the full benchmark suite (roundtrip + connect/accept + throughput + udp + timer):
 
 ```bash
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
@@ -175,6 +175,16 @@ Run UDP send/receive benchmark matrix:
   --report benchmark/reports/udp_report.json
 ```
 
+Run timer churn benchmark matrix:
+
+```bash
+./benchmark/scripts/run_timer_churn_baseline.sh \
+  --build-dir build \
+  --run-timeout-sec 180 \
+  --baseline benchmark/baselines/timer_churn_thresholds.txt \
+  --report benchmark/reports/timer_report.json
+```
+
 Validate report schemas:
 
 ```bash
@@ -199,6 +209,12 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/udp_report.schema.json \
   --report benchmark/reports/udp_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/timer_report.schema.json \
+  --report benchmark/reports/timer_report.json
 ```
 
 ## License

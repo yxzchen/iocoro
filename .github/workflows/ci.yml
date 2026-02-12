@@ -157,3 +157,5 @@ jobs:
             benchmark/reports/throughput_summary.txt
             benchmark/reports/udp_report.json
             benchmark/reports/udp_summary.txt
+            benchmark/reports/timer_report.json
+            benchmark/reports/timer_summary.txt

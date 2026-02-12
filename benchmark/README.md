@@ -26,11 +26,12 @@ The unified runner executes:
 - `scripts/run_tcp_connect_accept_baseline.sh`
 - `scripts/run_tcp_throughput_baseline.sh`
 - `scripts/run_udp_send_receive_baseline.sh`
+- `scripts/run_timer_churn_baseline.sh`
 - `scripts/validate_perf_report.py` for all reports
 
 Timeout options:
 - `--timeout-sec` applies to all suites.
-- `--roundtrip-timeout-sec`, `--connect-timeout-sec`, `--throughput-timeout-sec`, and `--udp-timeout-sec` can override per-suite.
+- `--roundtrip-timeout-sec`, `--connect-timeout-sec`, `--throughput-timeout-sec`, `--udp-timeout-sec`, and `--timer-timeout-sec` can override per-suite.
 
 ## TCP roundtrip baseline runner
 
@@ -165,6 +166,38 @@ File: `benchmark/baselines/udp_send_receive_thresholds.txt`
 
 The gate compares `iocoro_pps_median / asio_pps_median` against `min_ratio_vs_asio`.
 
+## Timer churn baseline runner
+
+Use `run_timer_churn_baseline.sh` to run `iocoro_timer_churn` and
+`asio_timer_churn` across scheduler-load scenarios and aggregate median `ops_s`.
+
+Example:
+
+```bash
+./benchmark/scripts/run_timer_churn_baseline.sh \
+  --build-dir build \
+  --iterations 5 \
+  --warmup 1 \
+  --run-timeout-sec 120 \
+  --baseline benchmark/baselines/timer_churn_thresholds.txt \
+  --report benchmark/reports/timer_report.json
+```
+
+Timer scenarios are `sessions:waits`.
+
+## Timer churn threshold format
+
+File: `benchmark/baselines/timer_churn_thresholds.txt`
+
+```
+# sessions waits min_ratio_vs_asio
+1 200000 0.65
+8 80000 0.70
+32 20000 0.70
+```
+
+The gate compares `iocoro_ops_s_median / asio_ops_s_median` against `min_ratio_vs_asio`.
+
 ## Report schemas
 
 Schema files:
@@ -172,6 +205,7 @@ Schema files:
 - `benchmark/schemas/connect_accept_report.schema.json`
 - `benchmark/schemas/throughput_report.schema.json`
 - `benchmark/schemas/udp_report.schema.json`
+- `benchmark/schemas/timer_report.schema.json`
 
 Validate a generated report:
 
@@ -197,4 +231,10 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/udp_report.schema.json \
   --report benchmark/reports/udp_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/timer_report.schema.json \
+  --report benchmark/reports/timer_report.json
 ```
