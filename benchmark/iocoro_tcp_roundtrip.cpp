@@ -1,6 +1,7 @@
 #include <iocoro/iocoro.hpp>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -17,11 +18,12 @@ struct bench_state {
   iocoro::io_context* ctx = nullptr;
   std::atomic<int> remaining_sessions{0};
   int msgs_per_session = 0;
+  std::size_t io_buffer_size = 4096;
   std::string msg{};
 };
 
 auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void> {
-  std::string buffer(4096, '\0');
+  std::string buffer(st->io_buffer_size, '\0');
   auto buf = iocoro::net::buffer(buffer);
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
@@ -63,7 +65,7 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
     co_return;
   }
 
-  std::string buffer(4096, '\0');
+  std::string buffer(st->io_buffer_size, '\0');
   auto buf = iocoro::net::buffer(buffer);
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
@@ -88,9 +90,17 @@ auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
 int main(int argc, char* argv[]) {
   int sessions = 1;
   int msgs = 1;
-  if (argc == 3) {
+  std::size_t msg_bytes = 13;
+  if (argc >= 3) {
     sessions = std::stoi(argv[1]);
     msgs = std::stoi(argv[2]);
+  }
+  if (argc >= 4) {
+    msg_bytes = static_cast<std::size_t>(std::stoul(argv[3]));
+  }
+  if (msg_bytes == 0) {
+    std::cerr << "iocoro_tcp_roundtrip: msg_bytes must be > 0\n";
+    return 1;
   }
 
   iocoro::io_context ctx;
@@ -113,7 +123,13 @@ int main(int argc, char* argv[]) {
   st.ctx = &ctx;
   st.remaining_sessions.store(sessions);
   st.msgs_per_session = msgs;
-  st.msg = "Some message\n";
+  if (msg_bytes == 1) {
+    st.msg = "\n";
+  } else {
+    st.msg.assign(msg_bytes - 1, 'x');
+    st.msg.push_back('\n');
+  }
+  st.io_buffer_size = std::max<std::size_t>(4096, st.msg.size() * 2);
 
   auto ex = ctx.get_executor();
   auto guard = iocoro::make_work_guard(ctx);
@@ -123,11 +139,11 @@ int main(int argc, char* argv[]) {
     iocoro::co_spawn(ex, client_session(ctx, *ep_r, &st), iocoro::detached);
   }
 
-  auto const msg_bytes = st.msg.size();
+  auto const payload_bytes = st.msg.size();
   auto const total_roundtrips =
     static_cast<std::uint64_t>(sessions) * static_cast<std::uint64_t>(msgs);
-  auto const total_tx_bytes = total_roundtrips * msg_bytes;
-  auto const total_rx_bytes = total_roundtrips * msg_bytes;
+  auto const total_tx_bytes = total_roundtrips * payload_bytes;
+  auto const total_rx_bytes = total_roundtrips * payload_bytes;
 
   auto const start = std::chrono::steady_clock::now();
   ctx.run();
@@ -142,7 +158,7 @@ int main(int argc, char* argv[]) {
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "iocoro_tcp_roundtrip"
             << " listen=" << ep_r->to_string() << " sessions=" << sessions << " msgs=" << msgs
-            << " msg_bytes=" << msg_bytes << " roundtrips=" << total_roundtrips
+            << " msg_bytes=" << payload_bytes << " roundtrips=" << total_roundtrips
             << " tx_bytes=" << total_tx_bytes << " rx_bytes=" << total_rx_bytes
             << " elapsed_s=" << elapsed_s << " rps=" << rps << " avg_us=" << avg_us << "\n";
 

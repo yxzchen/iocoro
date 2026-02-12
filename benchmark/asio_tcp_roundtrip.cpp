@@ -1,6 +1,7 @@
 #include <boost/asio.hpp>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -23,13 +24,14 @@ struct bench_state {
   net::io_context* ioc = nullptr;
   std::atomic<int> remaining_sessions{0};
   int msgs_per_session = 0;
+  std::size_t io_buffer_size = 4096;
   std::string msg{};
 };
 
 auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
   std::string buffer;
-  buffer.reserve(4096);
-  auto dbuf = net::dynamic_buffer(buffer, 4096);
+  buffer.reserve(st->io_buffer_size);
+  auto dbuf = net::dynamic_buffer(buffer, st->io_buffer_size);
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
     auto n = co_await net::async_read_until(socket, dbuf, '\n', use_awaitable);
@@ -53,8 +55,8 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
   co_await socket.async_connect(ep, use_awaitable);
 
   std::string buffer;
-  buffer.reserve(4096);
-  auto dbuf = net::dynamic_buffer(buffer, 4096);
+  buffer.reserve(st->io_buffer_size);
+  auto dbuf = net::dynamic_buffer(buffer, st->io_buffer_size);
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
     co_await net::async_write(socket, net::buffer(st->msg), use_awaitable);
@@ -72,9 +74,17 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
 int main(int argc, char* argv[]) {
   int sessions = 1;
   int msgs = 1;
-  if (argc == 3) {
+  std::size_t msg_bytes = 13;
+  if (argc >= 3) {
     sessions = std::stoi(argv[1]);
     msgs = std::stoi(argv[2]);
+  }
+  if (argc >= 4) {
+    msg_bytes = static_cast<std::size_t>(std::stoul(argv[3]));
+  }
+  if (msg_bytes == 0) {
+    std::cerr << "asio_tcp_roundtrip: msg_bytes must be > 0\n";
+    return 1;
   }
 
   net::io_context ioc;
@@ -86,13 +96,19 @@ int main(int argc, char* argv[]) {
   st.ioc = &ioc;
   st.remaining_sessions.store(sessions);
   st.msgs_per_session = msgs;
-  st.msg = "Some message\n";
+  if (msg_bytes == 1) {
+    st.msg = "\n";
+  } else {
+    st.msg.assign(msg_bytes - 1, 'x');
+    st.msg.push_back('\n');
+  }
+  st.io_buffer_size = std::max<std::size_t>(4096, st.msg.size() * 2);
 
-  auto const msg_bytes = st.msg.size();
+  auto const payload_bytes = st.msg.size();
   auto const total_roundtrips =
     static_cast<std::uint64_t>(sessions) * static_cast<std::uint64_t>(msgs);
-  auto const total_tx_bytes = total_roundtrips * msg_bytes;
-  auto const total_rx_bytes = total_roundtrips * msg_bytes;
+  auto const total_tx_bytes = total_roundtrips * payload_bytes;
+  auto const total_rx_bytes = total_roundtrips * payload_bytes;
 
   co_spawn(ioc, accept_loop(acceptor, sessions, &st), detached);
   for (int i = 0; i < sessions; ++i) {
@@ -112,7 +128,7 @@ int main(int argc, char* argv[]) {
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_tcp_roundtrip"
             << " listen=" << listen_ep.address().to_string() << ":" << listen_ep.port()
-            << " sessions=" << sessions << " msgs=" << msgs << " msg_bytes=" << msg_bytes
+            << " sessions=" << sessions << " msgs=" << msgs << " msg_bytes=" << payload_bytes
             << " roundtrips=" << total_roundtrips << " tx_bytes=" << total_tx_bytes
             << " rx_bytes=" << total_rx_bytes << " elapsed_s=" << elapsed_s << " rps=" << rps
             << " avg_us=" << avg_us << "\n";

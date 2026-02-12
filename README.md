@@ -123,6 +123,42 @@ Build benchmarks:
 ./build.sh -b
 ```
 
+### Performance baseline, gate, and observability
+
+Run TCP roundtrip benchmark matrix:
+
+```bash
+./benchmark/run_tcp_roundtrip_baseline.sh \
+  --build-dir build \
+  --run-timeout-sec 120 \
+  --baseline benchmark/baseline/tcp_roundtrip_thresholds.txt \
+  --report benchmark/perf_report.json
+```
+
+Run TCP connect/accept benchmark matrix:
+
+```bash
+./benchmark/run_tcp_connect_accept_baseline.sh \
+  --build-dir build \
+  --run-timeout-sec 180 \
+  --baseline benchmark/baseline/tcp_connect_accept_thresholds.txt \
+  --report benchmark/connect_accept_report.json
+```
+
+Validate report schemas:
+
+```bash
+python3 benchmark/validate_perf_report.py \
+  --schema benchmark/perf_report.schema.json \
+  --report benchmark/perf_report.json
+```
+
+```bash
+python3 benchmark/validate_perf_report.py \
+  --schema benchmark/connect_accept_report.schema.json \
+  --report benchmark/connect_accept_report.json
+```
+
 ## License
 
 MIT License. See `LICENSE`.

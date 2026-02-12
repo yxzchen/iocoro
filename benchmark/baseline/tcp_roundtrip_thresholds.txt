@@ -1,4 +1,6 @@
-# sessions msgs min_ratio_vs_asio
-1 5000 0.60
-8 2000 0.72
-32 500 0.72
+# sessions msgs msg_bytes min_ratio_vs_asio
+1 5000 64 0.60
+8 2000 64 0.72
+32 500 64 0.72
+8 1000 1024 0.70
+32 200 4096 0.65

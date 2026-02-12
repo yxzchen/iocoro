@@ -12,26 +12,65 @@ Example:
   --build-dir build \
   --iterations 5 \
   --warmup 1 \
+  --run-timeout-sec 60 \
   --baseline benchmark/baseline/tcp_roundtrip_thresholds.txt \
   --report benchmark/perf_report.json
 ```
 
-## Baseline threshold format
+Roundtrip scenarios are `sessions:msgs:msg_bytes`.
+
+## TCP roundtrip threshold format
 
 File: `benchmark/baseline/tcp_roundtrip_thresholds.txt`
 
 ```
-# sessions msgs min_ratio_vs_asio
-1 5000 0.60
-8 2000 0.72
-32 500 0.72
+# sessions msgs msg_bytes min_ratio_vs_asio
+1 5000 64 0.60
+8 2000 64 0.72
+32 500 64 0.72
+8 1000 1024 0.70
+32 200 4096 0.65
 ```
 
 The gate compares `iocoro_rps_median / asio_rps_median` against `min_ratio_vs_asio`.
 
-## Perf report schema
+## TCP connect/accept baseline runner
 
-Schema file: `benchmark/perf_report.schema.json`
+Use `run_tcp_connect_accept_baseline.sh` to run `iocoro_tcp_connect_accept` and
+`asio_tcp_connect_accept` across connection-count scenarios and aggregate median `cps`.
+
+Example:
+
+```bash
+./benchmark/run_tcp_connect_accept_baseline.sh \
+  --build-dir build \
+  --iterations 5 \
+  --warmup 1 \
+  --run-timeout-sec 120 \
+  --baseline benchmark/baseline/tcp_connect_accept_thresholds.txt \
+  --report benchmark/connect_accept_report.json
+```
+
+Connect/accept scenarios are plain connection counts.
+
+## TCP connect/accept threshold format
+
+File: `benchmark/baseline/tcp_connect_accept_thresholds.txt`
+
+```
+# connections min_ratio_vs_asio
+1000 0.80
+2000 0.80
+3000 0.80
+```
+
+The gate compares `iocoro_cps_median / asio_cps_median` against `min_ratio_vs_asio`.
+
+## Report schemas
+
+Schema files:
+- `benchmark/perf_report.schema.json`
+- `benchmark/connect_accept_report.schema.json`
 
 Validate a generated report:
 
@@ -39,4 +78,10 @@ Validate a generated report:
 python3 benchmark/validate_perf_report.py \
   --schema benchmark/perf_report.schema.json \
   --report benchmark/perf_report.json
+```
+
+```bash
+python3 benchmark/validate_perf_report.py \
+  --schema benchmark/connect_accept_report.schema.json \
+  --report benchmark/connect_accept_report.json
 ```

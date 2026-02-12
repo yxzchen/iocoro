@@ -6,26 +6,23 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 ITERATIONS=5
 WARMUP=1
-SCENARIOS="1:5000:64,8:2000:64,32:500:64,8:1000:1024,32:200:4096"
+SCENARIOS="1000,2000,3000"
 BASELINE_FILE=""
 REPORT_FILE=""
-RUN_TIMEOUT_SEC=60
+RUN_TIMEOUT_SEC=120
 
 usage() {
   cat <<'EOF'
-Usage: benchmark/run_tcp_roundtrip_baseline.sh [options]
+Usage: benchmark/run_tcp_connect_accept_baseline.sh [options]
 
 Options:
   --build-dir DIR      CMake build dir containing benchmark binaries (default: ./build)
   --iterations N       Measured runs per scenario (default: 5)
   --warmup N           Warmup runs per scenario/framework (default: 1)
-  --scenarios LIST     Comma-separated sessions:msgs:msg_bytes tuples
-                       (default: 1:5000:64,8:2000:64,32:500:64,8:1000:1024,32:200:4096)
-  --baseline FILE      Threshold file:
-                       - legacy format: "sessions msgs min_ratio" (msg_bytes=13)
-                       - new format   : "sessions msgs msg_bytes min_ratio"
+  --scenarios LIST     Comma-separated connection counts (default: 1000,2000,3000)
+  --baseline FILE      Threshold file format: "connections min_ratio"
   --report FILE        Write JSON summary to FILE
-  --run-timeout-sec N  Timeout for each benchmark process in seconds (default: 60, 0=disable)
+  --run-timeout-sec N  Timeout for each benchmark process in seconds (default: 120, 0=disable)
   -h, --help           Show this help
 EOF
 }
@@ -91,8 +88,8 @@ if [[ "$BUILD_DIR" != /* ]]; then
   BUILD_DIR="$ROOT_DIR/$BUILD_DIR"
 fi
 
-IOCORO_BIN="$BUILD_DIR/benchmark/iocoro_tcp_roundtrip"
-ASIO_BIN="$BUILD_DIR/benchmark/asio_tcp_roundtrip"
+IOCORO_BIN="$BUILD_DIR/benchmark/iocoro_tcp_connect_accept"
+ASIO_BIN="$BUILD_DIR/benchmark/asio_tcp_connect_accept"
 
 if [[ ! -x "$IOCORO_BIN" ]]; then
   echo "Missing benchmark binary: $IOCORO_BIN" >&2
@@ -147,8 +144,8 @@ run_bench_cmd() {
   printf '%s\n' "$out"
 }
 
-extract_rps() {
-  sed -nE 's/.* rps=([0-9]+([.][0-9]+)?).*/\1/p' <<<"$1"
+extract_cps() {
+  sed -nE 's/.* cps=([0-9]+([.][0-9]+)?).*/\1/p' <<<"$1"
 }
 
 median_from_stdin() {
@@ -171,17 +168,13 @@ compute_ratio() {
 }
 
 check_threshold() {
-  local sessions="$1"
-  local msgs="$2"
-  local msg_bytes="$3"
+  local connections="$1"
   if [[ -z "$BASELINE_FILE" ]]; then
     echo ""
     return 0
   fi
-  awk -v s="$sessions" -v m="$msgs" -v b="$msg_bytes" '
-    $1 ~ /^#/ { next }
-    NF >= 4 && $1 == s && $2 == m && $3 == b { print $4; found = 1; exit }
-    NF >= 3 && $1 == s && $2 == m && b == 13 { print $3; found = 1; exit }
+  awk -v c="$connections" '
+    $1 !~ /^#/ && NF >= 2 && $1 == c { print $2; found = 1; exit }
     END { if (!found) print ""; }
   ' "$BASELINE_FILE"
 }
@@ -191,7 +184,7 @@ fail_count=0
 table_rows=()
 scenario_json=()
 
-echo "Running tcp roundtrip benchmark"
+echo "Running tcp connect/accept benchmark"
 echo "  iocoro: $IOCORO_BIN"
 echo "  asio  : $ASIO_BIN"
 echo "  scenarios: $SCENARIOS"
@@ -202,45 +195,41 @@ if [[ -n "$BASELINE_FILE" ]]; then
 fi
 echo
 
-IFS=',' read -r -a scenario_pairs <<< "$SCENARIOS"
-for pair in "${scenario_pairs[@]}"; do
-  IFS=':' read -r sessions msgs msg_bytes <<< "$pair"
-  if [[ -z "${sessions:-}" || -z "${msgs:-}" ]]; then
-    echo "Invalid scenario: $pair (expected sessions:msgs[:msg_bytes])" >&2
+IFS=',' read -r -a scenario_counts <<<"$SCENARIOS"
+for connections in "${scenario_counts[@]}"; do
+  if [[ -z "$connections" ]]; then
+    echo "Invalid scenario entry in --scenarios" >&2
     exit 1
   fi
-  if [[ -z "${msg_bytes:-}" ]]; then
-    msg_bytes=13
-  fi
 
-  echo "Scenario sessions=$sessions msgs=$msgs msg_bytes=$msg_bytes"
+  echo "Scenario connections=$connections"
 
   for ((i = 0; i < WARMUP; ++i)); do
-    run_bench_cmd "$IOCORO_BIN" "$sessions" "$msgs" "$msg_bytes" >/dev/null
-    run_bench_cmd "$ASIO_BIN" "$sessions" "$msgs" "$msg_bytes" >/dev/null
+    run_bench_cmd "$IOCORO_BIN" "$connections" >/dev/null
+    run_bench_cmd "$ASIO_BIN" "$connections" >/dev/null
   done
 
   iocoro_runs=()
   asio_runs=()
 
   for ((i = 0; i < ITERATIONS; ++i)); do
-    line="$(run_bench_cmd "$IOCORO_BIN" "$sessions" "$msgs" "$msg_bytes")"
-    rps="$(extract_rps "$line")"
-    if [[ -z "$rps" ]]; then
-      echo "Failed to parse iocoro rps: $line" >&2
+    line="$(run_bench_cmd "$IOCORO_BIN" "$connections")"
+    cps="$(extract_cps "$line")"
+    if [[ -z "$cps" ]]; then
+      echo "Failed to parse iocoro cps: $line" >&2
       exit 1
     fi
-    iocoro_runs+=("$rps")
+    iocoro_runs+=("$cps")
   done
 
   for ((i = 0; i < ITERATIONS; ++i)); do
-    line="$(run_bench_cmd "$ASIO_BIN" "$sessions" "$msgs" "$msg_bytes")"
-    rps="$(extract_rps "$line")"
-    if [[ -z "$rps" ]]; then
-      echo "Failed to parse asio rps: $line" >&2
+    line="$(run_bench_cmd "$ASIO_BIN" "$connections")"
+    cps="$(extract_cps "$line")"
+    if [[ -z "$cps" ]]; then
+      echo "Failed to parse asio cps: $line" >&2
       exit 1
     fi
-    asio_runs+=("$rps")
+    asio_runs+=("$cps")
   done
 
   iocoro_median="$(
@@ -250,7 +239,7 @@ for pair in "${scenario_pairs[@]}"; do
     printf '%s\n' "${asio_runs[@]}" | sort -n | median_from_stdin
   )"
   ratio="$(compute_ratio "$iocoro_median" "$asio_median")"
-  min_ratio="$(check_threshold "$sessions" "$msgs" "$msg_bytes")"
+  min_ratio="$(check_threshold "$connections")"
   pass_label="n/a"
   pass_bool=true
 
@@ -266,7 +255,7 @@ for pair in "${scenario_pairs[@]}"; do
     fi
   fi
 
-  table_rows+=("$sessions|$msgs|$msg_bytes|$iocoro_median|$asio_median|$ratio|${min_ratio:-n/a}|$pass_label")
+  table_rows+=("$connections|$iocoro_median|$asio_median|$ratio|${min_ratio:-n/a}|$pass_label")
 
   iocoro_runs_json="$(printf '%s\n' "${iocoro_runs[@]}" | paste -sd, -)"
   asio_runs_json="$(printf '%s\n' "${asio_runs[@]}" | paste -sd, -)"
@@ -275,10 +264,10 @@ for pair in "${scenario_pairs[@]}"; do
   else
     min_ratio_json="null"
   fi
-  scenario_json+=("{\"sessions\":$sessions,\"msgs\":$msgs,\"msg_bytes\":$msg_bytes,\"iocoro_rps_runs\":[${iocoro_runs_json}],\"asio_rps_runs\":[${asio_runs_json}],\"iocoro_rps_median\":$iocoro_median,\"asio_rps_median\":$asio_median,\"ratio_vs_asio\":$ratio,\"min_ratio\":$min_ratio_json,\"pass\":$pass_bool}")
+  scenario_json+=("{\"connections\":$connections,\"iocoro_cps_runs\":[${iocoro_runs_json}],\"asio_cps_runs\":[${asio_runs_json}],\"iocoro_cps_median\":$iocoro_median,\"asio_cps_median\":$asio_median,\"ratio_vs_asio\":$ratio,\"min_ratio\":$min_ratio_json,\"pass\":$pass_bool}")
 
-  echo "  iocoro median rps: $iocoro_median"
-  echo "  asio   median rps: $asio_median"
+  echo "  iocoro median cps: $iocoro_median"
+  echo "  asio   median cps: $asio_median"
   echo "  ratio (iocoro/asio): $ratio"
   if [[ -n "$min_ratio" ]]; then
     echo "  threshold: $min_ratio ($pass_label)"
@@ -287,14 +276,14 @@ for pair in "${scenario_pairs[@]}"; do
 done
 
 echo "Summary"
-printf '| %-8s | %-6s | %-9s | %-16s | %-14s | %-14s | %-10s | %-6s |\n' \
-  "sessions" "msgs" "msg_bytes" "iocoro_rps_median" "asio_rps_median" "ratio_vs_asio" "min_ratio" "gate"
-printf '|-%-8s-|-%-6s-|-%-9s-|-%-16s-|-%-14s-|-%-14s-|-%-10s-|-%-6s-|\n' \
-  "--------" "------" "---------" "----------------" "--------------" "--------------" "----------" "------"
+printf '| %-11s | %-16s | %-14s | %-14s | %-10s | %-6s |\n' \
+  "connections" "iocoro_cps_median" "asio_cps_median" "ratio_vs_asio" "min_ratio" "gate"
+printf '|-%-11s-|-%-16s-|-%-14s-|-%-14s-|-%-10s-|-%-6s-|\n' \
+  "-----------" "----------------" "--------------" "--------------" "----------" "------"
 for row in "${table_rows[@]}"; do
-  IFS='|' read -r s m b iocoro_m asio_m ratio min gate <<<"$row"
-  printf '| %-8s | %-6s | %-9s | %-16s | %-14s | %-14s | %-10s | %-6s |\n' \
-    "$s" "$m" "$b" "$iocoro_m" "$asio_m" "$ratio" "$min" "$gate"
+  IFS='|' read -r c iocoro_m asio_m ratio min gate <<<"$row"
+  printf '| %-11s | %-16s | %-14s | %-14s | %-10s | %-6s |\n' \
+    "$c" "$iocoro_m" "$asio_m" "$ratio" "$min" "$gate"
 done
 echo
 
