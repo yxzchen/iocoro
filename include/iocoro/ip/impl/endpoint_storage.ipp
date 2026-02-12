@@ -201,10 +201,10 @@ inline auto endpoint_storage::from_native(sockaddr const* addr, socklen_t len)
 }
 
 inline auto operator==(endpoint_storage const& a, endpoint_storage const& b) noexcept -> bool {
-  if (a.size_ != b.size_) {
+  if (a.family() != b.family()) {
     return false;
   }
-  return std::memcmp(&a.storage_, &b.storage_, a.size_) == 0;
+  return a.address() == b.address() && a.port() == b.port();
 }
 
 inline auto operator<=>(endpoint_storage const& a, endpoint_storage const& b) noexcept
@@ -228,6 +228,7 @@ inline void endpoint_storage::init_v4(address_v4 addr, std::uint16_t port) noexc
   static_assert(sizeof(sa.sin_addr.s_addr) == 4);
   std::memcpy(&sa.sin_addr.s_addr, b.data(), 4);
 
+  std::memset(&storage_, 0, sizeof(storage_));
   std::memcpy(&storage_, &sa, sizeof(sa));
   size_ = sizeof(sockaddr_in);
 }
@@ -242,6 +243,7 @@ inline void endpoint_storage::init_v6(address_v6 addr, std::uint16_t port) noexc
   std::memcpy(sa.sin6_addr.s6_addr, b.data(), 16);
   sa.sin6_scope_id = addr.scope_id();
 
+  std::memset(&storage_, 0, sizeof(storage_));
   std::memcpy(&storage_, &sa, sizeof(sa));
   size_ = sizeof(sockaddr_in6);
 }
