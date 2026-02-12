@@ -87,37 +87,37 @@ TEST(steady_timer_test, cancel_timer_prevents_execution) {
 
 TEST(steady_timer_test, expires_after_while_waiting_aborts_previous_wait_and_new_wait_succeeds) {
   iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+  iocoro::steady_timer t{ex};
+  t.expires_after(24h);
 
-  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<void> {
-    auto ex = co_await iocoro::this_coro::io_executor;
-    iocoro::steady_timer t{ex};
-    t.expires_after(24h);
+  std::optional<iocoro::expected<iocoro::result<void>, std::exception_ptr>> first_result;
+  iocoro::co_spawn(
+    ex,
+    [&]() -> iocoro::awaitable<iocoro::result<void>> {
+      co_return co_await t.async_wait(iocoro::use_awaitable);
+    },
+    [&](iocoro::expected<iocoro::result<void>, std::exception_ptr> r) {
+      first_result = std::move(r);
+    });
 
-    auto w1 = iocoro::co_spawn(
-      ex,
-      [&]() -> iocoro::awaitable<iocoro::result<void>> { co_return co_await t.async_wait(iocoro::use_awaitable); },
-      iocoro::use_awaitable);
+  // Drive the spawned coroutine to register its wait before changing expiry.
+  (void)ctx.run_one();
 
-    co_await iocoro::co_sleep(1ms);
+  t.expires_after(0ms);
+  ctx.run();
+  ctx.restart();
 
-    t.expires_after(0ms);
+  ASSERT_TRUE(first_result.has_value());
+  ASSERT_TRUE(*first_result);
+  ASSERT_FALSE(**first_result);
+  EXPECT_EQ((**first_result).error(), iocoro::error::operation_aborted);
 
-    auto r1 = co_await std::move(w1);
-    if (r1) {
-      ADD_FAILURE() << "expected operation_aborted";
-      co_return;
-    }
-    EXPECT_EQ(r1.error(), iocoro::error::operation_aborted);
-
-    auto r2 = co_await t.async_wait(iocoro::use_awaitable);
-    if (!r2) {
-      ADD_FAILURE() << "expected success";
-      co_return;
-    }
-    co_return;
+  auto second_result = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
+    co_return co_await t.async_wait(iocoro::use_awaitable);
   }());
-
-  ASSERT_TRUE(r);
+  ASSERT_TRUE(second_result);
+  ASSERT_TRUE(*second_result);
 }
 
 TEST(steady_timer_test, second_async_wait_cancels_first) {
