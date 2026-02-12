@@ -48,10 +48,11 @@ struct operation_awaiter {
     st->ex = h.promise().get_executor();
     IOCORO_ENSURE(st->ex, "operation_awaiter: empty executor");
 
-    struct op_state {
+    struct reactor_wait_op_state {
       std::shared_ptr<operation_wait_state> st;
 
-      explicit op_state(std::shared_ptr<operation_wait_state> s) noexcept : st(std::move(s)) {}
+      explicit reactor_wait_op_state(std::shared_ptr<operation_wait_state> s) noexcept
+          : st(std::move(s)) {}
 
       void on_complete() noexcept { complete(std::error_code{}); }
       void on_abort(std::error_code ec) noexcept { complete(ec); }
@@ -78,7 +79,7 @@ struct operation_awaiter {
       }
     };
 
-    auto handle = register_op(make_reactor_op<op_state>(st));
+    auto handle = register_op(make_reactor_op<reactor_wait_op_state>(st));
 
     if constexpr (requires { h.promise().get_stop_token(); }) {
       auto token = h.promise().get_stop_token();
