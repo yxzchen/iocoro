@@ -73,8 +73,8 @@ class stream_socket_impl {
   /// - This socket takes ownership of `fd` and is ready for I/O.
   /// - The fd is set to non-blocking mode (best-effort).
   auto assign(int fd) noexcept -> result<void> {
-    IOCORO_ASSERT(state_ == conn_state::disconnected);
-    IOCORO_ASSERT(!read_op_.active && !write_op_.active && !connect_op_.active);
+    IOCORO_ASSERT(state_.load(std::memory_order_acquire) == conn_state::disconnected);
+    IOCORO_ASSERT(!read_op_.is_active() && !write_op_.is_active() && !connect_op_.is_active());
 
     auto r = base_.assign(fd);
     if (!r) {
@@ -84,16 +84,16 @@ class stream_socket_impl {
     // Mark the logical stream state as connected so read/write/remote_endpoint work.
     {
       std::scoped_lock lk{mtx_};
-      state_ = conn_state::connected;
-      shutdown_ = {};
+      state_.store(conn_state::connected, std::memory_order_release);
+      shutdown_.read.store(false, std::memory_order_release);
+      shutdown_.write.store(false, std::memory_order_release);
     }
     return ok();
   }
 
   auto is_open() const noexcept -> bool { return base_.is_open(); }
   auto is_connected() const noexcept -> bool {
-    std::scoped_lock lk{mtx_};
-    return (state_ == conn_state::connected);
+    return state_.load(std::memory_order_acquire) == conn_state::connected;
   }
 
   /// Cancel pending operations (best-effort).
@@ -161,15 +161,15 @@ class stream_socket_impl {
   enum class conn_state : std::uint8_t { disconnected, connecting, connected };
 
   struct shutdown_state {
-    bool read = false;
-    bool write = false;
+    std::atomic<bool> read{false};
+    std::atomic<bool> write{false};
   };
 
   socket_impl_base base_;
 
   mutable std::mutex mtx_{};
 
-  conn_state state_{conn_state::disconnected};
+  std::atomic<conn_state> state_{conn_state::disconnected};
   op_state read_op_{};
   op_state write_op_{};
   op_state connect_op_{};

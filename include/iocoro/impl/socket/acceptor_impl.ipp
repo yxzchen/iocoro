@@ -85,14 +85,12 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
     if (!listening_) {
       co_return unexpected(error::not_listening);
     }
-    if (accept_op_.active) {
+    if (!accept_op_.try_start(my_epoch)) {
       co_return unexpected(error::busy);
     }
-    accept_op_.active = true;
-    my_epoch = accept_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = detail::make_scope_exit([this] { accept_op_.finish(mtx_); });
+  auto guard = detail::make_scope_exit([this] { accept_op_.finish(); });
 
   for (;;) {
     if (!accept_op_.is_epoch_current(my_epoch) || res->closing()) {

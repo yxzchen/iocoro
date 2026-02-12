@@ -48,7 +48,7 @@ inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len) -> r
 
   {
     std::scoped_lock lk{mtx_};
-    if (send_op_.active || receive_op_.active) {
+    if (send_op_.is_active() || receive_op_.is_active()) {
       return fail(error::busy);
     }
   }
@@ -78,7 +78,7 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len) -
 
   {
     std::scoped_lock lk{mtx_};
-    if (send_op_.active || receive_op_.active) {
+    if (send_op_.is_active() || receive_op_.is_active()) {
       return fail(error::busy);
     }
   }
@@ -117,11 +117,9 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
   socklen_t connected_addr_len = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (send_op_.active) {
+    if (!send_op_.try_start(my_epoch)) {
       co_return unexpected(error::busy);
     }
-    send_op_.active = true;
-    my_epoch = send_op_.epoch.load(std::memory_order_acquire);
     is_connected = (state_ == dgram_state::connected);
     if (is_connected) {
       connected_addr = connected_addr_;
@@ -129,7 +127,7 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
     }
   }
 
-  auto guard = detail::make_scope_exit([this] { send_op_.finish(mtx_); });
+  auto guard = detail::make_scope_exit([this] { send_op_.finish(); });
 
   if (buffer.empty()) {
     co_return 0;
@@ -236,14 +234,12 @@ inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (receive_op_.active) {
+    if (!receive_op_.try_start(my_epoch)) {
       co_return unexpected(error::busy);
     }
-    receive_op_.active = true;
-    my_epoch = receive_op_.epoch.load(std::memory_order_acquire);
   }
 
-  auto guard = detail::make_scope_exit([this] { receive_op_.finish(mtx_); });
+  auto guard = detail::make_scope_exit([this] { receive_op_.finish(); });
 
   if (buffer.empty()) {
     co_return unexpected(error::invalid_argument);

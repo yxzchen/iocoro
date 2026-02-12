@@ -75,7 +75,7 @@ class socket_impl_base {
 
   socket_impl_base() noexcept = delete;
   explicit socket_impl_base(any_io_executor ex) noexcept
-      : ex_(std::move(ex)), ctx_impl_(ex_.io_context_ptr()) {
+      : ex_(std::move(ex)), dispatch_ex_(any_executor{ex_}), ctx_impl_(ex_.io_context_ptr()) {
     IOCORO_ENSURE(ex_, "socket_impl_base: requires IO executor");
     IOCORO_ENSURE(ctx_impl_, "socket_impl_base: requires IO executor");
   }
@@ -110,7 +110,6 @@ class socket_impl_base {
       return {};
     }
 
-    std::scoped_lock lk{lifecycle_mtx_};
     auto current = res_.load(std::memory_order_acquire);
     if (!current || current.get() != res.get() || current->closing() ||
         current->native_handle() < 0) {
@@ -118,6 +117,17 @@ class socket_impl_base {
     }
 
     current->add_inflight();
+    if (current->closing() || current->native_handle() < 0) {
+      current->remove_inflight();
+      return {};
+    }
+
+    auto verify = res_.load(std::memory_order_acquire);
+    if (!verify || verify.get() != current.get()) {
+      current->remove_inflight();
+      return {};
+    }
+
     return operation_guard{std::move(current)};
   }
 
@@ -172,20 +182,20 @@ class socket_impl_base {
 
   auto wait_read_ready() -> awaitable<result<void>> {
     auto res = acquire_resource();
-    co_return co_await wait_ready_impl(std::move(res), true);
+    return wait_ready_impl(std::move(res), true);
   }
 
   auto wait_write_ready() -> awaitable<result<void>> {
     auto res = acquire_resource();
-    co_return co_await wait_ready_impl(std::move(res), false);
+    return wait_ready_impl(std::move(res), false);
   }
 
   auto wait_read_ready(std::shared_ptr<fd_resource> const& res) -> awaitable<result<void>> {
-    co_return co_await wait_ready_impl(res, true);
+    return wait_ready_impl(res, true);
   }
 
   auto wait_write_ready(std::shared_ptr<fd_resource> const& res) -> awaitable<result<void>> {
-    co_return co_await wait_ready_impl(res, false);
+    return wait_ready_impl(res, false);
   }
 
  private:
@@ -200,7 +210,7 @@ class socket_impl_base {
     }
     auto pinned = inflight.resource();
 
-    co_await this_coro::on(any_executor{ex_});
+    co_await this_coro::on(dispatch_ex_);
     auto r = co_await detail::operation_awaiter{[this, pinned, is_read](detail::reactor_op_ptr rop) mutable {
       event_handle h = is_read ? ctx_impl_->register_fd_read(pinned->native_handle(), std::move(rop))
                                : ctx_impl_->register_fd_write(pinned->native_handle(),
@@ -226,6 +236,7 @@ class socket_impl_base {
   }
 
   any_io_executor ex_{};
+  any_executor dispatch_ex_{};
   io_context_impl* ctx_impl_{};
 
   mutable std::mutex lifecycle_mtx_{};
