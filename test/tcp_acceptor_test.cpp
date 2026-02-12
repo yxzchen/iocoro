@@ -105,3 +105,15 @@ TEST(tcp_acceptor_test, accepts_multiple_connections_sequentially) {
   ASSERT_TRUE(*r);
   EXPECT_EQ(**r, 4U);
 }
+
+TEST(tcp_acceptor_test, listen_with_mismatched_family_on_open_socket_returns_invalid_argument) {
+  iocoro::io_context ctx;
+  iocoro::ip::tcp::acceptor acc{ctx};
+
+  auto r1 = acc.listen(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(r1) << r1.error().message();
+
+  auto r2 = acc.listen(iocoro::ip::tcp::endpoint{iocoro::ip::address_v6::loopback(), 0});
+  ASSERT_FALSE(r2);
+  EXPECT_EQ(r2.error(), iocoro::error::invalid_argument);
+}

@@ -84,3 +84,15 @@ TEST(udp_socket_test, receive_empty_buffer_returns_invalid_argument) {
   ASSERT_FALSE(*r);
   EXPECT_EQ(r->error(), iocoro::error::invalid_argument);
 }
+
+TEST(udp_socket_test, connect_with_mismatched_family_on_open_socket_returns_invalid_argument) {
+  iocoro::io_context ctx;
+  iocoro::ip::udp::socket sock{ctx};
+
+  auto bind_r = sock.bind(iocoro::ip::udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  ASSERT_TRUE(bind_r) << bind_r.error().message();
+
+  auto connect_r = sock.connect(iocoro::ip::udp::endpoint{iocoro::ip::address_v6::loopback(), 9});
+  ASSERT_FALSE(connect_r);
+  EXPECT_EQ(connect_r.error(), iocoro::error::invalid_argument);
+}

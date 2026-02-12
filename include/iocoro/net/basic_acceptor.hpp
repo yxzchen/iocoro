@@ -68,6 +68,14 @@ class basic_acceptor {
     auto open_r = ok();
     if (!is_open()) {
       open_r = handle_.impl().open(ep.family(), Protocol::type(), Protocol::protocol());
+    } else {
+      auto family_r = ::iocoro::detail::socket::get_socket_family(handle_.native_handle());
+      if (!family_r) {
+        return unexpected(family_r.error());
+      }
+      if (*family_r != ep.family()) {
+        return fail(error::invalid_argument);
+      }
     }
     return open_r
       .and_then([&] {
