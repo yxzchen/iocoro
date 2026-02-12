@@ -16,9 +16,17 @@ BASELINE_DESCRIPTION="Threshold file format: \"<scenario...> min_ratio\""
 IOCORO_TARGET=""
 ASIO_TARGET=""
 METRIC_NAME=""
+METRIC_NAMES_CSV=""
+PRIMARY_METRIC=""
 RATIO_MODE="direct"
 RATIO_FIELD="ratio_vs_asio"
+RATIO_LABEL=""
 RUN_TIMEOUT_DEFAULT=120
+SCENARIO_MIN_ARITY=""
+SCENARIO_DEFAULT_VALUES_CSV=""
+BASELINE_LEGACY_ARITY=0
+BASELINE_LEGACY_MATCH_INDEX=0
+BASELINE_LEGACY_MATCH_VALUE=""
 
 BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
@@ -83,6 +91,14 @@ while [[ $# -gt 0 ]]; do
       METRIC_NAME="$2"
       shift 2
       ;;
+    --metric-names)
+      METRIC_NAMES_CSV="$2"
+      shift 2
+      ;;
+    --primary-metric)
+      PRIMARY_METRIC="$2"
+      shift 2
+      ;;
     --ratio-mode)
       RATIO_MODE="$2"
       shift 2
@@ -91,8 +107,32 @@ while [[ $# -gt 0 ]]; do
       RATIO_FIELD="$2"
       shift 2
       ;;
+    --ratio-label)
+      RATIO_LABEL="$2"
+      shift 2
+      ;;
     --run-timeout-default)
       RUN_TIMEOUT_DEFAULT="$2"
+      shift 2
+      ;;
+    --scenario-min-arity)
+      SCENARIO_MIN_ARITY="$2"
+      shift 2
+      ;;
+    --scenario-default-values)
+      SCENARIO_DEFAULT_VALUES_CSV="$2"
+      shift 2
+      ;;
+    --baseline-legacy-arity)
+      BASELINE_LEGACY_ARITY="$2"
+      shift 2
+      ;;
+    --baseline-legacy-match-index)
+      BASELINE_LEGACY_MATCH_INDEX="$2"
+      shift 2
+      ;;
+    --baseline-legacy-match-value)
+      BASELINE_LEGACY_MATCH_VALUE="$2"
       shift 2
       ;;
     --build-dir)
@@ -135,8 +175,43 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$SUITE_NAME" || -z "$SCENARIO_FIELDS_CSV" || -z "$IOCORO_TARGET" || -z "$ASIO_TARGET" || -z "$METRIC_NAME" ]]; then
+if [[ -z "$SUITE_NAME" || -z "$SCENARIO_FIELDS_CSV" || -z "$IOCORO_TARGET" || -z "$ASIO_TARGET" ]]; then
   echo "Missing required suite configuration in wrapper script" >&2
+  exit 1
+fi
+
+if [[ -z "$METRIC_NAMES_CSV" ]]; then
+  METRIC_NAMES_CSV="$METRIC_NAME"
+fi
+if [[ -z "$METRIC_NAMES_CSV" ]]; then
+  echo "Missing metric configuration: use --metric-name or --metric-names" >&2
+  exit 1
+fi
+
+IFS=',' read -r -a METRIC_NAMES <<<"$METRIC_NAMES_CSV"
+if [[ ${#METRIC_NAMES[@]} -eq 0 ]]; then
+  echo "--metric-names must not be empty" >&2
+  exit 1
+fi
+for metric in "${METRIC_NAMES[@]}"; do
+  if [[ -z "$metric" ]]; then
+    echo "--metric-names contains empty entry" >&2
+    exit 1
+  fi
+done
+
+if [[ -z "$PRIMARY_METRIC" ]]; then
+  PRIMARY_METRIC="${METRIC_NAMES[0]}"
+fi
+primary_ok=false
+for metric in "${METRIC_NAMES[@]}"; do
+  if [[ "$metric" == "$PRIMARY_METRIC" ]]; then
+    primary_ok=true
+    break
+  fi
+done
+if [[ "$primary_ok" != true ]]; then
+  echo "--primary-metric must be one of: $METRIC_NAMES_CSV" >&2
   exit 1
 fi
 
@@ -160,6 +235,8 @@ fi
 bench_require_positive_int "--iterations" "$ITERATIONS"
 bench_require_non_negative_int "--warmup" "$WARMUP"
 bench_require_non_negative_int "--run-timeout-sec" "$RUN_TIMEOUT_SEC"
+bench_require_non_negative_int "--baseline-legacy-arity" "$BASELINE_LEGACY_ARITY"
+bench_require_non_negative_int "--baseline-legacy-match-index" "$BASELINE_LEGACY_MATCH_INDEX"
 
 BUILD_DIR="$(bench_to_abs_path "$PROJECT_DIR" "$BUILD_DIR")"
 IOCORO_BIN="$BUILD_DIR/benchmark/$IOCORO_TARGET"
@@ -193,6 +270,29 @@ if [[ "$SCENARIO_ARITY" -le 0 ]]; then
   exit 1
 fi
 
+if [[ -z "$SCENARIO_MIN_ARITY" ]]; then
+  SCENARIO_MIN_ARITY="$SCENARIO_ARITY"
+fi
+bench_require_positive_int "--scenario-min-arity" "$SCENARIO_MIN_ARITY"
+if [[ "$SCENARIO_MIN_ARITY" -gt "$SCENARIO_ARITY" ]]; then
+  echo "--scenario-min-arity must be <= scenario field count" >&2
+  exit 1
+fi
+
+SCENARIO_DEFAULT_VALUES=()
+if [[ -n "$SCENARIO_DEFAULT_VALUES_CSV" ]]; then
+  IFS=',' read -r -a SCENARIO_DEFAULT_VALUES <<<"$SCENARIO_DEFAULT_VALUES_CSV"
+  if [[ ${#SCENARIO_DEFAULT_VALUES[@]} -ne "$SCENARIO_ARITY" ]]; then
+    echo "--scenario-default-values must have $SCENARIO_ARITY comma-separated entries" >&2
+    exit 1
+  fi
+fi
+
+if [[ "$BASELINE_LEGACY_MATCH_INDEX" -gt 0 && "$BASELINE_LEGACY_MATCH_INDEX" -gt "$SCENARIO_ARITY" ]]; then
+  echo "--baseline-legacy-match-index must be <= scenario field count" >&2
+  exit 1
+fi
+
 check_threshold() {
   if [[ -z "$BASELINE_FILE" ]]; then
     echo ""
@@ -201,22 +301,45 @@ check_threshold() {
 
   local key
   key="$(IFS='|'; echo "$*")"
-  awk -v arity="$SCENARIO_ARITY" -v key="$key" '
+  awk -v arity="$SCENARIO_ARITY" \
+      -v key="$key" \
+      -v legacy_arity="$BASELINE_LEGACY_ARITY" \
+      -v legacy_match_idx="$BASELINE_LEGACY_MATCH_INDEX" \
+      -v legacy_match_val="$BASELINE_LEGACY_MATCH_VALUE" '
     BEGIN { split(key, want, /\|/); }
     $1 ~ /^#/ { next }
-    NF < arity + 1 { next }
     {
-      ok = 1
-      for (i = 1; i <= arity; ++i) {
-        if ($i != want[i]) {
-          ok = 0
-          break
+      if (NF >= arity + 1) {
+        ok = 1
+        for (i = 1; i <= arity; ++i) {
+          if ($i != want[i]) {
+            ok = 0
+            break
+          }
+        }
+        if (ok) {
+          print $(arity + 1)
+          found = 1
+          exit
         }
       }
-      if (ok) {
-        print $(arity + 1)
-        found = 1
-        exit
+
+      if (legacy_arity > 0 && NF >= legacy_arity + 1) {
+        legacy_ok = 1
+        for (i = 1; i <= legacy_arity; ++i) {
+          if ($i != want[i]) {
+            legacy_ok = 0
+            break
+          }
+        }
+        if (legacy_ok) {
+          if (legacy_match_idx > 0 && want[legacy_match_idx] != legacy_match_val) {
+            next
+          }
+          print $(legacy_arity + 1)
+          found = 1
+          exit
+        }
       }
     }
     END { if (!found) print "" }
@@ -232,6 +355,9 @@ ratio_expr="iocoro/asio"
 if [[ "$RATIO_MODE" == "inverse" ]]; then
   ratio_expr="asio/iocoro"
 fi
+if [[ -n "$RATIO_LABEL" ]]; then
+  ratio_expr="$RATIO_LABEL"
+fi
 
 echo "Running $SUITE_NAME"
 echo "  iocoro: $IOCORO_BIN"
@@ -246,10 +372,21 @@ echo
 
 IFS=',' read -r -a SCENARIO_ITEMS <<<"$SCENARIOS"
 for item in "${SCENARIO_ITEMS[@]}"; do
-  IFS=':' read -r -a VALUES <<<"$item"
-  if [[ ${#VALUES[@]} -ne $SCENARIO_ARITY ]]; then
+  IFS=':' read -r -a RAW_VALUES <<<"$item"
+  if [[ ${#RAW_VALUES[@]} -lt "$SCENARIO_MIN_ARITY" || ${#RAW_VALUES[@]} -gt "$SCENARIO_ARITY" ]]; then
     echo "Invalid scenario: $item (expected $SCENARIO_FORMAT)" >&2
     exit 1
+  fi
+
+  VALUES=("${RAW_VALUES[@]}")
+  if [[ ${#VALUES[@]} -lt "$SCENARIO_ARITY" ]]; then
+    if [[ ${#SCENARIO_DEFAULT_VALUES[@]} -ne "$SCENARIO_ARITY" ]]; then
+      echo "Invalid scenario: $item (missing trailing fields and no defaults configured)" >&2
+      exit 1
+    fi
+    for ((idx = ${#VALUES[@]}; idx < SCENARIO_ARITY; ++idx)); do
+      VALUES+=("${SCENARIO_DEFAULT_VALUES[$idx]}")
+    done
   fi
 
   for value in "${VALUES[@]}"; do
@@ -270,36 +407,52 @@ for item in "${SCENARIO_ITEMS[@]}"; do
     bench_run_cmd_with_timeout "$RUN_TIMEOUT_SEC" "$ASIO_BIN" "${VALUES[@]}" >/dev/null
   done
 
-  iocoro_runs=()
-  asio_runs=()
+  for metric in "${METRIC_NAMES[@]}"; do
+    eval "iocoro_runs_${metric}=()"
+    eval "asio_runs_${metric}=()"
+  done
 
   for ((i = 0; i < ITERATIONS; ++i)); do
     line="$(bench_run_cmd_with_timeout "$RUN_TIMEOUT_SEC" "$IOCORO_BIN" "${VALUES[@]}")"
-    metric_value="$(bench_extract_metric "$METRIC_NAME" "$line")"
-    if [[ -z "$metric_value" ]]; then
-      echo "Failed to parse iocoro $METRIC_NAME: $line" >&2
-      exit 1
-    fi
-    iocoro_runs+=("$metric_value")
+    for metric in "${METRIC_NAMES[@]}"; do
+      metric_value="$(bench_extract_metric "$metric" "$line")"
+      if [[ -z "$metric_value" ]]; then
+        echo "Failed to parse iocoro $metric: $line" >&2
+        exit 1
+      fi
+      eval "iocoro_runs_${metric}+=(\"$metric_value\")"
+    done
   done
 
   for ((i = 0; i < ITERATIONS; ++i)); do
     line="$(bench_run_cmd_with_timeout "$RUN_TIMEOUT_SEC" "$ASIO_BIN" "${VALUES[@]}")"
-    metric_value="$(bench_extract_metric "$METRIC_NAME" "$line")"
-    if [[ -z "$metric_value" ]]; then
-      echo "Failed to parse asio $METRIC_NAME: $line" >&2
-      exit 1
-    fi
-    asio_runs+=("$metric_value")
+    for metric in "${METRIC_NAMES[@]}"; do
+      metric_value="$(bench_extract_metric "$metric" "$line")"
+      if [[ -z "$metric_value" ]]; then
+        echo "Failed to parse asio $metric: $line" >&2
+        exit 1
+      fi
+      eval "asio_runs_${metric}+=(\"$metric_value\")"
+    done
   done
 
-  iocoro_median="$({ printf '%s\n' "${iocoro_runs[@]}" | sort -n | bench_median_from_stdin; })"
-  asio_median="$({ printf '%s\n' "${asio_runs[@]}" | sort -n | bench_median_from_stdin; })"
+  declare -A iocoro_medians=()
+  declare -A asio_medians=()
+  for metric in "${METRIC_NAMES[@]}"; do
+    eval "iocoro_values=(\"\${iocoro_runs_${metric}[@]}\")"
+    iocoro_medians["$metric"]="$(printf '%s\n' "${iocoro_values[@]}" | sort -n | bench_median_from_stdin)"
+
+    eval "asio_values=(\"\${asio_runs_${metric}[@]}\")"
+    asio_medians["$metric"]="$(printf '%s\n' "${asio_values[@]}" | sort -n | bench_median_from_stdin)"
+  done
+
+  primary_iocoro="${iocoro_medians[$PRIMARY_METRIC]}"
+  primary_asio="${asio_medians[$PRIMARY_METRIC]}"
 
   if [[ "$RATIO_MODE" == "direct" ]]; then
-    ratio="$(bench_compute_ratio "$iocoro_median" "$asio_median")"
+    ratio="$(bench_compute_ratio "$primary_iocoro" "$primary_asio")"
   else
-    ratio="$(bench_compute_ratio "$asio_median" "$iocoro_median")"
+    ratio="$(bench_compute_ratio "$primary_asio" "$primary_iocoro")"
   fi
 
   min_ratio="$(check_threshold "${VALUES[@]}")"
@@ -319,25 +472,47 @@ for item in "${SCENARIO_ITEMS[@]}"; do
   fi
 
   row_prefix="$(IFS='|'; echo "${VALUES[*]}")"
-  table_rows+=("${row_prefix}|${iocoro_median}|${asio_median}|${ratio}|${min_ratio:-n/a}|${pass_label}")
+  table_rows+=("${row_prefix}|${primary_iocoro}|${primary_asio}|${ratio}|${min_ratio:-n/a}|${pass_label}")
 
-  scenario_prefix=""
+  scenario_json_entry="{"
   for ((idx = 0; idx < SCENARIO_ARITY; ++idx)); do
-    scenario_prefix+="\"${SCENARIO_FIELDS[$idx]}\":${VALUES[$idx]},"
+    scenario_json_entry+="\"${SCENARIO_FIELDS[$idx]}\":${VALUES[$idx]},"
   done
 
-  iocoro_runs_json="$(printf '%s\n' "${iocoro_runs[@]}" | paste -sd, -)"
-  asio_runs_json="$(printf '%s\n' "${asio_runs[@]}" | paste -sd, -)"
+  for metric in "${METRIC_NAMES[@]}"; do
+    eval "iocoro_values=(\"\${iocoro_runs_${metric}[@]}\")"
+    eval "asio_values=(\"\${asio_runs_${metric}[@]}\")"
+    iocoro_runs_json="$(printf '%s\n' "${iocoro_values[@]}" | paste -sd, -)"
+    asio_runs_json="$(printf '%s\n' "${asio_values[@]}" | paste -sd, -)"
+    scenario_json_entry+="\"iocoro_${metric}_runs\":[${iocoro_runs_json}],"
+    scenario_json_entry+="\"asio_${metric}_runs\":[${asio_runs_json}],"
+    scenario_json_entry+="\"iocoro_${metric}_median\":${iocoro_medians[$metric]},"
+    scenario_json_entry+="\"asio_${metric}_median\":${asio_medians[$metric]},"
+  done
+
   if [[ -n "$min_ratio" ]]; then
     min_ratio_json="$min_ratio"
   else
     min_ratio_json="null"
   fi
 
-  scenario_json+=("{${scenario_prefix}\"iocoro_${METRIC_NAME}_runs\":[${iocoro_runs_json}],\"asio_${METRIC_NAME}_runs\":[${asio_runs_json}],\"iocoro_${METRIC_NAME}_median\":${iocoro_median},\"asio_${METRIC_NAME}_median\":${asio_median},\"${RATIO_FIELD}\":${ratio},\"min_ratio\":${min_ratio_json},\"pass\":${pass_bool}}")
+  scenario_json_entry+="\"${RATIO_FIELD}\":${ratio},\"min_ratio\":${min_ratio_json},\"pass\":${pass_bool}}"
+  scenario_json+=("$scenario_json_entry")
 
-  echo "  iocoro median $METRIC_NAME: $iocoro_median"
-  echo "  asio   median $METRIC_NAME: $asio_median"
+  if [[ ${#METRIC_NAMES[@]} -eq 1 ]]; then
+    metric="${METRIC_NAMES[0]}"
+    echo "  iocoro median $metric: ${iocoro_medians[$metric]}"
+    echo "  asio   median $metric: ${asio_medians[$metric]}"
+  else
+    iocoro_line=""
+    asio_line=""
+    for metric in "${METRIC_NAMES[@]}"; do
+      iocoro_line+="$metric=${iocoro_medians[$metric]} "
+      asio_line+="$metric=${asio_medians[$metric]} "
+    done
+    echo "  iocoro medians: ${iocoro_line% }"
+    echo "  asio   medians: ${asio_line% }"
+  fi
   echo "  ratio ($ratio_expr): $ratio"
   if [[ -n "$min_ratio" ]]; then
     echo "  threshold: $min_ratio ($pass_label)"
@@ -346,7 +521,7 @@ for item in "${SCENARIO_ITEMS[@]}"; do
 done
 
 echo "Summary"
-header=("${SCENARIO_FIELDS[@]}" "iocoro_${METRIC_NAME}_median" "asio_${METRIC_NAME}_median" "$RATIO_FIELD" "min_ratio" "gate")
+header=("${SCENARIO_FIELDS[@]}" "iocoro_${PRIMARY_METRIC}_median" "asio_${PRIMARY_METRIC}_median" "$RATIO_FIELD" "min_ratio" "gate")
 printf '|'
 for col in "${header[@]}"; do
   printf ' %s |' "$col"
