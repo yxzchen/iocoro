@@ -128,35 +128,35 @@ Build benchmarks:
 Run TCP roundtrip benchmark matrix:
 
 ```bash
-./benchmark/run_tcp_roundtrip_baseline.sh \
+./benchmark/scripts/run_tcp_roundtrip_baseline.sh \
   --build-dir build \
   --run-timeout-sec 120 \
-  --baseline benchmark/baseline/tcp_roundtrip_thresholds.txt \
-  --report benchmark/perf_report.json
+  --baseline benchmark/baselines/tcp_roundtrip_thresholds.txt \
+  --report benchmark/reports/perf_report.json
 ```
 
 Run TCP connect/accept benchmark matrix:
 
 ```bash
-./benchmark/run_tcp_connect_accept_baseline.sh \
+./benchmark/scripts/run_tcp_connect_accept_baseline.sh \
   --build-dir build \
   --run-timeout-sec 180 \
-  --baseline benchmark/baseline/tcp_connect_accept_thresholds.txt \
-  --report benchmark/connect_accept_report.json
+  --baseline benchmark/baselines/tcp_connect_accept_thresholds.txt \
+  --report benchmark/reports/connect_accept_report.json
 ```
 
 Validate report schemas:
 
 ```bash
-python3 benchmark/validate_perf_report.py \
-  --schema benchmark/perf_report.schema.json \
-  --report benchmark/perf_report.json
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/perf_report.schema.json \
+  --report benchmark/reports/perf_report.json
 ```
 
 ```bash
-python3 benchmark/validate_perf_report.py \
-  --schema benchmark/connect_accept_report.schema.json \
-  --report benchmark/connect_accept_report.json
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/connect_accept_report.schema.json \
+  --report benchmark/reports/connect_accept_report.json
 ```
 
 ## License

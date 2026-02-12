@@ -36,12 +36,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate perf_report.json against schema")
     parser.add_argument(
         "--schema",
-        default="benchmark/perf_report.schema.json",
+        default="benchmark/schemas/perf_report.schema.json",
         help="Path to JSON schema file",
     )
     parser.add_argument(
         "--report",
-        default="benchmark/perf_report.json",
+        default="benchmark/reports/perf_report.json",
         help="Path to perf report JSON file",
     )
     args = parser.parse_args()

@@ -2,8 +2,10 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$ROOT_DIR/build"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+BENCH_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_DIR="$(cd -- "${BENCH_DIR}/.." && pwd)"
+BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
 WARMUP=1
 SCENARIOS="1:5000:64,8:2000:64,32:500:64,8:1000:1024,32:200:4096"
@@ -13,7 +15,7 @@ RUN_TIMEOUT_SEC=60
 
 usage() {
   cat <<'EOF'
-Usage: benchmark/run_tcp_roundtrip_baseline.sh [options]
+Usage: benchmark/scripts/run_tcp_roundtrip_baseline.sh [options]
 
 Options:
   --build-dir DIR      CMake build dir containing benchmark binaries (default: ./build)
@@ -88,7 +90,7 @@ if ! [[ "$RUN_TIMEOUT_SEC" =~ ^[0-9]+$ ]]; then
 fi
 
 if [[ "$BUILD_DIR" != /* ]]; then
-  BUILD_DIR="$ROOT_DIR/$BUILD_DIR"
+  BUILD_DIR="$PROJECT_DIR/$BUILD_DIR"
 fi
 
 IOCORO_BIN="$BUILD_DIR/benchmark/iocoro_tcp_roundtrip"
@@ -104,7 +106,7 @@ if [[ ! -x "$ASIO_BIN" ]]; then
 fi
 
 if [[ -n "$BASELINE_FILE" && "$BASELINE_FILE" != /* ]]; then
-  BASELINE_FILE="$ROOT_DIR/$BASELINE_FILE"
+  BASELINE_FILE="$PROJECT_DIR/$BASELINE_FILE"
 fi
 
 if [[ -n "$BASELINE_FILE" && ! -f "$BASELINE_FILE" ]]; then
@@ -113,7 +115,7 @@ if [[ -n "$BASELINE_FILE" && ! -f "$BASELINE_FILE" ]]; then
 fi
 
 if [[ -n "$REPORT_FILE" && "$REPORT_FILE" != /* ]]; then
-  REPORT_FILE="$ROOT_DIR/$REPORT_FILE"
+  REPORT_FILE="$PROJECT_DIR/$REPORT_FILE"
 fi
 
 run_bench_cmd() {
