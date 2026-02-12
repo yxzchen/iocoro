@@ -23,6 +23,7 @@ Run all benchmark suites with one command:
 
 The unified runner executes:
 - `scripts/run_tcp_roundtrip_baseline.sh`
+- `scripts/run_tcp_latency_baseline.sh`
 - `scripts/run_tcp_connect_accept_baseline.sh`
 - `scripts/run_tcp_throughput_baseline.sh`
 - `scripts/run_udp_send_receive_baseline.sh`
@@ -31,7 +32,7 @@ The unified runner executes:
 
 Timeout options:
 - `--timeout-sec` applies to all suites.
-- `--roundtrip-timeout-sec`, `--connect-timeout-sec`, `--throughput-timeout-sec`, `--udp-timeout-sec`, and `--timer-timeout-sec` can override per-suite.
+- `--roundtrip-timeout-sec`, `--latency-timeout-sec`, `--connect-timeout-sec`, `--throughput-timeout-sec`, `--udp-timeout-sec`, and `--timer-timeout-sec` can override per-suite.
 
 ## TCP roundtrip baseline runner
 
@@ -66,6 +67,38 @@ File: `benchmark/baselines/tcp_roundtrip_thresholds.txt`
 ```
 
 The gate compares `iocoro_rps_median / asio_rps_median` against `min_ratio_vs_asio`.
+
+## TCP latency baseline runner
+
+Use `run_tcp_latency_baseline.sh` to run `iocoro_tcp_latency` and `asio_tcp_latency`
+across fixed scenarios and aggregate median `p50/p95/p99` latency.
+
+Example:
+
+```bash
+./benchmark/scripts/run_tcp_latency_baseline.sh \
+  --build-dir build \
+  --iterations 5 \
+  --warmup 1 \
+  --run-timeout-sec 90 \
+  --baseline benchmark/baselines/tcp_latency_thresholds.txt \
+  --report benchmark/reports/latency_report.json
+```
+
+Latency scenarios are `sessions:msgs:msg_bytes`.
+
+## TCP latency threshold format
+
+File: `benchmark/baselines/tcp_latency_thresholds.txt`
+
+```
+# sessions msgs msg_bytes min_ratio_vs_asio_p95
+1 5000 64 0.40
+8 1000 64 0.65
+8 500 1024 0.65
+```
+
+The gate compares `asio_p95_us_median / iocoro_p95_us_median` against `min_ratio_vs_asio_p95`.
 
 ## TCP connect/accept baseline runner
 
@@ -202,6 +235,7 @@ The gate compares `iocoro_ops_s_median / asio_ops_s_median` against `min_ratio_v
 
 Schema files:
 - `benchmark/schemas/perf_report.schema.json`
+- `benchmark/schemas/latency_report.schema.json`
 - `benchmark/schemas/connect_accept_report.schema.json`
 - `benchmark/schemas/throughput_report.schema.json`
 - `benchmark/schemas/udp_report.schema.json`
@@ -213,6 +247,12 @@ Validate a generated report:
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/perf_report.schema.json \
   --report benchmark/reports/perf_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/latency_report.schema.json \
+  --report benchmark/reports/latency_report.json
 ```
 
 ```bash

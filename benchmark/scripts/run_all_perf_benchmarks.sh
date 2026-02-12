@@ -11,17 +11,20 @@ BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
 WARMUP=1
 ROUNDTRIP_SCENARIOS=""
+LATENCY_SCENARIOS=""
 CONNECT_SCENARIOS=""
 THROUGHPUT_SCENARIOS=""
 UDP_SCENARIOS=""
 TIMER_SCENARIOS=""
 ROUNDTRIP_TIMEOUT_SEC=60
+LATENCY_TIMEOUT_SEC=90
 CONNECT_TIMEOUT_SEC=120
 THROUGHPUT_TIMEOUT_SEC=120
 UDP_TIMEOUT_SEC=120
 TIMER_TIMEOUT_SEC=120
 TIMEOUT_SEC=""
 ROUNDTRIP_TIMEOUT_SET=false
+LATENCY_TIMEOUT_SET=false
 CONNECT_TIMEOUT_SET=false
 THROUGHPUT_TIMEOUT_SET=false
 UDP_TIMEOUT_SET=false
@@ -30,16 +33,19 @@ ENABLE_BASELINE=true
 ENABLE_SCHEMA_VALIDATE=true
 
 ROUNDTRIP_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_roundtrip_thresholds.txt"
+LATENCY_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_latency_thresholds.txt"
 CONNECT_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_connect_accept_thresholds.txt"
 THROUGHPUT_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_throughput_thresholds.txt"
 UDP_BASELINE="$PROJECT_DIR/benchmark/baselines/udp_send_receive_thresholds.txt"
 TIMER_BASELINE="$PROJECT_DIR/benchmark/baselines/timer_churn_thresholds.txt"
 ROUNDTRIP_REPORT="$PROJECT_DIR/benchmark/reports/perf_report.json"
+LATENCY_REPORT="$PROJECT_DIR/benchmark/reports/latency_report.json"
 CONNECT_REPORT="$PROJECT_DIR/benchmark/reports/connect_accept_report.json"
 THROUGHPUT_REPORT="$PROJECT_DIR/benchmark/reports/throughput_report.json"
 UDP_REPORT="$PROJECT_DIR/benchmark/reports/udp_report.json"
 TIMER_REPORT="$PROJECT_DIR/benchmark/reports/timer_report.json"
 ROUNDTRIP_SUMMARY="$PROJECT_DIR/benchmark/reports/perf_summary.txt"
+LATENCY_SUMMARY="$PROJECT_DIR/benchmark/reports/latency_summary.txt"
 CONNECT_SUMMARY="$PROJECT_DIR/benchmark/reports/connect_accept_summary.txt"
 THROUGHPUT_SUMMARY="$PROJECT_DIR/benchmark/reports/throughput_summary.txt"
 UDP_SUMMARY="$PROJECT_DIR/benchmark/reports/udp_summary.txt"
@@ -51,6 +57,7 @@ Usage: benchmark/scripts/run_all_perf_benchmarks.sh [options]
 
 Run all benchmark suites:
 - TCP roundtrip
+- TCP latency
 - TCP connect/accept
 - TCP throughput
 - UDP send/receive
@@ -61,12 +68,14 @@ Options:
   --iterations N              Measured runs per scenario (default: 5)
   --warmup N                  Warmup runs per scenario (default: 1)
   --roundtrip-scenarios LIST  Override roundtrip scenarios (sessions:msgs:msg_bytes tuples)
+  --latency-scenarios LIST    Override latency scenarios (sessions:msgs:msg_bytes tuples)
   --connect-scenarios LIST    Override connect scenarios (connection counts)
   --throughput-scenarios LIST Override throughput scenarios (sessions:bytes_per_session:chunk_bytes tuples)
   --udp-scenarios LIST        Override UDP scenarios (sessions:msgs:msg_bytes tuples)
   --timer-scenarios LIST      Override timer scenarios (sessions:waits tuples)
   --timeout-sec N             Per-process timeout for all suites (0=disable)
   --roundtrip-timeout-sec N   Per-process timeout override for roundtrip suite
+  --latency-timeout-sec N     Per-process timeout override for latency suite
   --connect-timeout-sec N     Per-process timeout override for connect suite
   --throughput-timeout-sec N  Per-process timeout override for throughput suite
   --udp-timeout-sec N         Per-process timeout override for UDP suite
@@ -74,6 +83,7 @@ Options:
   --no-baseline               Disable regression gate (no threshold checks)
   --no-schema-validate        Skip JSON schema validation
   --roundtrip-report FILE     Roundtrip report path (default: benchmark/reports/perf_report.json)
+  --latency-report FILE       Latency report path (default: benchmark/reports/latency_report.json)
   --connect-report FILE       Connect/accept report path (default: benchmark/reports/connect_accept_report.json)
   --throughput-report FILE    Throughput report path (default: benchmark/reports/throughput_report.json)
   --udp-report FILE           UDP report path (default: benchmark/reports/udp_report.json)
@@ -100,6 +110,10 @@ while [[ $# -gt 0 ]]; do
       ROUNDTRIP_SCENARIOS="$2"
       shift 2
       ;;
+    --latency-scenarios)
+      LATENCY_SCENARIOS="$2"
+      shift 2
+      ;;
     --connect-scenarios)
       CONNECT_SCENARIOS="$2"
       shift 2
@@ -119,6 +133,11 @@ while [[ $# -gt 0 ]]; do
     --roundtrip-timeout-sec)
       ROUNDTRIP_TIMEOUT_SEC="$2"
       ROUNDTRIP_TIMEOUT_SET=true
+      shift 2
+      ;;
+    --latency-timeout-sec)
+      LATENCY_TIMEOUT_SEC="$2"
+      LATENCY_TIMEOUT_SET=true
       shift 2
       ;;
     --connect-timeout-sec)
@@ -157,6 +176,10 @@ while [[ $# -gt 0 ]]; do
       ROUNDTRIP_REPORT="$2"
       shift 2
       ;;
+    --latency-report)
+      LATENCY_REPORT="$2"
+      shift 2
+      ;;
     --connect-report)
       CONNECT_REPORT="$2"
       shift 2
@@ -193,6 +216,9 @@ fi
 if [[ -n "$TIMEOUT_SEC" && "$ROUNDTRIP_TIMEOUT_SET" == false ]]; then
   ROUNDTRIP_TIMEOUT_SEC="$TIMEOUT_SEC"
 fi
+if [[ -n "$TIMEOUT_SEC" && "$LATENCY_TIMEOUT_SET" == false ]]; then
+  LATENCY_TIMEOUT_SEC="$TIMEOUT_SEC"
+fi
 if [[ -n "$TIMEOUT_SEC" && "$CONNECT_TIMEOUT_SET" == false ]]; then
   CONNECT_TIMEOUT_SEC="$TIMEOUT_SEC"
 fi
@@ -206,6 +232,7 @@ if [[ -n "$TIMEOUT_SEC" && "$TIMER_TIMEOUT_SET" == false ]]; then
   TIMER_TIMEOUT_SEC="$TIMEOUT_SEC"
 fi
 bench_require_non_negative_int "--roundtrip-timeout-sec" "$ROUNDTRIP_TIMEOUT_SEC"
+bench_require_non_negative_int "--latency-timeout-sec" "$LATENCY_TIMEOUT_SEC"
 bench_require_non_negative_int "--connect-timeout-sec" "$CONNECT_TIMEOUT_SEC"
 bench_require_non_negative_int "--throughput-timeout-sec" "$THROUGHPUT_TIMEOUT_SEC"
 bench_require_non_negative_int "--udp-timeout-sec" "$UDP_TIMEOUT_SEC"
@@ -213,17 +240,20 @@ bench_require_non_negative_int "--timer-timeout-sec" "$TIMER_TIMEOUT_SEC"
 
 BUILD_DIR="$(bench_to_abs_path "$PROJECT_DIR" "$BUILD_DIR")"
 ROUNDTRIP_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$ROUNDTRIP_REPORT")"
+LATENCY_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$LATENCY_REPORT")"
 CONNECT_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$CONNECT_REPORT")"
 THROUGHPUT_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$THROUGHPUT_REPORT")"
 UDP_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$UDP_REPORT")"
 TIMER_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$TIMER_REPORT")"
 
 ROUNDTRIP_SUMMARY="$(dirname -- "$ROUNDTRIP_REPORT")/perf_summary.txt"
+LATENCY_SUMMARY="$(dirname -- "$LATENCY_REPORT")/latency_summary.txt"
 CONNECT_SUMMARY="$(dirname -- "$CONNECT_REPORT")/connect_accept_summary.txt"
 THROUGHPUT_SUMMARY="$(dirname -- "$THROUGHPUT_REPORT")/throughput_summary.txt"
 UDP_SUMMARY="$(dirname -- "$UDP_REPORT")/udp_summary.txt"
 TIMER_SUMMARY="$(dirname -- "$TIMER_REPORT")/timer_summary.txt"
 mkdir -p "$(dirname -- "$ROUNDTRIP_REPORT")"
+mkdir -p "$(dirname -- "$LATENCY_REPORT")"
 mkdir -p "$(dirname -- "$CONNECT_REPORT")"
 mkdir -p "$(dirname -- "$THROUGHPUT_REPORT")"
 mkdir -p "$(dirname -- "$UDP_REPORT")"
@@ -242,6 +272,21 @@ if [[ -n "$ROUNDTRIP_SCENARIOS" ]]; then
 fi
 if [[ "$ENABLE_BASELINE" == true ]]; then
   roundtrip_cmd+=(--baseline "$ROUNDTRIP_BASELINE")
+fi
+
+latency_cmd=(
+  "$SCRIPT_DIR/run_tcp_latency_baseline.sh"
+  --build-dir "$BUILD_DIR"
+  --iterations "$ITERATIONS"
+  --warmup "$WARMUP"
+  --run-timeout-sec "$LATENCY_TIMEOUT_SEC"
+  --report "$LATENCY_REPORT"
+)
+if [[ -n "$LATENCY_SCENARIOS" ]]; then
+  latency_cmd+=(--scenarios "$LATENCY_SCENARIOS")
+fi
+if [[ "$ENABLE_BASELINE" == true ]]; then
+  latency_cmd+=(--baseline "$LATENCY_BASELINE")
 fi
 
 connect_cmd=(
@@ -313,6 +358,8 @@ echo
 
 "${roundtrip_cmd[@]}" | tee "$ROUNDTRIP_SUMMARY"
 
+"${latency_cmd[@]}" | tee "$LATENCY_SUMMARY"
+
 "${connect_cmd[@]}" | tee "$CONNECT_SUMMARY"
 
 "${throughput_cmd[@]}" | tee "$THROUGHPUT_SUMMARY"
@@ -325,6 +372,10 @@ if [[ "$ENABLE_SCHEMA_VALIDATE" == true ]]; then
   python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/perf_report.schema.json" \
     --report "$ROUNDTRIP_REPORT"
+
+  python3 "$SCRIPT_DIR/validate_perf_report.py" \
+    --schema "$PROJECT_DIR/benchmark/schemas/latency_report.schema.json" \
+    --report "$LATENCY_REPORT"
 
   python3 "$SCRIPT_DIR/validate_perf_report.py" \
     --schema "$PROJECT_DIR/benchmark/schemas/connect_accept_report.schema.json" \
@@ -346,11 +397,13 @@ fi
 echo
 echo "Benchmark suite completed"
 echo "  roundtrip report: $ROUNDTRIP_REPORT"
+echo "  latency report : $LATENCY_REPORT"
 echo "  connect report  : $CONNECT_REPORT"
 echo "  throughput report: $THROUGHPUT_REPORT"
 echo "  udp report      : $UDP_REPORT"
 echo "  timer report    : $TIMER_REPORT"
 echo "  roundtrip summary: $ROUNDTRIP_SUMMARY"
+echo "  latency summary : $LATENCY_SUMMARY"
 echo "  connect summary  : $CONNECT_SUMMARY"
 echo "  throughput summary: $THROUGHPUT_SUMMARY"
 echo "  udp summary      : $UDP_SUMMARY"

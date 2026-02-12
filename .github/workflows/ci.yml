@@ -151,6 +151,8 @@ jobs:
           path: |
             benchmark/reports/perf_report.json
             benchmark/reports/perf_summary.txt
+            benchmark/reports/latency_report.json
+            benchmark/reports/latency_summary.txt
             benchmark/reports/connect_accept_report.json
             benchmark/reports/connect_accept_summary.txt
             benchmark/reports/throughput_report.json

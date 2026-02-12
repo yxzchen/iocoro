@@ -125,7 +125,7 @@ Build benchmarks:
 
 ### Performance baseline, gate, and observability
 
-Run the full benchmark suite (roundtrip + connect/accept + throughput + udp + timer):
+Run the full benchmark suite (roundtrip + latency + connect/accept + throughput + udp + timer):
 
 ```bash
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
@@ -153,6 +153,16 @@ Run TCP connect/accept benchmark matrix:
   --run-timeout-sec 180 \
   --baseline benchmark/baselines/tcp_connect_accept_thresholds.txt \
   --report benchmark/reports/connect_accept_report.json
+```
+
+Run TCP latency benchmark matrix:
+
+```bash
+./benchmark/scripts/run_tcp_latency_baseline.sh \
+  --build-dir build \
+  --run-timeout-sec 120 \
+  --baseline benchmark/baselines/tcp_latency_thresholds.txt \
+  --report benchmark/reports/latency_report.json
 ```
 
 Run TCP throughput benchmark matrix:
@@ -191,6 +201,12 @@ Validate report schemas:
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/perf_report.schema.json \
   --report benchmark/reports/perf_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/latency_report.schema.json \
+  --report benchmark/reports/latency_report.json
 ```
 
 ```bash
