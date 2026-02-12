@@ -4,6 +4,7 @@ Directory layout:
 
 - `apps/`: benchmark binaries source files.
 - `scripts/`: benchmark runners and report validator.
+- `scripts/common.sh`: shared shell helpers used by all runners.
 - `baselines/`: regression gate thresholds.
 - `schemas/`: JSON schemas for benchmark reports.
 - `reports/`: generated reports (runtime output, not committed).
@@ -16,13 +17,18 @@ Run all benchmark suites with one command:
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
   --build-dir build \
   --iterations 3 \
-  --warmup 1
+  --warmup 1 \
+  --timeout-sec 180
 ```
 
 The unified runner executes:
 - `scripts/run_tcp_roundtrip_baseline.sh`
 - `scripts/run_tcp_connect_accept_baseline.sh`
 - `scripts/validate_perf_report.py` for both reports
+
+Timeout options:
+- `--timeout-sec` applies to both suites.
+- `--roundtrip-timeout-sec` and `--connect-timeout-sec` can override per-suite.
 
 ## TCP roundtrip baseline runner
 

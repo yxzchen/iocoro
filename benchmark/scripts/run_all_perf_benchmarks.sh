@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_DIR="$(cd -- "${BENCH_DIR}/.." && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
@@ -13,6 +14,9 @@ ROUNDTRIP_SCENARIOS=""
 CONNECT_SCENARIOS=""
 ROUNDTRIP_TIMEOUT_SEC=60
 CONNECT_TIMEOUT_SEC=120
+TIMEOUT_SEC=""
+ROUNDTRIP_TIMEOUT_SET=false
+CONNECT_TIMEOUT_SET=false
 ENABLE_BASELINE=true
 ENABLE_SCHEMA_VALIDATE=true
 
@@ -37,8 +41,9 @@ Options:
   --warmup N                  Warmup runs per scenario (default: 1)
   --roundtrip-scenarios LIST  Override roundtrip scenarios (sessions:msgs:msg_bytes tuples)
   --connect-scenarios LIST    Override connect scenarios (connection counts)
-  --roundtrip-timeout-sec N   Per-process timeout for roundtrip suite (default: 60, 0=disable)
-  --connect-timeout-sec N     Per-process timeout for connect suite (default: 120, 0=disable)
+  --timeout-sec N             Per-process timeout for both suites (0=disable)
+  --roundtrip-timeout-sec N   Per-process timeout override for roundtrip suite
+  --connect-timeout-sec N     Per-process timeout override for connect suite
   --no-baseline               Disable regression gate (no threshold checks)
   --no-schema-validate        Skip JSON schema validation
   --roundtrip-report FILE     Roundtrip report path (default: benchmark/reports/perf_report.json)
@@ -71,10 +76,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --roundtrip-timeout-sec)
       ROUNDTRIP_TIMEOUT_SEC="$2"
+      ROUNDTRIP_TIMEOUT_SET=true
       shift 2
       ;;
     --connect-timeout-sec)
       CONNECT_TIMEOUT_SEC="$2"
+      CONNECT_TIMEOUT_SET=true
+      shift 2
+      ;;
+    --timeout-sec)
+      TIMEOUT_SEC="$2"
       shift 2
       ;;
     --no-baseline)
@@ -105,26 +116,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for n in "$ITERATIONS" "$WARMUP" "$ROUNDTRIP_TIMEOUT_SEC" "$CONNECT_TIMEOUT_SEC"; do
-  if ! [[ "$n" =~ ^[0-9]+$ ]]; then
-    echo "Numeric options must be non-negative integers" >&2
-    exit 1
-  fi
-done
-if [[ "$ITERATIONS" -le 0 ]]; then
-  echo "--iterations must be > 0" >&2
-  exit 1
+bench_require_positive_int "--iterations" "$ITERATIONS"
+bench_require_non_negative_int "--warmup" "$WARMUP"
+if [[ -n "$TIMEOUT_SEC" ]]; then
+  bench_require_non_negative_int "--timeout-sec" "$TIMEOUT_SEC"
 fi
+if [[ -n "$TIMEOUT_SEC" && "$ROUNDTRIP_TIMEOUT_SET" == false ]]; then
+  ROUNDTRIP_TIMEOUT_SEC="$TIMEOUT_SEC"
+fi
+if [[ -n "$TIMEOUT_SEC" && "$CONNECT_TIMEOUT_SET" == false ]]; then
+  CONNECT_TIMEOUT_SEC="$TIMEOUT_SEC"
+fi
+bench_require_non_negative_int "--roundtrip-timeout-sec" "$ROUNDTRIP_TIMEOUT_SEC"
+bench_require_non_negative_int "--connect-timeout-sec" "$CONNECT_TIMEOUT_SEC"
 
-if [[ "$BUILD_DIR" != /* ]]; then
-  BUILD_DIR="$PROJECT_DIR/$BUILD_DIR"
-fi
-if [[ "$ROUNDTRIP_REPORT" != /* ]]; then
-  ROUNDTRIP_REPORT="$PROJECT_DIR/$ROUNDTRIP_REPORT"
-fi
-if [[ "$CONNECT_REPORT" != /* ]]; then
-  CONNECT_REPORT="$PROJECT_DIR/$CONNECT_REPORT"
-fi
+BUILD_DIR="$(bench_to_abs_path "$PROJECT_DIR" "$BUILD_DIR")"
+ROUNDTRIP_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$ROUNDTRIP_REPORT")"
+CONNECT_REPORT="$(bench_to_abs_path "$PROJECT_DIR" "$CONNECT_REPORT")"
 
 ROUNDTRIP_SUMMARY="$(dirname -- "$ROUNDTRIP_REPORT")/perf_summary.txt"
 CONNECT_SUMMARY="$(dirname -- "$CONNECT_REPORT")/connect_accept_summary.txt"

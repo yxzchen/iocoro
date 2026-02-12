@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_DIR="$(cd -- "${BENCH_DIR}/.." && pwd)"
+source "$SCRIPT_DIR/common.sh"
 BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
 WARMUP=1
@@ -74,24 +75,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! [[ "$ITERATIONS" =~ ^[0-9]+$ ]] || [[ "$ITERATIONS" -le 0 ]]; then
-  echo "--iterations must be a positive integer" >&2
-  exit 1
-fi
+bench_require_positive_int "--iterations" "$ITERATIONS"
+bench_require_non_negative_int "--warmup" "$WARMUP"
+bench_require_non_negative_int "--run-timeout-sec" "$RUN_TIMEOUT_SEC"
 
-if ! [[ "$WARMUP" =~ ^[0-9]+$ ]]; then
-  echo "--warmup must be a non-negative integer" >&2
-  exit 1
-fi
-
-if ! [[ "$RUN_TIMEOUT_SEC" =~ ^[0-9]+$ ]]; then
-  echo "--run-timeout-sec must be a non-negative integer" >&2
-  exit 1
-fi
-
-if [[ "$BUILD_DIR" != /* ]]; then
-  BUILD_DIR="$PROJECT_DIR/$BUILD_DIR"
-fi
+BUILD_DIR="$(bench_to_abs_path "$PROJECT_DIR" "$BUILD_DIR")"
 
 IOCORO_BIN="$BUILD_DIR/benchmark/iocoro_tcp_roundtrip"
 ASIO_BIN="$BUILD_DIR/benchmark/asio_tcp_roundtrip"
@@ -105,8 +93,8 @@ if [[ ! -x "$ASIO_BIN" ]]; then
   exit 1
 fi
 
-if [[ -n "$BASELINE_FILE" && "$BASELINE_FILE" != /* ]]; then
-  BASELINE_FILE="$PROJECT_DIR/$BASELINE_FILE"
+if [[ -n "$BASELINE_FILE" ]]; then
+  BASELINE_FILE="$(bench_to_abs_path "$PROJECT_DIR" "$BASELINE_FILE")"
 fi
 
 if [[ -n "$BASELINE_FILE" && ! -f "$BASELINE_FILE" ]]; then
@@ -114,63 +102,9 @@ if [[ -n "$BASELINE_FILE" && ! -f "$BASELINE_FILE" ]]; then
   exit 1
 fi
 
-if [[ -n "$REPORT_FILE" && "$REPORT_FILE" != /* ]]; then
-  REPORT_FILE="$PROJECT_DIR/$REPORT_FILE"
+if [[ -n "$REPORT_FILE" ]]; then
+  REPORT_FILE="$(bench_to_abs_path "$PROJECT_DIR" "$REPORT_FILE")"
 fi
-
-run_bench_cmd() {
-  local out
-  local code=0
-  if [[ "$RUN_TIMEOUT_SEC" -gt 0 ]] && command -v timeout >/dev/null 2>&1; then
-    set +e
-    out="$(timeout --foreground "${RUN_TIMEOUT_SEC}s" "$@" 2>&1)"
-    code=$?
-    set -e
-    if [[ $code -ne 0 ]]; then
-      if [[ $code -eq 124 ]]; then
-        echo "Benchmark timed out after ${RUN_TIMEOUT_SEC}s: $*" >&2
-      else
-        echo "Benchmark command failed ($code): $*" >&2
-        echo "$out" >&2
-      fi
-      exit 1
-    fi
-  else
-    set +e
-    out="$("$@" 2>&1)"
-    code=$?
-    set -e
-    if [[ $code -ne 0 ]]; then
-      echo "Benchmark command failed ($code): $*" >&2
-      echo "$out" >&2
-      exit 1
-    fi
-  fi
-  printf '%s\n' "$out"
-}
-
-extract_rps() {
-  sed -nE 's/.* rps=([0-9]+([.][0-9]+)?).*/\1/p' <<<"$1"
-}
-
-median_from_stdin() {
-  awk '
-    { vals[++n] = $1; }
-    END {
-      if (n == 0) { print "0"; exit; }
-      mid = int((n + 1) / 2);
-      if (n % 2 == 1) {
-        printf "%.2f\n", vals[mid];
-      } else {
-        printf "%.2f\n", (vals[mid] + vals[mid + 1]) / 2.0;
-      }
-    }
-  '
-}
-
-compute_ratio() {
-  awk -v i="$1" -v a="$2" 'BEGIN { if (a <= 0) { print "0.00"; } else { printf "%.4f\n", i / a; } }'
-}
 
 check_threshold() {
   local sessions="$1"
@@ -218,16 +152,16 @@ for pair in "${scenario_pairs[@]}"; do
   echo "Scenario sessions=$sessions msgs=$msgs msg_bytes=$msg_bytes"
 
   for ((i = 0; i < WARMUP; ++i)); do
-    run_bench_cmd "$IOCORO_BIN" "$sessions" "$msgs" "$msg_bytes" >/dev/null
-    run_bench_cmd "$ASIO_BIN" "$sessions" "$msgs" "$msg_bytes" >/dev/null
+    bench_run_cmd_with_timeout "$RUN_TIMEOUT_SEC" "$IOCORO_BIN" "$sessions" "$msgs" "$msg_bytes" >/dev/null
+    bench_run_cmd_with_timeout "$RUN_TIMEOUT_SEC" "$ASIO_BIN" "$sessions" "$msgs" "$msg_bytes" >/dev/null
   done
 
   iocoro_runs=()
   asio_runs=()
 
   for ((i = 0; i < ITERATIONS; ++i)); do
-    line="$(run_bench_cmd "$IOCORO_BIN" "$sessions" "$msgs" "$msg_bytes")"
-    rps="$(extract_rps "$line")"
+    line="$(bench_run_cmd_with_timeout "$RUN_TIMEOUT_SEC" "$IOCORO_BIN" "$sessions" "$msgs" "$msg_bytes")"
+    rps="$(bench_extract_metric "rps" "$line")"
     if [[ -z "$rps" ]]; then
       echo "Failed to parse iocoro rps: $line" >&2
       exit 1
@@ -236,8 +170,8 @@ for pair in "${scenario_pairs[@]}"; do
   done
 
   for ((i = 0; i < ITERATIONS; ++i)); do
-    line="$(run_bench_cmd "$ASIO_BIN" "$sessions" "$msgs" "$msg_bytes")"
-    rps="$(extract_rps "$line")"
+    line="$(bench_run_cmd_with_timeout "$RUN_TIMEOUT_SEC" "$ASIO_BIN" "$sessions" "$msgs" "$msg_bytes")"
+    rps="$(bench_extract_metric "rps" "$line")"
     if [[ -z "$rps" ]]; then
       echo "Failed to parse asio rps: $line" >&2
       exit 1
@@ -246,12 +180,12 @@ for pair in "${scenario_pairs[@]}"; do
   done
 
   iocoro_median="$(
-    printf '%s\n' "${iocoro_runs[@]}" | sort -n | median_from_stdin
+    printf '%s\n' "${iocoro_runs[@]}" | sort -n | bench_median_from_stdin
   )"
   asio_median="$(
-    printf '%s\n' "${asio_runs[@]}" | sort -n | median_from_stdin
+    printf '%s\n' "${asio_runs[@]}" | sort -n | bench_median_from_stdin
   )"
-  ratio="$(compute_ratio "$iocoro_median" "$asio_median")"
+  ratio="$(bench_compute_ratio "$iocoro_median" "$asio_median")"
   min_ratio="$(check_threshold "$sessions" "$msgs" "$msg_bytes")"
   pass_label="n/a"
   pass_bool=true

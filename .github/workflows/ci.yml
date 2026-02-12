@@ -142,8 +142,7 @@ jobs:
             --build-dir build \
             --iterations 3 \
             --warmup 1 \
-            --roundtrip-timeout-sec 120 \
-            --connect-timeout-sec 180
+            --timeout-sec 180
 
       - name: Upload perf artifacts
         uses: actions/upload-artifact@v4

@@ -131,7 +131,8 @@ Run the full benchmark suite (roundtrip + connect/accept):
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
   --build-dir build \
   --iterations 3 \
-  --warmup 1
+  --warmup 1 \
+  --timeout-sec 180
 ```
 
 Run TCP roundtrip benchmark matrix:
