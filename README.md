@@ -125,7 +125,7 @@ Build benchmarks:
 
 ### Performance baseline, gate, and observability
 
-Run the full benchmark suite (roundtrip + latency + connect/accept + throughput + udp + timer + thread-pool):
+Run the full benchmark suite:
 
 ```bash
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
@@ -135,119 +135,17 @@ Run the full benchmark suite (roundtrip + latency + connect/accept + throughput 
   --timeout-sec 180
 ```
 
-Run TCP roundtrip benchmark matrix:
+Default behavior of `run_all_perf_benchmarks.sh`:
 
-```bash
-./benchmark/scripts/run_tcp_roundtrip_baseline.sh \
-  --build-dir build \
-  --run-timeout-sec 120 \
-  --baseline benchmark/baselines/tcp_roundtrip_thresholds.txt \
-  --report benchmark/reports/perf_report.json
-```
+- Runs all benchmark suites.
+- Applies baseline gate and schema validation.
 
-Run TCP connect/accept benchmark matrix:
+Useful toggles:
 
-```bash
-./benchmark/scripts/run_tcp_connect_accept_baseline.sh \
-  --build-dir build \
-  --run-timeout-sec 180 \
-  --baseline benchmark/baselines/tcp_connect_accept_thresholds.txt \
-  --report benchmark/reports/connect_accept_report.json
-```
+- `--no-baseline`
+- `--no-schema-validate`
 
-Run TCP latency benchmark matrix:
-
-```bash
-./benchmark/scripts/run_tcp_latency_baseline.sh \
-  --build-dir build \
-  --run-timeout-sec 120 \
-  --baseline benchmark/baselines/tcp_latency_thresholds.txt \
-  --report benchmark/reports/latency_report.json
-```
-
-Run TCP throughput benchmark matrix:
-
-```bash
-./benchmark/scripts/run_tcp_throughput_baseline.sh \
-  --build-dir build \
-  --run-timeout-sec 180 \
-  --baseline benchmark/baselines/tcp_throughput_thresholds.txt \
-  --report benchmark/reports/throughput_report.json
-```
-
-Run UDP send/receive benchmark matrix:
-
-```bash
-./benchmark/scripts/run_udp_send_receive_baseline.sh \
-  --build-dir build \
-  --run-timeout-sec 180 \
-  --baseline benchmark/baselines/udp_send_receive_thresholds.txt \
-  --report benchmark/reports/udp_report.json
-```
-
-Run timer churn benchmark matrix:
-
-```bash
-./benchmark/scripts/run_timer_churn_baseline.sh \
-  --build-dir build \
-  --run-timeout-sec 180 \
-  --baseline benchmark/baselines/timer_churn_thresholds.txt \
-  --report benchmark/reports/timer_report.json
-```
-
-Run thread pool scaling benchmark matrix:
-
-```bash
-./benchmark/scripts/run_thread_pool_scaling_baseline.sh \
-  --build-dir build \
-  --run-timeout-sec 180 \
-  --baseline benchmark/baselines/thread_pool_scaling_thresholds.txt \
-  --report benchmark/reports/thread_pool_report.json
-```
-
-Validate report schemas:
-
-```bash
-python3 benchmark/scripts/validate_perf_report.py \
-  --schema benchmark/schemas/perf_report.schema.json \
-  --report benchmark/reports/perf_report.json
-```
-
-```bash
-python3 benchmark/scripts/validate_perf_report.py \
-  --schema benchmark/schemas/latency_report.schema.json \
-  --report benchmark/reports/latency_report.json
-```
-
-```bash
-python3 benchmark/scripts/validate_perf_report.py \
-  --schema benchmark/schemas/connect_accept_report.schema.json \
-  --report benchmark/reports/connect_accept_report.json
-```
-
-```bash
-python3 benchmark/scripts/validate_perf_report.py \
-  --schema benchmark/schemas/throughput_report.schema.json \
-  --report benchmark/reports/throughput_report.json
-```
-
-```bash
-python3 benchmark/scripts/validate_perf_report.py \
-  --schema benchmark/schemas/udp_report.schema.json \
-  --report benchmark/reports/udp_report.json
-```
-
-```bash
-python3 benchmark/scripts/validate_perf_report.py \
-  --schema benchmark/schemas/timer_report.schema.json \
-  --report benchmark/reports/timer_report.json
-```
-
-```bash
-python3 benchmark/scripts/validate_perf_report.py \
-  --schema benchmark/schemas/thread_pool_report.schema.json \
-  --report benchmark/reports/thread_pool_report.json
-```
+For full benchmark details, see `benchmark/README.md`.
 
 ## License
 
