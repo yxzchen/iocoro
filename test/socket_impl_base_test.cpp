@@ -87,7 +87,13 @@ TEST(socket_impl_base_test, release_with_inflight_wait_returns_busy) {
       cv.notify_all();
     });
 
-  (void)ctx.run_for(std::chrono::milliseconds{1});
+  auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+  while (!base.has_pending_operations() && !done.load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < deadline) {
+    (void)ctx.run_for(std::chrono::milliseconds{1});
+  }
+
+  ASSERT_TRUE(base.has_pending_operations()) << "wait_read_ready did not become in-flight in time";
 
   auto released = base.release();
   ASSERT_FALSE(released);
