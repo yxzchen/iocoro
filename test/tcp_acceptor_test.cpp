@@ -117,3 +117,17 @@ TEST(tcp_acceptor_test, listen_with_mismatched_family_on_open_socket_returns_inv
   ASSERT_FALSE(r2);
   EXPECT_EQ(r2.error(), iocoro::error::invalid_argument);
 }
+
+TEST(tcp_acceptor_test, listen_propagates_configure_failure) {
+  iocoro::io_context ctx;
+  iocoro::ip::tcp::acceptor acc{ctx};
+
+  auto r = acc.listen(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0},
+                      0,
+                      [](auto&) -> iocoro::result<void> {
+                        return iocoro::fail(iocoro::error::invalid_argument);
+                      });
+
+  ASSERT_FALSE(r);
+  EXPECT_EQ(r.error(), iocoro::error::invalid_argument);
+}
