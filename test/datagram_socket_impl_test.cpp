@@ -171,3 +171,27 @@ TEST(datagram_socket_impl_test, connected_send_to_without_destination_uses_conne
   ASSERT_TRUE(*r);
   EXPECT_EQ(**r, buf.size());
 }
+
+TEST(datagram_socket_impl_test, connected_send_to_null_destination_with_nonzero_len_is_invalid_argument) {
+  iocoro::io_context ctx;
+  iocoro::detail::socket::datagram_socket_impl impl{ctx.get_executor()};
+
+  auto ec = impl.open(AF_INET, SOCK_DGRAM, 0);
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
+
+  sockaddr_in connected{};
+  connected.sin_family = AF_INET;
+  connected.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  connected.sin_port = htons(10001);
+  ec = impl.connect(reinterpret_cast<sockaddr const*>(&connected), sizeof(connected));
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
+
+  std::array<std::byte, 1> buf{std::byte{0x7F}};
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_send_to(std::span<std::byte const>{buf}, nullptr, sizeof(sockaddr_in));
+  }());
+
+  ASSERT_TRUE(r);
+  ASSERT_FALSE(*r);
+  EXPECT_EQ(r->error(), iocoro::error::invalid_argument);
+}

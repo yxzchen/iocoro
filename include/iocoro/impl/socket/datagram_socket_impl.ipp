@@ -136,7 +136,7 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
   }
 
   if (is_connected) {
-    if (dest_addr && dest_len <= 0) {
+    if ((dest_addr == nullptr) != (dest_len == 0)) {
       co_return unexpected(error::invalid_argument);
     }
 
