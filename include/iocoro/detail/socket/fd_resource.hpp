@@ -41,16 +41,7 @@ class fd_resource {
       ctx->remove_fd(fd);
     }
 
-    for (;;) {
-      if (::close(fd) == 0) {
-        break;
-      }
-      if (errno == EINTR) {
-        // close() may be interrupted but the fd is no longer usable.
-        break;
-      }
-      break;
-    }
+    ::close(fd);
   }
 
   void mark_closing() noexcept { closing_.store(true, std::memory_order_release); }
