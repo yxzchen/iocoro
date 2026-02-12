@@ -4,15 +4,24 @@
 #include <coroutine>
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
+#include <iocoro/detail/executor_guard.hpp>
+#include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/reactor_types.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/result.hpp>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <system_error>
 
 namespace iocoro::detail {
+
+struct operation_cancel_callback {
+  event_handle handle{};
+
+  void operator()() const noexcept { handle.cancel(); }
+};
 
 /// Shared state for an in-flight reactor operation.
 ///
@@ -23,7 +32,7 @@ struct operation_wait_state {
   any_executor ex{};
   std::error_code ec{};
   std::atomic<bool> done{false};
-  std::unique_ptr<std::stop_callback<unique_function<void()>>> stop_cb{};
+  std::optional<std::stop_callback<operation_cancel_callback>> stop_cb{};
 };
 
 /// Awaiter that bridges a reactor operation into coroutine suspension.
@@ -73,9 +82,8 @@ struct operation_awaiter {
         }
         auto ex = st->ex;
         IOCORO_ENSURE(ex, "operation_awaiter: empty executor in completion");
-        // IMPORTANT: Resume by posting onto the captured executor. This avoids resuming inline
-        // on the reactor thread and keeps execution under the awaiting coroutine's executor.
-        ex.post([h]() mutable noexcept { h.resume(); });
+
+        ex.dispatch([h]() mutable noexcept { h.resume(); });
       }
     };
 
@@ -85,9 +93,8 @@ struct operation_awaiter {
       auto token = h.promise().get_stop_token();
       if (token.stop_requested()) {
         handle.cancel();
-      } else {
-        st->stop_cb = std::make_unique<std::stop_callback<unique_function<void()>>>(
-          token, unique_function<void()>{[handle]() mutable { handle.cancel(); }});
+      } else if (token.stop_possible()) {
+        st->stop_cb.emplace(token, operation_cancel_callback{handle});
       }
     }
 

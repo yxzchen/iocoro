@@ -50,7 +50,7 @@ template <async_read_stream Stream>
 template <async_read_stream Stream>
 [[nodiscard]] auto async_read(Stream& s, net::mutable_buffer buf)
   -> awaitable<result<std::size_t>> {
-  co_return co_await async_read(s, buf.as_span());
+  return async_read(s, buf.as_span());
 }
 
 }  // namespace iocoro::io

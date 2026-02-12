@@ -41,16 +41,27 @@ struct awaitable_promise_base {
 
       bool await_ready() noexcept { return false; }
 
-      void await_suspend(std::coroutine_handle<> h) noexcept {
+      auto await_suspend(std::coroutine_handle<> h) noexcept -> std::coroutine_handle<> {
         self->parent_stop_cb_.reset();
         // If detached, the coroutine owns its own lifetime.
         if (self->detached_) {
           // Detached coroutines must not have a continuation.
           h.destroy();
-          return;
+          return std::noop_coroutine();
         }
 
-        self->resume_continuation();
+        auto cont = std::exchange(self->continuation_, std::coroutine_handle<>{});
+        if (!cont) {
+          return std::noop_coroutine();
+        }
+
+        if (detail::get_current_executor() == self->ex_) {
+          return cont;
+        }
+
+        auto ex = self->ex_;
+        ex.post([cont]() mutable { cont.resume(); });
+        return std::noop_coroutine();
       }
 
       void await_resume() noexcept {}
@@ -92,14 +103,6 @@ struct awaitable_promise_base {
   }
 
   void set_continuation(std::coroutine_handle<> h) noexcept { continuation_ = h; }
-
-  void resume_continuation() noexcept {
-    if (!continuation_) {
-      return;
-    }
-    auto h = continuation_;
-    ex_.post([h]() mutable { h.resume(); });
-  }
 
   void unhandled_exception() noexcept { exception_ = std::current_exception(); }
 
