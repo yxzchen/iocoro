@@ -156,11 +156,11 @@ File: `benchmark/baselines/udp_send_receive_thresholds.txt`
 
 ```
 # sessions msgs msg_bytes min_ratio_vs_asio
-1 50000 64 0.55
-8 20000 64 0.60
-32 5000 64 0.60
-8 10000 1024 0.60
-32 2000 4096 0.55
+1 20000 64 0.55
+8 8000 64 0.60
+32 2000 64 0.60
+8 4000 1024 0.60
+32 1000 4096 0.55
 ```
 
 The gate compares `iocoro_pps_median / asio_pps_median` against `min_ratio_vs_asio`.

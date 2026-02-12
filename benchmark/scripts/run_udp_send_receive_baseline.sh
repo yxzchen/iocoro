@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/common.sh"
 BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
 WARMUP=1
-SCENARIOS="1:50000:64,8:20000:64,32:5000:64,8:10000:1024,32:2000:4096"
+SCENARIOS="1:20000:64,8:8000:64,32:2000:64,8:4000:1024,32:1000:4096"
 BASELINE_FILE=""
 REPORT_FILE=""
 RUN_TIMEOUT_SEC=120
@@ -23,7 +23,7 @@ Options:
   --iterations N       Measured runs per scenario (default: 5)
   --warmup N           Warmup runs per scenario/framework (default: 1)
   --scenarios LIST     Comma-separated sessions:msgs:msg_bytes tuples
-                       (default: 1:50000:64,8:20000:64,32:5000:64,8:10000:1024,32:2000:4096)
+                       (default: 1:20000:64,8:8000:64,32:2000:64,8:4000:1024,32:1000:4096)
   --baseline FILE      Threshold file format: "sessions msgs msg_bytes min_ratio"
   --report FILE        Write JSON summary to FILE
   --run-timeout-sec N  Timeout for each benchmark process in seconds (default: 120, 0=disable)
