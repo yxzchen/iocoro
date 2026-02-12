@@ -161,3 +161,5 @@ jobs:
             benchmark/reports/udp_summary.txt
             benchmark/reports/timer_report.json
             benchmark/reports/timer_summary.txt
+            benchmark/reports/thread_pool_report.json
+            benchmark/reports/thread_pool_summary.txt

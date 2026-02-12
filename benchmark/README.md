@@ -28,11 +28,12 @@ The unified runner executes:
 - `scripts/run_tcp_throughput_baseline.sh`
 - `scripts/run_udp_send_receive_baseline.sh`
 - `scripts/run_timer_churn_baseline.sh`
+- `scripts/run_thread_pool_scaling_baseline.sh`
 - `scripts/validate_perf_report.py` for all reports
 
 Timeout options:
 - `--timeout-sec` applies to all suites.
-- `--roundtrip-timeout-sec`, `--latency-timeout-sec`, `--connect-timeout-sec`, `--throughput-timeout-sec`, `--udp-timeout-sec`, and `--timer-timeout-sec` can override per-suite.
+- `--roundtrip-timeout-sec`, `--latency-timeout-sec`, `--connect-timeout-sec`, `--throughput-timeout-sec`, `--udp-timeout-sec`, `--timer-timeout-sec`, and `--threadpool-timeout-sec` can override per-suite.
 
 ## TCP roundtrip baseline runner
 
@@ -231,6 +232,38 @@ File: `benchmark/baselines/timer_churn_thresholds.txt`
 
 The gate compares `iocoro_ops_s_median / asio_ops_s_median` against `min_ratio_vs_asio`.
 
+## Thread pool scaling baseline runner
+
+Use `run_thread_pool_scaling_baseline.sh` to run `iocoro_thread_pool_scaling` and
+`asio_thread_pool_scaling` across worker-count scenarios and aggregate median `ops_s`.
+
+Example:
+
+```bash
+./benchmark/scripts/run_thread_pool_scaling_baseline.sh \
+  --build-dir build \
+  --iterations 5 \
+  --warmup 1 \
+  --run-timeout-sec 120 \
+  --baseline benchmark/baselines/thread_pool_scaling_thresholds.txt \
+  --report benchmark/reports/thread_pool_report.json
+```
+
+Thread pool scenarios are `workers:tasks`.
+
+## Thread pool scaling threshold format
+
+File: `benchmark/baselines/thread_pool_scaling_thresholds.txt`
+
+```
+# workers tasks min_ratio_vs_asio
+1 200000 0.85
+2 400000 0.75
+4 800000 0.65
+```
+
+The gate compares `iocoro_ops_s_median / asio_ops_s_median` against `min_ratio_vs_asio`.
+
 ## Report schemas
 
 Schema files:
@@ -240,6 +273,7 @@ Schema files:
 - `benchmark/schemas/throughput_report.schema.json`
 - `benchmark/schemas/udp_report.schema.json`
 - `benchmark/schemas/timer_report.schema.json`
+- `benchmark/schemas/thread_pool_report.schema.json`
 
 Validate a generated report:
 
@@ -277,4 +311,10 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/timer_report.schema.json \
   --report benchmark/reports/timer_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/thread_pool_report.schema.json \
+  --report benchmark/reports/thread_pool_report.json
 ```

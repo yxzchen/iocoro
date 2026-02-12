@@ -125,7 +125,7 @@ Build benchmarks:
 
 ### Performance baseline, gate, and observability
 
-Run the full benchmark suite (roundtrip + latency + connect/accept + throughput + udp + timer):
+Run the full benchmark suite (roundtrip + latency + connect/accept + throughput + udp + timer + thread-pool):
 
 ```bash
 ./benchmark/scripts/run_all_perf_benchmarks.sh \
@@ -195,6 +195,16 @@ Run timer churn benchmark matrix:
   --report benchmark/reports/timer_report.json
 ```
 
+Run thread pool scaling benchmark matrix:
+
+```bash
+./benchmark/scripts/run_thread_pool_scaling_baseline.sh \
+  --build-dir build \
+  --run-timeout-sec 180 \
+  --baseline benchmark/baselines/thread_pool_scaling_thresholds.txt \
+  --report benchmark/reports/thread_pool_report.json
+```
+
 Validate report schemas:
 
 ```bash
@@ -231,6 +241,12 @@ python3 benchmark/scripts/validate_perf_report.py \
 python3 benchmark/scripts/validate_perf_report.py \
   --schema benchmark/schemas/timer_report.schema.json \
   --report benchmark/reports/timer_report.json
+```
+
+```bash
+python3 benchmark/scripts/validate_perf_report.py \
+  --schema benchmark/schemas/thread_pool_report.schema.json \
+  --report benchmark/reports/thread_pool_report.json
 ```
 
 ## License
