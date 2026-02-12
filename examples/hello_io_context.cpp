@@ -19,7 +19,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-auto demo() -> iocoro::awaitable<void> {
+auto co_main() -> iocoro::awaitable<void> {
   auto ex = co_await iocoro::this_coro::executor;
   (void)ex;
 
@@ -33,7 +33,7 @@ auto demo() -> iocoro::awaitable<void> {
 int main() {
   iocoro::io_context ctx;
 
-  iocoro::co_spawn(ctx.get_executor(), demo(), iocoro::detached);
+  iocoro::co_spawn(ctx.get_executor(), co_main(), iocoro::detached);
 
   ctx.run();
   return 0;

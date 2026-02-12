@@ -22,7 +22,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-auto demo(iocoro::io_context& ctx, iocoro::any_executor io_ex, iocoro::any_executor cpu_ex)
+auto co_main(iocoro::io_context& ctx, iocoro::any_executor io_ex, iocoro::any_executor cpu_ex)
   -> iocoro::awaitable<void> {
   std::cout << "switch_executor: start on thread " << std::this_thread::get_id() << "\n";
 
@@ -53,7 +53,7 @@ int main() {
   auto cpu_ex = iocoro::any_executor{pool.get_executor()};
 
   auto guard = iocoro::make_work_guard(ctx);
-  iocoro::co_spawn(io_ex, demo(ctx, io_ex, cpu_ex), iocoro::detached);
+  iocoro::co_spawn(io_ex, co_main(ctx, io_ex, cpu_ex), iocoro::detached);
   ctx.run();
 
   pool.stop();
