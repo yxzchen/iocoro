@@ -95,3 +95,39 @@ TEST(datagram_socket_impl_test, receive_empty_buffer_returns_invalid_argument) {
   ASSERT_FALSE(*r);
   EXPECT_EQ(r->error(), iocoro::error::invalid_argument);
 }
+
+TEST(datagram_socket_impl_test, connected_send_to_mismatched_destination_returns_invalid_argument) {
+  iocoro::io_context ctx;
+  iocoro::detail::socket::datagram_socket_impl impl{ctx.get_executor()};
+
+  auto ec = impl.open(AF_INET, SOCK_DGRAM, 0);
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
+
+  sockaddr_in connected{};
+  connected.sin_family = AF_INET;
+  connected.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  connected.sin_port = htons(10001);
+  ec = impl.connect(reinterpret_cast<sockaddr const*>(&connected), sizeof(connected));
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
+
+  sockaddr_in other{};
+  other.sin_family = AF_INET;
+  other.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  other.sin_port = htons(10002);
+
+  std::array<std::byte, 4> buf{
+    std::byte{0xAA},
+    std::byte{0xBB},
+    std::byte{0xCC},
+    std::byte{0xDD},
+  };
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
+    co_return co_await impl.async_send_to(std::span<std::byte const>{buf},
+                                          reinterpret_cast<sockaddr const*>(&other),
+                                          sizeof(other));
+  }());
+
+  ASSERT_TRUE(r);
+  ASSERT_FALSE(*r);
+  EXPECT_EQ(r->error(), iocoro::error::invalid_argument);
+}

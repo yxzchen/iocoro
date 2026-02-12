@@ -30,7 +30,7 @@ namespace iocoro::detail::socket {
 /// - Socket creation requires explicit (domain, type, protocol) parameters.
 ///
 /// Concurrency:
-/// - Multiple concurrent async_accept() calls are serialized via a FIFO queue.
+/// - At most one async_accept() is allowed in flight.
 /// - At most one accept operation is active at a time.
 class acceptor_impl {
  public:
@@ -80,8 +80,8 @@ class acceptor_impl {
   /// Accept a new connection.
   ///
   /// Concurrency:
-  /// - Only one async_accept() call is allowed at a time.
   /// - If an accept is already in progress, returns error::busy.
+  /// - Exactly one accept syscall is active at a time.
   ///
   /// Returns:
   /// - a native connected fd on success (to be adopted by a stream socket)

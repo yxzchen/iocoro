@@ -3,6 +3,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
+#include <cstring>
+#include <netinet/in.h>
 
 namespace iocoro::detail::socket {
 
@@ -36,18 +38,27 @@ inline auto datagram_socket_impl::close() noexcept -> result<void> {
 }
 
 inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len) -> result<void> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     return fail(error::not_open);
   }
+  if (res->closing()) {
+    return fail(error::operation_aborted);
+  }
 
-  if (::bind(fd, addr, len) != 0) {
+  {
+    std::scoped_lock lk{mtx_};
+    if (send_op_.active || receive_op_.active) {
+      return fail(error::busy);
+    }
+  }
+
+  if (::bind(res->native_handle(), addr, len) != 0) {
     return fail(map_socket_errno(errno));
   }
 
   {
     std::scoped_lock lk{mtx_};
-    // Transition to bound state only if not already connected.
     if (state_ == dgram_state::idle) {
       state_ = dgram_state::bound;
     }
@@ -57,21 +68,28 @@ inline auto datagram_socket_impl::bind(sockaddr const* addr, socklen_t len) -> r
 }
 
 inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len) -> result<void> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     return fail(error::not_open);
   }
+  if (res->closing()) {
+    return fail(error::operation_aborted);
+  }
 
-  // For datagram sockets, connect() is synchronous (just sets the default peer).
-  if (::connect(fd, addr, len) != 0) {
+  {
+    std::scoped_lock lk{mtx_};
+    if (send_op_.active || receive_op_.active) {
+      return fail(error::busy);
+    }
+  }
+
+  if (::connect(res->native_handle(), addr, len) != 0) {
     return fail(map_socket_errno(errno));
   }
 
   {
     std::scoped_lock lk{mtx_};
     state_ = dgram_state::connected;
-
-    // Store the connected address for later validation in send_to.
     connected_addr_len_ = len;
     std::memcpy(&connected_addr_, addr, len);
   }
@@ -82,14 +100,18 @@ inline auto datagram_socket_impl::connect(sockaddr const* addr, socklen_t len) -
 inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffer,
                                                 sockaddr const* dest_addr, socklen_t dest_len)
   -> awaitable<result<std::size_t>> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     co_return unexpected(error::not_open);
   }
 
+  auto inflight = base_.make_operation_guard(res);
+  auto const fd = res->native_handle();
+
   std::uint64_t my_epoch = 0;
   bool is_connected = false;
-
+  sockaddr_storage connected_addr{};
+  socklen_t connected_addr_len = 0;
   {
     std::scoped_lock lk{mtx_};
     if (send_op_.active) {
@@ -98,6 +120,10 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
     send_op_.active = true;
     my_epoch = send_op_.epoch.load(std::memory_order_acquire);
     is_connected = (state_ == dgram_state::connected);
+    if (is_connected) {
+      connected_addr = connected_addr_;
+      connected_addr_len = connected_addr_len_;
+    }
   }
 
   auto guard = detail::make_scope_exit([this] { send_op_.finish(mtx_); });
@@ -106,38 +132,72 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
     co_return 0;
   }
 
-  // Retry loop for EINTR and EAGAIN.
-  for (;;) {
-    ssize_t n;
+  if (is_connected) {
+    if (!dest_addr || dest_len <= 0) {
+      co_return unexpected(error::invalid_argument);
+    }
 
+    auto same_destination = [](sockaddr const* a, socklen_t alen, sockaddr const* b,
+                               socklen_t blen) noexcept -> bool {
+      if (!a || !b || a->sa_family != b->sa_family) {
+        return false;
+      }
+      if (a->sa_family == AF_INET) {
+        if (alen < static_cast<socklen_t>(sizeof(sockaddr_in)) ||
+            blen < static_cast<socklen_t>(sizeof(sockaddr_in))) {
+          return false;
+        }
+        auto const* sa = reinterpret_cast<sockaddr_in const*>(a);
+        auto const* sb = reinterpret_cast<sockaddr_in const*>(b);
+        return sa->sin_port == sb->sin_port && sa->sin_addr.s_addr == sb->sin_addr.s_addr;
+      }
+      if (a->sa_family == AF_INET6) {
+        if (alen < static_cast<socklen_t>(sizeof(sockaddr_in6)) ||
+            blen < static_cast<socklen_t>(sizeof(sockaddr_in6))) {
+          return false;
+        }
+        auto const* sa = reinterpret_cast<sockaddr_in6 const*>(a);
+        auto const* sb = reinterpret_cast<sockaddr_in6 const*>(b);
+        return sa->sin6_port == sb->sin6_port &&
+               std::memcmp(&sa->sin6_addr, &sb->sin6_addr, sizeof(in6_addr)) == 0 &&
+               sa->sin6_scope_id == sb->sin6_scope_id;
+      }
+      if (alen != blen) {
+        return false;
+      }
+      return std::memcmp(a, b, static_cast<std::size_t>(alen)) == 0;
+    };
+
+    if (!same_destination(dest_addr, dest_len, reinterpret_cast<sockaddr const*>(&connected_addr),
+                          connected_addr_len)) {
+      co_return unexpected(error::invalid_argument);
+    }
+  }
+
+  for (;;) {
+    if (res->closing()) {
+      co_return unexpected(error::operation_aborted);
+    }
+
+    ssize_t n;
     if (is_connected) {
-      // For connected UDP sockets, use send() instead of sendto().
-      // Linux behavior:
-      //   - sendto(fd, ..., dest) with dest != nullptr requires dest to match the connected peer,
-      //     otherwise returns EINVAL.
-      //   - send(fd, ...) or sendto(fd, ..., nullptr, 0) always works correctly.
-      // We use send() for clarity and correctness.
       n = ::send(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
     } else {
-      // For unconnected sockets, use sendto() with explicit destination.
       n = ::sendto(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL, dest_addr, dest_len);
     }
 
     if (n >= 0) {
       co_return static_cast<std::size_t>(n);
     }
-
     if (errno == EINTR) {
       continue;
     }
-
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      // Wait for write readiness.
-      auto r = co_await base_.wait_write_ready();
+      auto r = co_await base_.wait_write_ready(res);
       if (!r) {
         co_return unexpected(r.error());
       }
-      if (!send_op_.is_epoch_current(my_epoch)) {
+      if (!send_op_.is_epoch_current(my_epoch) || res->closing()) {
         co_return unexpected(error::operation_aborted);
       }
       continue;
@@ -147,30 +207,23 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
   }
 }
 
-inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer,
-                                                     sockaddr* src_addr, socklen_t* src_len)
+inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer, sockaddr* src_addr,
+                                                     socklen_t* src_len)
   -> awaitable<result<std::size_t>> {
-  auto const fd = base_.native_handle();
-  if (fd < 0) {
+  auto res = base_.acquire_resource();
+  if (!res || res->native_handle() < 0) {
     co_return unexpected(error::not_open);
   }
 
-  // Check that the socket has a local address (required for receiving).
-  //
-  // State semantics:
-  //   - idle: socket is open but has NO local address → cannot receive
-  //   - bound: socket has an EXPLICIT local address (via bind()) → can receive
-  //   - connected: socket has an IMPLICIT local address (kernel-assigned via connect()) → can receive
-  //
-  // Terminology note:
-  //   We use "has local address" instead of "is bound" to clarify that both
-  //   explicit bind() and implicit connect() satisfy the requirement.
   {
     std::scoped_lock lk{mtx_};
     if (state_ == dgram_state::idle) {
       co_return unexpected(error::not_bound);
     }
   }
+
+  auto inflight = base_.make_operation_guard(res);
+  auto const fd = res->native_handle();
 
   std::uint64_t my_epoch = 0;
   {
@@ -188,26 +241,13 @@ inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer
     co_return unexpected(error::invalid_argument);
   }
 
-  // IMPORTANT: `recvfrom()` expects `*src_len` to be initialized to the size of the `src_addr`
-  // buffer; it is updated on success to the actual address length.
-
-  // Retry loop for EINTR and EAGAIN.
   for (;;) {
-    // Use MSG_TRUNC to detect truncation.
-    //
-    // Portability note (Linux-specific behavior):
-    //   On Linux, MSG_TRUNC causes recvfrom to return the actual datagram size,
-    //   even if it exceeds the buffer size. This allows us to detect truncation.
-    //
-    //   BSD systems also support MSG_TRUNC, but the exact semantics may vary slightly.
-    //   POSIX does not mandate MSG_TRUNC, so strictly portable code should handle
-    //   its absence (though it is widely available on modern UNIX-like systems).
-    //
-    //   This implementation assumes Linux-like MSG_TRUNC semantics.
-    ssize_t n = ::recvfrom(fd, buffer.data(), buffer.size(), MSG_TRUNC, src_addr, src_len);
+    if (res->closing()) {
+      co_return unexpected(error::operation_aborted);
+    }
 
+    ssize_t n = ::recvfrom(fd, buffer.data(), buffer.size(), MSG_TRUNC, src_addr, src_len);
     if (n >= 0) {
-      // Check if the message was truncated (return value > buffer size).
       if (static_cast<std::size_t>(n) > buffer.size()) {
         co_return unexpected(error::message_size);
       }
@@ -217,14 +257,12 @@ inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer
     if (errno == EINTR) {
       continue;
     }
-
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
-      // Wait for read readiness.
-      auto r = co_await base_.wait_read_ready();
+      auto r = co_await base_.wait_read_ready(res);
       if (!r) {
         co_return unexpected(r.error());
       }
-      if (!receive_op_.is_epoch_current(my_epoch)) {
+      if (!receive_op_.is_epoch_current(my_epoch) || res->closing()) {
         co_return unexpected(error::operation_aborted);
       }
       continue;
