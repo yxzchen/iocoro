@@ -3,7 +3,6 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/assert.hpp>
 #include <iocoro/detail/executor_cast.hpp>
-#include <iocoro/detail/executor_guard.hpp>
 #include <iocoro/detail/unique_function.hpp>
 #include <iocoro/detail/work_guard_counter.hpp>
 #include <iocoro/work_guard.hpp>
@@ -75,6 +74,7 @@ class thread_pool {
     mutable std::mutex cv_mutex{};
     std::condition_variable cv{};
     std::deque<detail::unique_function<void()>> queue{};
+    std::size_t waiting_workers{0};
     state_t state{state_t::running};
     detail::work_guard_counter work_guard{};
     std::atomic<std::shared_ptr<exception_handler_t>> on_task_exception{};
@@ -106,18 +106,18 @@ class thread_pool::executor_type {
       return;
     }
 
-    auto task = detail::unique_function<void()>{[st, fn = std::move(f)]() mutable {
-      detail::executor_guard g{any_executor{executor_type{st}}};
-      fn();
-    }};
+    bool should_notify = false;
     {
       std::scoped_lock lock{st->cv_mutex};
       if (st->state != state_t::running) {
         return;
       }
-      st->queue.emplace_back(std::move(task));
+      st->queue.emplace_back(std::move(f));
+      should_notify = (st->waiting_workers > 0);
     }
-    st->cv.notify_one();
+    if (should_notify) {
+      st->cv.notify_one();
+    }
   }
 
   void dispatch(detail::unique_function<void()> f) const noexcept {

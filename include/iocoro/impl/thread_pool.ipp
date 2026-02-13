@@ -1,5 +1,7 @@
 #include <iocoro/thread_pool.hpp>
 
+#include <iocoro/detail/executor_guard.hpp>
+
 #include <exception>
 
 namespace iocoro {
@@ -28,15 +30,18 @@ inline void thread_pool::set_exception_handler(exception_handler_t handler) noex
 
 inline void thread_pool::worker_loop(std::shared_ptr<shared_state> state, std::size_t /*index*/) {
   IOCORO_ENSURE(state != nullptr, "thread_pool::worker_loop: empty state");
+
   while (true) {
     detail::unique_function<void()> task;
 
     {
       std::unique_lock lock{state->cv_mutex};
+      ++state->waiting_workers;
       state->cv.wait(lock, [&] {
         return !state->queue.empty() ||
                (state->state == state_t::draining && state->work_guard.count() == 0);
       });
+      --state->waiting_workers;
 
       if (state->queue.empty()) {
         IOCORO_ASSERT(state->state == state_t::draining && state->work_guard.count() == 0);
@@ -48,6 +53,7 @@ inline void thread_pool::worker_loop(std::shared_ptr<shared_state> state, std::s
     }
 
     try {
+      detail::executor_guard pool_guard{any_executor{executor_type{state}}};
       task();
     } catch (...) {
       auto handler_ptr = state->on_task_exception.load(std::memory_order_acquire);
