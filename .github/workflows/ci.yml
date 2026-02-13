@@ -120,6 +120,53 @@ jobs:
           cmake --build /tmp/iocoro-consumer/build -j
           /tmp/iocoro-consumer/build/consumer
 
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config g++ libgtest-dev gcovr python3
+
+          if [ -d /usr/src/gtest ]; then
+            cd /usr/src/gtest
+            sudo cmake -S . -B build
+            sudo cmake --build build -j
+            sudo cmake --install build
+          elif [ -d /usr/src/googletest ]; then
+            cd /usr/src/googletest
+            sudo cmake -S . -B build
+            sudo cmake --build build -j
+            sudo cmake --install build
+          fi
+
+      - name: Build, test, and collect coverage
+        run: |
+          chmod +x ./scripts/run_coverage.sh
+          ./scripts/run_coverage.sh --clean --build-dir build-coverage --jobs "$(nproc)" --min-line 70
+
+      - name: Coverage summary
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path("build-coverage/coverage/summary.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          line = data.get("line_percent", 0.0)
+          branch = data.get("branch_percent", 0.0)
+          func = data.get("function_percent", 0.0)
+          with open(Path.home() / "coverage_summary.md", "w", encoding="utf-8") as f:
+              f.write("## Coverage Metrics\n")
+              f.write(f"- Line: **{line:.2f}%**\n")
+              f.write(f"- Branch: **{branch:.2f}%**\n")
+              f.write(f"- Function: **{func:.2f}%**\n")
+          PY
+          cat "$HOME/coverage_summary.md" >> "$GITHUB_STEP_SUMMARY"
+
   perf-regression-gate:
     runs-on: ubuntu-latest
     steps:
@@ -143,24 +190,3 @@ jobs:
             --iterations 3 \
             --warmup 1 \
             --timeout-sec 180
-
-      - name: Upload perf artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-regression-report
-          path: |
-            benchmark/reports/perf_report.json
-            benchmark/reports/perf_summary.txt
-            benchmark/reports/latency_report.json
-            benchmark/reports/latency_summary.txt
-            benchmark/reports/connect_accept_report.json
-            benchmark/reports/connect_accept_summary.txt
-            benchmark/reports/throughput_report.json
-            benchmark/reports/throughput_summary.txt
-            benchmark/reports/udp_report.json
-            benchmark/reports/udp_summary.txt
-            benchmark/reports/timer_report.json
-            benchmark/reports/timer_summary.txt
-            benchmark/reports/thread_pool_report.json
-            benchmark/reports/thread_pool_summary.txt
