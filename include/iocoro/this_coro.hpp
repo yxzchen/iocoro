@@ -44,6 +44,8 @@ struct on_t {
 /// - Causes the coroutine to suspend and later resume via `ex` (one-shot).
 /// - Does NOT rebind the coroutine's long-term executor (promise binding).
 /// - Only affects the next resumption; subsequent awaits decide their own scheduling.
-inline auto on(any_executor ex) noexcept -> on_t { return on_t{std::move(ex)}; }
+inline auto on(any_executor ex) noexcept -> on_t {
+  return on_t{std::move(ex)};
+}
 
 }  // namespace iocoro::this_coro

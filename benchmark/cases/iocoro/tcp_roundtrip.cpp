@@ -1,7 +1,7 @@
 #include <iocoro/iocoro.hpp>
 
-#include <atomic>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -50,8 +50,8 @@ auto echo_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<void
   }
 }
 
-auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st)
-  -> iocoro::awaitable<void> {
+auto accept_loop(tcp::acceptor& acceptor, int sessions,
+                 bench_state* st) -> iocoro::awaitable<void> {
   auto ex = co_await iocoro::this_coro::executor;
 
   for (int i = 0; i < sessions; ++i) {
@@ -64,8 +64,8 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st)
   }
 }
 
-auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
-  -> iocoro::awaitable<void> {
+auto client_session(iocoro::io_context& ctx, tcp::endpoint ep,
+                    bench_state* st) -> iocoro::awaitable<void> {
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {

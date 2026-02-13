@@ -266,11 +266,10 @@ TEST(condition_event_test, stress_stop_race_does_not_double_resume_or_hang) {
       iocoro::condition_event ev;
       std::stop_source stop_src{};
 
-      auto wait_fn = [&]() -> iocoro::awaitable<iocoro::result<void>> { co_return co_await ev.async_wait(); };
-      auto join = iocoro::co_spawn(
-        ex, stop_src.get_token(),
-        wait_fn(),
-        iocoro::use_awaitable);
+      auto wait_fn = [&]() -> iocoro::awaitable<iocoro::result<void>> {
+        co_return co_await ev.async_wait();
+      };
+      auto join = iocoro::co_spawn(ex, stop_src.get_token(), wait_fn(), iocoro::use_awaitable);
 
       // Mix immediate stop and "yield-then-stop" to exercise both races.
       if ((i % 2) == 1) {

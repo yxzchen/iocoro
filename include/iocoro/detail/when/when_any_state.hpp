@@ -5,11 +5,11 @@
 #include <iocoro/awaitable.hpp>
 #include <iocoro/detail/when/when_state_base.hpp>
 
+#include <atomic>
 #include <coroutine>
 #include <cstddef>
 #include <memory>
 #include <mutex>
-#include <atomic>
 #include <optional>
 #include <type_traits>
 #include <utility>

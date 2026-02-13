@@ -17,8 +17,8 @@
 namespace iocoro::io {
 
 namespace detail {
-[[nodiscard]] inline auto find_byte_in_span(std::span<std::byte const> data, std::byte needle)
-  -> std::size_t {
+[[nodiscard]] inline auto find_byte_in_span(std::span<std::byte const> data,
+                                            std::byte needle) -> std::size_t {
   constexpr auto npos = static_cast<std::size_t>(-1);
   if (data.empty()) {
     return npos;

@@ -60,8 +60,8 @@ class endpoint_storage {
   /// Order is: family, then address, then port.
   /// This is a semantic ordering (not a raw byte memcmp) and is intended to be stable.
   friend auto operator==(endpoint_storage const& a, endpoint_storage const& b) noexcept -> bool;
-  friend auto operator<=>(endpoint_storage const& a, endpoint_storage const& b) noexcept
-    -> std::strong_ordering;
+  friend auto operator<=>(endpoint_storage const& a,
+                          endpoint_storage const& b) noexcept -> std::strong_ordering;
 
  private:
   void init_v4(address_v4 addr, std::uint16_t port) noexcept;

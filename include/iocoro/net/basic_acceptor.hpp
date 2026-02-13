@@ -66,8 +66,8 @@ class basic_acceptor {
   /// `configure` must return `result<void>`; failures are propagated and abort listen().
   template <class Configure>
     requires std::invocable<Configure, basic_acceptor&> &&
-             std::same_as<std::remove_cvref_t<std::invoke_result_t<Configure, basic_acceptor&>>,
-                          result<void>>
+               std::same_as<std::remove_cvref_t<std::invoke_result_t<Configure, basic_acceptor&>>,
+                            result<void>>
   auto listen(endpoint const& ep, int backlog, Configure&& configure) -> result<void> {
     auto open_r = ok();
     if (!is_open()) {
@@ -81,8 +81,7 @@ class basic_acceptor {
         return fail(error::invalid_argument);
       }
     }
-    return open_r
-      .and_then([&] { return std::invoke(std::forward<Configure>(configure), *this); })
+    return open_r.and_then([&] { return std::invoke(std::forward<Configure>(configure), *this); })
       .and_then([&] { return handle_.impl().bind(ep.data(), ep.size()); })
       .and_then([&] { return handle_.impl().listen(backlog); });
   }

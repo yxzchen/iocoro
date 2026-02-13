@@ -14,8 +14,8 @@ namespace net = boost::asio;
 using net::awaitable;
 using net::co_spawn;
 using net::detached;
-using net::ip::tcp;
 using net::use_awaitable;
+using net::ip::tcp;
 
 namespace {
 
@@ -48,8 +48,8 @@ auto server_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
     auto const to_read =
       static_cast<std::size_t>(std::min<std::uint64_t>(remaining, read_buf.size()));
     boost::system::error_code ec;
-    auto n =
-      co_await socket.async_read_some(net::buffer(read_buf.data(), to_read), net::redirect_error(use_awaitable, ec));
+    auto n = co_await socket.async_read_some(net::buffer(read_buf.data(), to_read),
+                                             net::redirect_error(use_awaitable, ec));
     if (ec || n == 0) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_throughput: server read failed: " + ec.message());
@@ -94,8 +94,8 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
   while (remaining > 0) {
     auto const to_send =
       static_cast<std::size_t>(std::min<std::uint64_t>(remaining, payload.size()));
-    auto n =
-      co_await net::async_write(socket, net::buffer(payload.data(), to_send), net::redirect_error(use_awaitable, ec));
+    auto n = co_await net::async_write(socket, net::buffer(payload.data(), to_send),
+                                       net::redirect_error(use_awaitable, ec));
     if (ec || n == 0) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_throughput: client write failed: " + ec.message());
@@ -179,12 +179,9 @@ int main(int argc, char* argv[]) {
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_tcp_throughput"
             << " listen=" << listen_ep.address().to_string() << ":" << listen_ep.port()
-            << " sessions=" << sessions
-            << " bytes_per_session=" << bytes_per_session
-            << " chunk_bytes=" << chunk_bytes
-            << " total_bytes=" << total_bytes
-            << " elapsed_s=" << elapsed_s
-            << " throughput_mib_s=" << throughput_mib_s
+            << " sessions=" << sessions << " bytes_per_session=" << bytes_per_session
+            << " chunk_bytes=" << chunk_bytes << " total_bytes=" << total_bytes
+            << " elapsed_s=" << elapsed_s << " throughput_mib_s=" << throughput_mib_s
             << " avg_session_ms=" << avg_session_ms << "\n";
 
   return 0;

@@ -124,8 +124,7 @@ TEST(datagram_socket_impl_test, connected_send_to_mismatched_destination_returns
   };
   auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
     co_return co_await impl.async_send_to(std::span<std::byte const>{buf},
-                                          reinterpret_cast<sockaddr const*>(&other),
-                                          sizeof(other));
+                                          reinterpret_cast<sockaddr const*>(&other), sizeof(other));
   }());
 
   ASSERT_TRUE(r);
@@ -172,7 +171,8 @@ TEST(datagram_socket_impl_test, connected_send_to_without_destination_uses_conne
   EXPECT_EQ(**r, buf.size());
 }
 
-TEST(datagram_socket_impl_test, connected_send_to_null_destination_with_nonzero_len_is_invalid_argument) {
+TEST(datagram_socket_impl_test,
+     connected_send_to_null_destination_with_nonzero_len_is_invalid_argument) {
   iocoro::io_context ctx;
   iocoro::detail::socket::datagram_socket_impl impl{ctx.get_executor()};
 
@@ -188,7 +188,8 @@ TEST(datagram_socket_impl_test, connected_send_to_null_destination_with_nonzero_
 
   std::array<std::byte, 1> buf{std::byte{0x7F}};
   auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<std::size_t>> {
-    co_return co_await impl.async_send_to(std::span<std::byte const>{buf}, nullptr, sizeof(sockaddr_in));
+    co_return co_await impl.async_send_to(std::span<std::byte const>{buf}, nullptr,
+                                          sizeof(sockaddr_in));
   }());
 
   ASSERT_TRUE(r);

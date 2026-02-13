@@ -1,10 +1,10 @@
 #include <iocoro/detail/socket/datagram_socket_impl.hpp>
 
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
-#include <netinet/in.h>
 
 namespace iocoro::detail::socket {
 
@@ -210,8 +210,8 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
   }
 }
 
-inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer, sockaddr* src_addr,
-                                                     socklen_t* src_len)
+inline auto datagram_socket_impl::async_receive_from(std::span<std::byte> buffer,
+                                                     sockaddr* src_addr, socklen_t* src_len)
   -> awaitable<result<std::size_t>> {
   auto res = base_.acquire_resource();
   if (!res || res->native_handle() < 0) {

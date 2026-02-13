@@ -8,8 +8,8 @@
 #include <mutex>
 #include <utility>
 
-#include <cerrno>
 #include <unistd.h>
+#include <cerrno>
 
 namespace iocoro::detail::socket {
 

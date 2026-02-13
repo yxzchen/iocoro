@@ -95,8 +95,7 @@ class mutable_buffer {
   std::size_t size_ = 0;
 };
 
-inline constexpr const_buffer::const_buffer(mutable_buffer const& b) noexcept
-    : data_(), size_() {
+inline constexpr const_buffer::const_buffer(mutable_buffer const& b) noexcept : data_(), size_() {
   auto const sp = b.as_span();
   data_ = static_cast<std::byte const*>(sp.data());
   size_ = sp.size();
@@ -139,8 +138,8 @@ inline auto buffer_cast(mutable_buffer b) noexcept -> T {
 inline constexpr auto buffer(mutable_buffer b) noexcept -> mutable_buffer {
   return b;
 }
-inline constexpr auto buffer(mutable_buffer b, std::size_t max_size_in_bytes) noexcept
-  -> mutable_buffer {
+inline constexpr auto buffer(mutable_buffer b,
+                             std::size_t max_size_in_bytes) noexcept -> mutable_buffer {
   if (max_size_in_bytes < b.size()) {
     return mutable_buffer{b.as_span().data(), max_size_in_bytes};
   }
@@ -150,8 +149,8 @@ inline constexpr auto buffer(mutable_buffer b, std::size_t max_size_in_bytes) no
 inline constexpr auto buffer(const_buffer b) noexcept -> const_buffer {
   return b;
 }
-inline constexpr auto buffer(const_buffer b, std::size_t max_size_in_bytes) noexcept
-  -> const_buffer {
+inline constexpr auto buffer(const_buffer b,
+                             std::size_t max_size_in_bytes) noexcept -> const_buffer {
   if (max_size_in_bytes < b.size()) {
     return const_buffer{b.as_span().data(), max_size_in_bytes};
   }
@@ -171,16 +170,16 @@ inline constexpr auto buffer(void const* data, std::size_t size_in_bytes) noexce
 inline constexpr auto buffer(std::span<std::byte> s) noexcept -> mutable_buffer {
   return mutable_buffer{s};
 }
-inline constexpr auto buffer(std::span<std::byte> s, std::size_t max_size_in_bytes) noexcept
-  -> mutable_buffer {
+inline constexpr auto buffer(std::span<std::byte> s,
+                             std::size_t max_size_in_bytes) noexcept -> mutable_buffer {
   return buffer(mutable_buffer{s}, max_size_in_bytes);
 }
 
 inline constexpr auto buffer(std::span<std::byte const> s) noexcept -> const_buffer {
   return const_buffer{s};
 }
-inline constexpr auto buffer(std::span<std::byte const> s, std::size_t max_size_in_bytes) noexcept
-  -> const_buffer {
+inline constexpr auto buffer(std::span<std::byte const> s,
+                             std::size_t max_size_in_bytes) noexcept -> const_buffer {
   return buffer(const_buffer{s}, max_size_in_bytes);
 }
 
@@ -193,8 +192,8 @@ inline constexpr auto buffer(std::span<T> s) noexcept -> mutable_buffer {
 
 template <class T>
   requires(!std::is_const_v<T>)
-inline constexpr auto buffer(std::span<T> s, std::size_t max_size_in_bytes) noexcept
-  -> mutable_buffer {
+inline constexpr auto buffer(std::span<T> s,
+                             std::size_t max_size_in_bytes) noexcept -> mutable_buffer {
   return buffer(buffer(s), max_size_in_bytes);
 }
 
@@ -205,8 +204,8 @@ inline constexpr auto buffer(std::span<T const> s) noexcept -> const_buffer {
 }
 
 template <class T>
-inline constexpr auto buffer(std::span<T const> s, std::size_t max_size_in_bytes) noexcept
-  -> const_buffer {
+inline constexpr auto buffer(std::span<T const> s,
+                             std::size_t max_size_in_bytes) noexcept -> const_buffer {
   return buffer(buffer(s), max_size_in_bytes);
 }
 
@@ -229,14 +228,14 @@ inline constexpr auto buffer(T const (&data)[N]) noexcept -> const_buffer {
 }
 
 template <class T, std::size_t N>
-inline constexpr auto buffer(T (&data)[N], std::size_t max_size_in_bytes) noexcept
-  -> mutable_buffer {
+inline constexpr auto buffer(T (&data)[N],
+                             std::size_t max_size_in_bytes) noexcept -> mutable_buffer {
   return buffer(buffer(data), max_size_in_bytes);
 }
 
 template <class T, std::size_t N>
-inline constexpr auto buffer(T const (&data)[N], std::size_t max_size_in_bytes) noexcept
-  -> const_buffer {
+inline constexpr auto buffer(T const (&data)[N],
+                             std::size_t max_size_in_bytes) noexcept -> const_buffer {
   return buffer(buffer(data), max_size_in_bytes);
 }
 
@@ -257,14 +256,14 @@ inline constexpr auto buffer(std::array<T, N> const& a) noexcept -> const_buffer
 }
 
 template <class T, std::size_t N>
-inline constexpr auto buffer(std::array<T, N>& a, std::size_t max_size_in_bytes) noexcept
-  -> mutable_buffer {
+inline constexpr auto buffer(std::array<T, N>& a,
+                             std::size_t max_size_in_bytes) noexcept -> mutable_buffer {
   return buffer(buffer(a), max_size_in_bytes);
 }
 
 template <class T, std::size_t N>
-inline constexpr auto buffer(std::array<T, N> const& a, std::size_t max_size_in_bytes) noexcept
-  -> const_buffer {
+inline constexpr auto buffer(std::array<T, N> const& a,
+                             std::size_t max_size_in_bytes) noexcept -> const_buffer {
   return buffer(buffer(a), max_size_in_bytes);
 }
 
@@ -287,15 +286,15 @@ inline auto buffer(std::vector<T, Alloc> const& v) noexcept -> const_buffer {
 
 template <class T, class Alloc>
   requires(!detail::is_vector_bool_v<std::vector<T, Alloc>>)
-inline auto buffer(std::vector<T, Alloc>& v, std::size_t max_size_in_bytes) noexcept
-  -> mutable_buffer {
+inline auto buffer(std::vector<T, Alloc>& v,
+                   std::size_t max_size_in_bytes) noexcept -> mutable_buffer {
   return buffer(buffer(v), max_size_in_bytes);
 }
 
 template <class T, class Alloc>
   requires(!detail::is_vector_bool_v<std::vector<T, Alloc>>)
-inline auto buffer(std::vector<T, Alloc> const& v, std::size_t max_size_in_bytes) noexcept
-  -> const_buffer {
+inline auto buffer(std::vector<T, Alloc> const& v,
+                   std::size_t max_size_in_bytes) noexcept -> const_buffer {
   return buffer(buffer(v), max_size_in_bytes);
 }
 

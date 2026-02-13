@@ -7,12 +7,12 @@
 
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
-#include <unistd.h>
 
 TEST(acceptor_impl_test, async_accept_without_open_returns_not_open) {
   iocoro::io_context ctx;
@@ -121,13 +121,17 @@ TEST(acceptor_impl_test, concurrent_accepts_second_returns_busy) {
   auto ex = ctx.get_executor();
   iocoro::co_spawn(
     ex, [&]() -> iocoro::awaitable<iocoro::result<int>> { co_return co_await acc.async_accept(); },
-    [&](iocoro::expected<iocoro::result<int>, std::exception_ptr> r) { on_done(r1, std::move(r)); });
+    [&](iocoro::expected<iocoro::result<int>, std::exception_ptr> r) {
+      on_done(r1, std::move(r));
+    });
 
   (void)ctx.run_for(std::chrono::milliseconds{1});
 
   iocoro::co_spawn(
     ex, [&]() -> iocoro::awaitable<iocoro::result<int>> { co_return co_await acc.async_accept(); },
-    [&](iocoro::expected<iocoro::result<int>, std::exception_ptr> r) { on_done(r2, std::move(r)); });
+    [&](iocoro::expected<iocoro::result<int>, std::exception_ptr> r) {
+      on_done(r2, std::move(r));
+    });
 
   (void)ctx.run_for(std::chrono::milliseconds{1});
   acc.cancel_read();

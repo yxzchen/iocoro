@@ -145,8 +145,8 @@ class backend_uring final : public backend_interface {
     wakeup();
   }
 
-  auto wait(std::optional<std::chrono::milliseconds> timeout, std::vector<backend_event>& out)
-    -> void override {
+  auto wait(std::optional<std::chrono::milliseconds> timeout,
+            std::vector<backend_event>& out) -> void override {
     out.clear();
 
     // Drain any interest updates recorded by other threads.

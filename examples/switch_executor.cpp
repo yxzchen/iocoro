@@ -22,8 +22,8 @@ using namespace std::chrono_literals;
 
 namespace {
 
-auto co_main(iocoro::io_context& ctx, iocoro::any_executor io_ex, iocoro::any_executor cpu_ex)
-  -> iocoro::awaitable<void> {
+auto co_main(iocoro::io_context& ctx, iocoro::any_executor io_ex,
+             iocoro::any_executor cpu_ex) -> iocoro::awaitable<void> {
   std::cout << "switch_executor: start on thread " << std::this_thread::get_id() << "\n";
 
   co_await iocoro::this_coro::switch_to(cpu_ex);

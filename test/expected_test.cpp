@@ -3,8 +3,8 @@
 #include <iocoro/expected.hpp>
 
 #include <atomic>
-#include <system_error>
 #include <string>
+#include <system_error>
 
 TEST(expected_test, value_and_error_basic) {
   iocoro::expected<int, int> ok{42};

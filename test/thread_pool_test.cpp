@@ -9,8 +9,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <thread>
 #include <stdexcept>
+#include <thread>
 
 TEST(thread_pool_test, size_returns_thread_count) {
   iocoro::thread_pool pool{2};

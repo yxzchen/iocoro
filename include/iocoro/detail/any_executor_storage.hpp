@@ -60,8 +60,8 @@ class any_executor_storage {
     }
   }
 
-  friend auto operator==(any_executor_storage const& a, any_executor_storage const& b) noexcept
-    -> bool {
+  friend auto operator==(any_executor_storage const& a,
+                         any_executor_storage const& b) noexcept -> bool {
     if (!a.ptr_ && !b.ptr_) {
       return true;
     }
@@ -74,8 +74,8 @@ class any_executor_storage {
     return a.vtable_->equals(a.ptr_, b.ptr_);
   }
 
-  friend auto operator!=(any_executor_storage const& a, any_executor_storage const& b) noexcept
-    -> bool {
+  friend auto operator!=(any_executor_storage const& a,
+                         any_executor_storage const& b) noexcept -> bool {
     return !(a == b);
   }
 

@@ -67,8 +67,8 @@ inline auto stream_socket_impl::bind(sockaddr const* addr, socklen_t len) -> res
   return ok();
 }
 
-inline auto stream_socket_impl::async_connect(sockaddr const* addr, socklen_t len)
-  -> awaitable<result<void>> {
+inline auto stream_socket_impl::async_connect(sockaddr const* addr,
+                                              socklen_t len) -> awaitable<result<void>> {
   auto res = base_.acquire_resource();
   if (!res || res->native_handle() < 0) {
     co_return fail(error::not_open);

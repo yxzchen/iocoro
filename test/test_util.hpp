@@ -156,8 +156,8 @@ inline void unlink_path(std::string const& path) noexcept {
 }
 
 template <class T>
-auto sync_wait(iocoro::io_context& ctx, iocoro::awaitable<T> a)
-  -> iocoro::expected<T, std::exception_ptr> {
+auto sync_wait(iocoro::io_context& ctx,
+               iocoro::awaitable<T> a) -> iocoro::expected<T, std::exception_ptr> {
   std::optional<iocoro::expected<T, std::exception_ptr>> result;
 
   // Keep the io_context alive until the completion handler runs.

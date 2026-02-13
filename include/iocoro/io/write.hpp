@@ -27,8 +27,8 @@ namespace iocoro::io {
 /// Destroying the buffer while the operation is in progress results in
 /// undefined behavior (use-after-free).
 template <async_write_stream Stream>
-[[nodiscard]] auto async_write(Stream& s, std::span<std::byte const> buf)
-  -> awaitable<result<std::size_t>> {
+[[nodiscard]] auto async_write(Stream& s,
+                               std::span<std::byte const> buf) -> awaitable<result<std::size_t>> {
   auto const wanted = buf.size();
 
   while (!buf.empty()) {

@@ -12,8 +12,8 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
-#include <thread>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <variant>
 #include <vector>
@@ -120,13 +120,12 @@ TEST(when_all_test, respects_bound_executor) {
   auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<void> {
     // NOTE: Avoid invoking coroutine lambdas on temporary closure objects.
     auto in_pool_fn = [pool_executor_seen]() -> iocoro::awaitable<void> {
-        auto ioex = co_await iocoro::this_coro::io_executor;
-        // thread_pool executor is not IO-capable.
-        pool_executor_seen->store(!static_cast<bool>(ioex), std::memory_order_release);
-        co_return;
-      };
-    auto in_pool =
-      iocoro::bind_executor(iocoro::any_executor{pool.get_executor()}, in_pool_fn());
+      auto ioex = co_await iocoro::this_coro::io_executor;
+      // thread_pool executor is not IO-capable.
+      pool_executor_seen->store(!static_cast<bool>(ioex), std::memory_order_release);
+      co_return;
+    };
+    auto in_pool = iocoro::bind_executor(iocoro::any_executor{pool.get_executor()}, in_pool_fn());
 
     auto in_ctx_fn = [fallback_executor_seen]() -> iocoro::awaitable<void> {
       auto ioex = co_await iocoro::this_coro::io_executor;

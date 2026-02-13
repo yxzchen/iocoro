@@ -22,20 +22,20 @@ enum class executor_capability : std::uint8_t {
   io = 1 << 0,
 };
 
-inline constexpr auto operator|(executor_capability lhs, executor_capability rhs) noexcept
-  -> executor_capability {
+inline constexpr auto operator|(executor_capability lhs,
+                                executor_capability rhs) noexcept -> executor_capability {
   return static_cast<executor_capability>(static_cast<std::uint8_t>(lhs) |
                                           static_cast<std::uint8_t>(rhs));
 }
 
-inline constexpr auto operator&(executor_capability lhs, executor_capability rhs) noexcept
-  -> executor_capability {
+inline constexpr auto operator&(executor_capability lhs,
+                                executor_capability rhs) noexcept -> executor_capability {
   return static_cast<executor_capability>(static_cast<std::uint8_t>(lhs) &
                                           static_cast<std::uint8_t>(rhs));
 }
 
-inline constexpr auto has_capability(executor_capability caps, executor_capability flag) noexcept
-  -> bool {
+inline constexpr auto has_capability(executor_capability caps,
+                                     executor_capability flag) noexcept -> bool {
   return (caps & flag) != executor_capability::none;
 }
 

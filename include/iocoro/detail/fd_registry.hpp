@@ -98,8 +98,8 @@ inline auto fd_registry::register_write(int fd, reactor_op_ptr op) -> register_r
   return register_impl(fd, std::move(op), fd_event_kind::write);
 }
 
-inline auto fd_registry::register_impl(int fd, reactor_op_ptr op, fd_event_kind kind)
-  -> register_result {
+inline auto fd_registry::register_impl(int fd, reactor_op_ptr op,
+                                       fd_event_kind kind) -> register_result {
   reactor_op_ptr old{};
   std::uint64_t token = 0;
 
@@ -132,8 +132,8 @@ inline auto fd_registry::register_impl(int fd, reactor_op_ptr op, fd_event_kind 
   return register_result{token, std::move(old)};
 }
 
-inline auto fd_registry::cancel(int fd, fd_event_kind kind, std::uint64_t token) noexcept
-  -> cancel_result {
+inline auto fd_registry::cancel(int fd, fd_event_kind kind,
+                                std::uint64_t token) noexcept -> cancel_result {
   reactor_op_ptr removed{};
   bool matched = false;
 

@@ -3,9 +3,9 @@
 #include <iocoro/any_executor.hpp>
 #include <iocoro/any_io_executor.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/detail/socket/fd_resource.hpp>
 #include <iocoro/detail/io_context_impl.hpp>
 #include <iocoro/detail/operation_awaiter.hpp>
+#include <iocoro/detail/socket/fd_resource.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/result.hpp>
 #include <iocoro/socket_option.hpp>
@@ -66,8 +66,7 @@ class socket_impl_base {
     }
 
    private:
-    explicit operation_guard(std::shared_ptr<fd_resource> res) noexcept
-        : res_(std::move(res)) {}
+    explicit operation_guard(std::shared_ptr<fd_resource> res) noexcept : res_(std::move(res)) {}
 
     friend class socket_impl_base;
     std::shared_ptr<fd_resource> res_{};
@@ -199,8 +198,8 @@ class socket_impl_base {
   }
 
  private:
-  auto wait_ready_impl(std::shared_ptr<fd_resource> const& res, bool is_read)
-    -> awaitable<result<void>> {
+  auto wait_ready_impl(std::shared_ptr<fd_resource> const& res,
+                       bool is_read) -> awaitable<result<void>> {
     auto inflight = make_operation_guard(res);
     if (!inflight) {
       if (res && res->closing()) {
@@ -211,17 +210,18 @@ class socket_impl_base {
     auto pinned = inflight.resource();
 
     co_await this_coro::on(dispatch_ex_);
-    auto r = co_await detail::operation_awaiter{[this, pinned, is_read](detail::reactor_op_ptr rop) mutable {
-      event_handle h = is_read ? ctx_impl_->register_fd_read(pinned->native_handle(), std::move(rop))
-                               : ctx_impl_->register_fd_write(pinned->native_handle(),
-                                                               std::move(rop));
-      if (is_read) {
-        pinned->set_read_handle(h);
-      } else {
-        pinned->set_write_handle(h);
-      }
-      return h;
-    }};
+    auto r = co_await detail::operation_awaiter{
+      [this, pinned, is_read](detail::reactor_op_ptr rop) mutable {
+        event_handle h = is_read
+                           ? ctx_impl_->register_fd_read(pinned->native_handle(), std::move(rop))
+                           : ctx_impl_->register_fd_write(pinned->native_handle(), std::move(rop));
+        if (is_read) {
+          pinned->set_read_handle(h);
+        } else {
+          pinned->set_write_handle(h);
+        }
+        return h;
+      }};
     if (r && pinned->closing()) {
       co_return unexpected(error::operation_aborted);
     }

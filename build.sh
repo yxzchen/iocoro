@@ -145,17 +145,17 @@ parse_args() {
 # Check dependencies
 check_dependencies() {
     log_info "Checking dependencies..."
-    
+
     if ! command -v cmake &> /dev/null; then
         log_error "CMake is not installed"
         exit 1
     fi
-    
+
     if ! command -v g++ &> /dev/null && ! command -v clang++ &> /dev/null; then
         log_error "No C++ compiler found (g++ or clang++)"
         exit 1
     fi
-    
+
     log_info "Dependency check passed"
 }
 
@@ -175,10 +175,10 @@ configure_project() {
         log_error "--coverage cannot be combined with sanitizer options"
         exit 1
     fi
-    
+
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
-    
+
     CMAKE_ARGS=(
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
         -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
@@ -189,7 +189,7 @@ configure_project() {
     else
         CMAKE_ARGS+=(-DIOCORO_BUILD_TESTS=OFF)
     fi
-    
+
     if [ "$BENCH" = true ]; then
         CMAKE_ARGS+=(-DIOCORO_BUILD_BENCHMARKS=ON)
     fi
@@ -198,7 +198,7 @@ configure_project() {
         log_info "Enabling coverage instrumentation"
         CMAKE_ARGS+=(-DIOCORO_ENABLE_COVERAGE=ON)
     fi
-    
+
     # Add sanitizer options
     if [ -n "$SANITIZER" ]; then
         log_info "Enabling ${SANITIZER} sanitizer"
@@ -216,31 +216,31 @@ configure_project() {
         CMAKE_ARGS+=(-DCMAKE_CXX_FLAGS=)
         CMAKE_ARGS+=(-DCMAKE_EXE_LINKER_FLAGS=)
     fi
-    
+
     # Verbose mode
     if [ "$VERBOSE" = true ]; then
         CMAKE_ARGS+=(-DCMAKE_VERBOSE_MAKEFILE=ON)
     fi
-    
+
     cmake "${CMAKE_ARGS[@]}" ..
-    
+
     cd ..
 }
 
 # Build project
 build_project() {
     log_info "Building project (using $JOBS parallel jobs)..."
-    
+
     cd "$BUILD_DIR"
-    
+
     if [ "$VERBOSE" = true ]; then
         cmake --build . -j "$JOBS" -- VERBOSE=1
     else
         cmake --build . -j "$JOBS"
     fi
-    
+
     cd ..
-    
+
     log_info "Build completed successfully"
 }
 
@@ -248,16 +248,16 @@ build_project() {
 run_tests() {
     if [ "$TEST" = true ]; then
         log_info "Running tests..."
-        
+
         cd "$BUILD_DIR"
-        
+
         if ! ctest --output-on-failure -j "$JOBS"; then
             log_error "Tests failed"
             exit 1
         fi
-        
+
         cd ..
-        
+
         log_info "All tests passed"
     fi
 }
@@ -266,17 +266,17 @@ run_tests() {
 install_project() {
     if [ "$INSTALL" = true ]; then
         log_info "Installing to $INSTALL_PREFIX..."
-        
+
         cd "$BUILD_DIR"
-        
+
         if [ -w "$INSTALL_PREFIX" ]; then
             cmake --install .
         else
             sudo cmake --install .
         fi
-        
+
         cd ..
-        
+
         log_info "Installation completed"
     fi
 }
@@ -284,19 +284,19 @@ install_project() {
 # Main function
 main() {
     parse_args "$@"
-    
+
     log_info "Starting build for $PROJECT_NAME"
     log_info "Build type: $BUILD_TYPE"
-    
+
     check_dependencies
     clean_build
     configure_project
     build_project
     run_tests
     install_project
-    
+
     log_info "All steps completed successfully"
-    
+
     # Show build artifacts location
     if [ -d "$BUILD_DIR" ]; then
         log_info "Build artifacts located at: $BUILD_DIR/"

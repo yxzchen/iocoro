@@ -3,9 +3,9 @@
 #include <iocoro/co_sleep.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/io_context.hpp>
+#include <iocoro/iocoro.hpp>
 #include <iocoro/ip/tcp.hpp>
 #include <iocoro/ip/udp.hpp>
-#include <iocoro/iocoro.hpp>
 #include <iocoro/steady_timer.hpp>
 #include <iocoro/this_coro.hpp>
 
@@ -116,9 +116,8 @@ TEST(this_coro_test, stop_cancels_tcp_read_pending) {
 
   auto task = [&]() -> iocoro::awaitable<void> {
     iocoro::ip::tcp::socket sock{ex};
-    auto cr =
-      co_await sock.async_connect(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(),
-                                                           server.port});
+    auto cr = co_await sock.async_connect(
+      iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), server.port});
     if (!cr) {
       ADD_FAILURE() << cr.error().message();
       co_return;
@@ -142,8 +141,8 @@ TEST(this_coro_test, stop_cancels_tcp_read_pending) {
   };
 
   std::jthread stopper{[&](std::stop_token) {
-    (void)iocoro::test::spin_wait_for(
-      [&] { return started_read.load(std::memory_order_acquire); }, 1s);
+    (void)iocoro::test::spin_wait_for([&] { return started_read.load(std::memory_order_acquire); },
+                                      1s);
     std::this_thread::sleep_for(1ms);
     stop_src.request_stop();
   }};
@@ -175,9 +174,8 @@ TEST(this_coro_test, stop_cancels_udp_receive_pending) {
     stop_src.request_stop();
   }};
 
-  auto r = iocoro::test::sync_wait(
-    ctx,
-    iocoro::co_spawn(ctx.get_executor(), stop_src.get_token(), recv_task(), iocoro::use_awaitable));
+  auto r = iocoro::test::sync_wait(ctx, iocoro::co_spawn(ctx.get_executor(), stop_src.get_token(),
+                                                         recv_task(), iocoro::use_awaitable));
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(static_cast<bool>(*r));

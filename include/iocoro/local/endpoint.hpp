@@ -81,8 +81,8 @@ class endpoint {
   /// - invalid_argument if addr is null or len == 0
   /// - unsupported_address_family if family != AF_UNIX
   /// - invalid_endpoint if len is not a valid sockaddr_un length
-  [[nodiscard]] static auto from_native(sockaddr const* addr, socklen_t len) noexcept
-    -> result<endpoint> {
+  [[nodiscard]] static auto from_native(sockaddr const* addr,
+                                        socklen_t len) noexcept -> result<endpoint> {
     if (addr == nullptr || len == 0) {
       return unexpected(error::invalid_argument);
     }

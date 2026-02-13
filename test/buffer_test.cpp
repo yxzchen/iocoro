@@ -6,7 +6,8 @@
 #include <cstddef>
 
 template <class T>
-concept can_buffer_cast_const = requires(iocoro::net::const_buffer b) { iocoro::net::buffer_cast<T>(b); };
+concept can_buffer_cast_const =
+  requires(iocoro::net::const_buffer b) { iocoro::net::buffer_cast<T>(b); };
 
 template <class T>
 concept can_buffer_cast_mutable =
