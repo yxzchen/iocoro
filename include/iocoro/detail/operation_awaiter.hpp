@@ -83,7 +83,11 @@ struct operation_awaiter {
         auto ex = st->ex;
         IOCORO_ENSURE(ex, "operation_awaiter: empty executor in completion");
 
-        ex.dispatch([h]() mutable noexcept { h.resume(); });
+        // Always post instead of dispatch: completion may race with await_suspend().
+        // If we dispatch inline here, the awaiting coroutine can resume and destroy
+        // its frame before await_suspend() finishes, making later h.promise() access
+        // in await_suspend() a use-after-free.
+        ex.post([h]() mutable noexcept { h.resume(); });
       }
     };
 
