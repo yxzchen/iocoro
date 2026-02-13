@@ -102,12 +102,8 @@ int main(int argc, char* argv[]) {
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_timer_churn"
-            << " sessions=" << sessions
-            << " waits=" << waits
-            << " total_waits=" << total_waits
-            << " elapsed_s=" << elapsed_s
-            << " ops_s=" << ops_s
-            << " avg_us=" << avg_us << "\n";
+            << " sessions=" << sessions << " waits=" << waits << " total_waits=" << total_waits
+            << " elapsed_s=" << elapsed_s << " ops_s=" << ops_s << " avg_us=" << avg_us << "\n";
 
   return 0;
 }

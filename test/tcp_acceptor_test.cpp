@@ -122,11 +122,9 @@ TEST(tcp_acceptor_test, listen_propagates_configure_failure) {
   iocoro::io_context ctx;
   iocoro::ip::tcp::acceptor acc{ctx};
 
-  auto r = acc.listen(iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0},
-                      0,
-                      [](auto&) -> iocoro::result<void> {
-                        return iocoro::fail(iocoro::error::invalid_argument);
-                      });
+  auto r = acc.listen(
+    iocoro::ip::tcp::endpoint{iocoro::ip::address_v4::loopback(), 0}, 0,
+    [](auto&) -> iocoro::result<void> { return iocoro::fail(iocoro::error::invalid_argument); });
 
   ASSERT_FALSE(r);
   EXPECT_EQ(r.error(), iocoro::error::invalid_argument);

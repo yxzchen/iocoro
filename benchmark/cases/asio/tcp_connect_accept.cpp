@@ -11,8 +11,8 @@ namespace net = boost::asio;
 using net::awaitable;
 using net::co_spawn;
 using net::detached;
-using net::ip::tcp;
 using net::use_awaitable;
+using net::ip::tcp;
 
 namespace {
 
@@ -108,9 +108,7 @@ int main(int argc, char* argv[]) {
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_tcp_connect_accept"
             << " listen=" << listen_ep.address().to_string() << ":" << listen_ep.port()
-            << " connections=" << connections
-            << " elapsed_s=" << elapsed_s
-            << " cps=" << cps
+            << " connections=" << connections << " elapsed_s=" << elapsed_s << " cps=" << cps
             << " avg_us=" << avg_us << "\n";
 
   return 0;

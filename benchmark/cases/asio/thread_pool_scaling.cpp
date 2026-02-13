@@ -62,10 +62,7 @@ int main(int argc, char* argv[]) {
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_thread_pool_scaling"
-            << " workers=" << workers
-            << " tasks=" << tasks
-            << " elapsed_s=" << elapsed_s
-            << " ops_s=" << ops_s
-            << " avg_us=" << avg_us << "\n";
+            << " workers=" << workers << " tasks=" << tasks << " elapsed_s=" << elapsed_s
+            << " ops_s=" << ops_s << " avg_us=" << avg_us << "\n";
   return 0;
 }

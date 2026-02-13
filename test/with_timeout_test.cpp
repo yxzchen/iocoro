@@ -8,8 +8,8 @@
 #include <chrono>
 #include <cstddef>
 #include <span>
-#include <stop_token>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <variant>
@@ -38,8 +38,8 @@ auto throw_runtime_error_void() -> iocoro::awaitable<void> {
 }
 
 auto wait_timer_value(iocoro::steady_timer& timer,
-                      std::shared_ptr<std::optional<std::error_code>> out, int value)
-  -> iocoro::awaitable<int> {
+                      std::shared_ptr<std::optional<std::error_code>> out,
+                      int value) -> iocoro::awaitable<int> {
   auto r = co_await timer.async_wait(iocoro::use_awaitable);
   *out = r ? std::error_code{} : r.error();
   co_return value;
@@ -160,9 +160,8 @@ TEST(with_timeout_test, operator_or_supports_void_and_value) {
     iocoro::steady_timer slow(ex);
     slow.expires_after(50ms);
 
-    auto [index, result] =
-      co_await iocoro::when_any_cancel_join(wait_timer_void(fast, a_ec),
-                                            wait_timer_value(slow, a_ec, 3));
+    auto [index, result] = co_await iocoro::when_any_cancel_join(wait_timer_void(fast, a_ec),
+                                                                 wait_timer_value(slow, a_ec, 3));
     EXPECT_EQ(index, 0U);
     EXPECT_TRUE(std::holds_alternative<std::monostate>(result));
     co_return;
@@ -205,7 +204,8 @@ TEST(with_timeout_test, operator_or_ignores_loser_exception_after_winner_complet
   auto task = [&]() -> iocoro::awaitable<void> {
     auto loser = iocoro::bind_executor(iocoro::any_executor{pool.get_executor()},
                                        blocking_sleep_then_throw(30ms));
-    auto [index, result] = co_await iocoro::when_any_cancel_join(immediate_int(7), std::move(loser));
+    auto [index, result] =
+      co_await iocoro::when_any_cancel_join(immediate_int(7), std::move(loser));
     EXPECT_EQ(index, 0U);
     EXPECT_EQ(std::get<0>(result), 7);
     completed->store(true);

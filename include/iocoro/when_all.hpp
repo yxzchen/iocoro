@@ -21,8 +21,8 @@ namespace detail {
 
 // Runner coroutine for variadic when_all
 template <std::size_t I, class T, class... Ts>
-auto when_all_run_one(std::shared_ptr<when_all_variadic_state<Ts...>> st, awaitable<T> a)
-  -> awaitable<void> {
+auto when_all_run_one(std::shared_ptr<when_all_variadic_state<Ts...>> st,
+                      awaitable<T> a) -> awaitable<void> {
   try {
     if constexpr (std::is_void_v<T>) {
       co_await std::move(a);
@@ -43,19 +43,20 @@ void when_all_start_variadic(any_executor fallback_ex, std::stop_token parent_st
                              [[maybe_unused]] std::shared_ptr<when_all_variadic_state<Ts...>> st,
                              [[maybe_unused]] std::tuple<awaitable<Ts>...> tasks,
                              std::index_sequence<Is...>) {
-  ([&]() {
-    auto task = std::move(std::get<Is>(tasks));
-    auto const task_ex = task.get_executor();
-    auto const exec = task_ex ? task_ex : fallback_ex;
-    detail::spawn_task<void>(
-      detail::spawn_context{exec, parent_stop},
-      [st, task = std::move(task)]() mutable -> awaitable<void> {
-        return when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
-          st, std::move(task));
-      },
-      detail::detached_completion<void>{});
-  }(),
-   ...);
+  (
+    [&]() {
+      auto task = std::move(std::get<Is>(tasks));
+      auto const task_ex = task.get_executor();
+      auto const exec = task_ex ? task_ex : fallback_ex;
+      detail::spawn_task<void>(
+        detail::spawn_context{exec, parent_stop},
+        [st, task = std::move(task)]() mutable -> awaitable<void> {
+          return when_all_run_one<Is, std::tuple_element_t<Is, std::tuple<Ts...>>, Ts...>(
+            st, std::move(task));
+        },
+        detail::detached_completion<void>{});
+    }(),
+    ...);
 }
 
 template <class... Ts, std::size_t... Is>

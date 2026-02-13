@@ -54,7 +54,8 @@ auto co_main(iocoro::io_context& ctx) -> iocoro::awaitable<void> {
     co_return;
   }
 
-  auto server_join = iocoro::co_spawn(ctx.get_executor(), sleepy_server(acceptor), iocoro::use_awaitable);
+  auto server_join =
+    iocoro::co_spawn(ctx.get_executor(), sleepy_server(acceptor), iocoro::use_awaitable);
 
   tcp::socket client{ctx};
   auto cr = co_await client.async_connect(*local);
@@ -86,8 +87,8 @@ auto co_main(iocoro::io_context& ctx) -> iocoro::awaitable<void> {
 
   auto close_client = client.close();
   if (!close_client) {
-    std::cerr << "tcp_timeout_cancel_client: close client failed: " << close_client.error().message()
-              << "\n";
+    std::cerr << "tcp_timeout_cancel_client: close client failed: "
+              << close_client.error().message() << "\n";
   }
 
   co_await std::move(server_join);

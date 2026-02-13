@@ -123,8 +123,8 @@ class datagram_socket_impl {
   /// - The entire message is received in one operation (message boundary preserved).
   /// - If the buffer is too small, an error (message_size) is returned.
   /// - src_len must be initialized to the size of the src_addr buffer before calling.
-  auto async_receive_from(std::span<std::byte> buffer, sockaddr* src_addr, socklen_t* src_len)
-    -> awaitable<result<std::size_t>>;
+  auto async_receive_from(std::span<std::byte> buffer, sockaddr* src_addr,
+                          socklen_t* src_len) -> awaitable<result<std::size_t>>;
 
  private:
   enum class dgram_state : std::uint8_t {

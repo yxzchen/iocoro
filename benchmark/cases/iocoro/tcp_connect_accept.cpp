@@ -30,24 +30,24 @@ inline void fail_and_stop(bench_state* st, std::string message) {
   st->ctx->stop();
 }
 
-auto accept_loop(tcp::acceptor& acceptor, int connections, bench_state* st) -> iocoro::awaitable<void> {
+auto accept_loop(tcp::acceptor& acceptor, int connections,
+                 bench_state* st) -> iocoro::awaitable<void> {
   for (int i = 0; i < connections; ++i) {
     auto accepted = co_await acceptor.async_accept();
     if (!accepted) {
-      fail_and_stop(
-        st, "iocoro_tcp_connect_accept: accept failed: " + accepted.error().message());
+      fail_and_stop(st, "iocoro_tcp_connect_accept: accept failed: " + accepted.error().message());
       co_return;
     }
     mark_done(st);
   }
 }
 
-auto client_once(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st) -> iocoro::awaitable<void> {
+auto client_once(iocoro::io_context& ctx, tcp::endpoint ep,
+                 bench_state* st) -> iocoro::awaitable<void> {
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
-    fail_and_stop(
-      st, "iocoro_tcp_connect_accept: connect failed: " + cr.error().message());
+    fail_and_stop(st, "iocoro_tcp_connect_accept: connect failed: " + cr.error().message());
     co_return;
   }
   mark_done(st);
@@ -77,7 +77,8 @@ int main(int argc, char* argv[]) {
 
   auto ep_r = acceptor.local_endpoint();
   if (!ep_r) {
-    std::cerr << "iocoro_tcp_connect_accept: local_endpoint failed: " << ep_r.error().message() << "\n";
+    std::cerr << "iocoro_tcp_connect_accept: local_endpoint failed: " << ep_r.error().message()
+              << "\n";
     return 1;
   }
 
@@ -114,11 +115,8 @@ int main(int argc, char* argv[]) {
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "iocoro_tcp_connect_accept"
-            << " listen=" << ep_r->to_string()
-            << " connections=" << connections
-            << " elapsed_s=" << elapsed_s
-            << " cps=" << cps
-            << " avg_us=" << avg_us << "\n";
+            << " listen=" << ep_r->to_string() << " connections=" << connections
+            << " elapsed_s=" << elapsed_s << " cps=" << cps << " avg_us=" << avg_us << "\n";
 
   return 0;
 }

@@ -5,8 +5,8 @@
 #include <iocoro/error.hpp>
 #include <iocoro/io_context.hpp>
 #include <iocoro/steady_timer.hpp>
-#include <iocoro/with_timeout.hpp>
 #include <iocoro/this_coro.hpp>
+#include <iocoro/with_timeout.hpp>
 
 #include "test_util.hpp"
 
@@ -113,9 +113,10 @@ TEST(steady_timer_test, expires_after_while_waiting_aborts_previous_wait_and_new
   ASSERT_FALSE(**first_result);
   EXPECT_EQ((**first_result).error(), iocoro::error::operation_aborted);
 
-  auto second_result = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
-    co_return co_await t.async_wait(iocoro::use_awaitable);
-  }());
+  auto second_result =
+    iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
+      co_return co_await t.async_wait(iocoro::use_awaitable);
+    }());
   ASSERT_TRUE(second_result);
   ASSERT_TRUE(*second_result);
 }
@@ -130,7 +131,9 @@ TEST(steady_timer_test, second_async_wait_cancels_first) {
     t.expires_after(24h);
     auto w1 = iocoro::co_spawn(
       ex,
-      [&]() -> iocoro::awaitable<iocoro::result<void>> { co_return co_await t.async_wait(iocoro::use_awaitable); },
+      [&]() -> iocoro::awaitable<iocoro::result<void>> {
+        co_return co_await t.async_wait(iocoro::use_awaitable);
+      },
       iocoro::use_awaitable);
 
     co_await iocoro::co_sleep(1ms);
@@ -165,7 +168,8 @@ TEST(steady_timer_test, destroy_timer_aborts_waiter) {
 
     std::atomic<bool> started{false};
     std::jthread killer{[&](std::stop_token) {
-      (void)iocoro::test::spin_wait_for([&] { return started.load(std::memory_order_acquire); }, 1s);
+      (void)iocoro::test::spin_wait_for([&] { return started.load(std::memory_order_acquire); },
+                                        1s);
       std::this_thread::sleep_for(1ms);
       delete t;
     }};
@@ -230,5 +234,6 @@ TEST(steady_timer_test, cancel_and_expires_from_foreign_thread_no_double_complet
   auto r = iocoro::test::sync_wait(ctx, task());
   ASSERT_TRUE(r);
   EXPECT_FALSE(timed_out.load(std::memory_order_relaxed));
-  EXPECT_EQ(completed.load(std::memory_order_relaxed) + aborted.load(std::memory_order_relaxed), 50);
+  EXPECT_EQ(completed.load(std::memory_order_relaxed) + aborted.load(std::memory_order_relaxed),
+            50);
 }

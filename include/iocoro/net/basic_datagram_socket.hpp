@@ -101,13 +101,13 @@ class basic_datagram_socket {
   /// Send a datagram to the specified destination.
   ///
   /// The entire buffer is sent as a single datagram (message boundary preserved).
-  auto async_send_to(std::span<std::byte const> buffer, endpoint_type const& destination)
-    -> awaitable<result<std::size_t>> {
+  auto async_send_to(std::span<std::byte const> buffer,
+                     endpoint_type const& destination) -> awaitable<result<std::size_t>> {
     co_return co_await handle_.impl().async_send_to(buffer, destination.data(), destination.size());
   }
 
-  auto async_send_to(const_buffer buffer, endpoint_type const& destination)
-    -> awaitable<result<std::size_t>> {
+  auto async_send_to(const_buffer buffer,
+                     endpoint_type const& destination) -> awaitable<result<std::size_t>> {
     co_return co_await async_send_to(buffer.as_span(), destination);
   }
 
@@ -116,8 +116,8 @@ class basic_datagram_socket {
   /// Important: The socket must be bound before calling this.
   /// The entire message is received in one operation (message boundary preserved).
   /// If the buffer is too small, an error is returned (message_size).
-  auto async_receive_from(std::span<std::byte> buffer, endpoint_type& source)
-    -> awaitable<result<std::size_t>> {
+  auto async_receive_from(std::span<std::byte> buffer,
+                          endpoint_type& source) -> awaitable<result<std::size_t>> {
     sockaddr_storage ss{};
     socklen_t len = sizeof(ss);
 
@@ -137,8 +137,8 @@ class basic_datagram_socket {
     co_return *result;
   }
 
-  auto async_receive_from(mutable_buffer buffer, endpoint_type& source)
-    -> awaitable<result<std::size_t>> {
+  auto async_receive_from(mutable_buffer buffer,
+                          endpoint_type& source) -> awaitable<result<std::size_t>> {
     co_return co_await async_receive_from(buffer.as_span(), source);
   }
 

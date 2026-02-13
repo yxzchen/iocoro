@@ -83,10 +83,9 @@ class steady_timer {
     // thread updates expiry between the caller's snapshot and the actual registration, which can
     // otherwise leave a long-lived timer registered without a subsequent cancellation.
     auto const expiry_snapshot = st->expiry();
-    auto r = co_await detail::operation_awaiter{
-      [st, expiry_snapshot](detail::reactor_op_ptr rop) {
-        return st->register_timer(expiry_snapshot, std::move(rop));
-      }};
+    auto r = co_await detail::operation_awaiter{[st, expiry_snapshot](detail::reactor_op_ptr rop) {
+      return st->register_timer(expiry_snapshot, std::move(rop));
+    }};
     co_return r;
   }
 

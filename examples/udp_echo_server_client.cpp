@@ -37,8 +37,8 @@ auto udp_echo_server(udp::socket& server_socket) -> iocoro::awaitable<void> {
     }
 
     auto message = to_string(std::span<std::byte const>{recv_buf.data(), *rr});
-    auto wr = co_await server_socket.async_send_to(
-      std::span<std::byte const>{recv_buf.data(), *rr}, source);
+    auto wr = co_await server_socket.async_send_to(std::span<std::byte const>{recv_buf.data(), *rr},
+                                                   source);
     if (!wr) {
       std::cerr << "udp_echo_server_client: server send failed: " << wr.error().message() << "\n";
       co_return;
@@ -51,13 +51,13 @@ auto udp_echo_server(udp::socket& server_socket) -> iocoro::awaitable<void> {
   }
 }
 
-auto udp_echo_client(udp::socket& client_socket, udp::endpoint const& server_endpoint)
-  -> iocoro::awaitable<void> {
+auto udp_echo_client(udp::socket& client_socket,
+                     udp::endpoint const& server_endpoint) -> iocoro::awaitable<void> {
   std::array<std::string_view, 3> messages{"ping", "iocoro", "quit"};
   for (auto const message : messages) {
     auto payload = to_bytes(message);
-    auto wr = co_await client_socket.async_send_to(std::span<std::byte const>{payload},
-                                                   server_endpoint);
+    auto wr =
+      co_await client_socket.async_send_to(std::span<std::byte const>{payload}, server_endpoint);
     if (!wr) {
       std::cerr << "udp_echo_server_client: client send failed: " << wr.error().message() << "\n";
       co_return;
@@ -72,8 +72,8 @@ auto udp_echo_client(udp::socket& client_socket, udp::endpoint const& server_end
       co_return;
     }
 
-    std::cout << "client <- "
-              << to_string(std::span<std::byte const>{recv_buf.data(), *rr}) << "\n";
+    std::cout << "client <- " << to_string(std::span<std::byte const>{recv_buf.data(), *rr})
+              << "\n";
   }
 }
 
@@ -81,8 +81,7 @@ auto co_main(iocoro::io_context& ctx) -> iocoro::awaitable<void> {
   udp::socket server_socket{ctx};
   udp::socket client_socket{ctx};
 
-  auto bind_server =
-    server_socket.bind(udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  auto bind_server = server_socket.bind(udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
   if (!bind_server) {
     std::cerr << "udp_echo_server_client: bind server failed: " << bind_server.error().message()
               << "\n";
@@ -90,8 +89,7 @@ auto co_main(iocoro::io_context& ctx) -> iocoro::awaitable<void> {
     co_return;
   }
 
-  auto bind_client =
-    client_socket.bind(udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
+  auto bind_client = client_socket.bind(udp::endpoint{iocoro::ip::address_v4::loopback(), 0});
   if (!bind_client) {
     std::cerr << "udp_echo_server_client: bind client failed: " << bind_client.error().message()
               << "\n";

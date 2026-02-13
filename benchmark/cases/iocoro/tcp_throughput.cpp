@@ -57,7 +57,8 @@ auto server_session(tcp::socket socket, bench_state* st) -> iocoro::awaitable<vo
   mark_done(st);
 }
 
-auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> iocoro::awaitable<void> {
+auto accept_loop(tcp::acceptor& acceptor, int sessions,
+                 bench_state* st) -> iocoro::awaitable<void> {
   auto ex = co_await iocoro::this_coro::executor;
   for (int i = 0; i < sessions; ++i) {
     auto accepted = co_await acceptor.async_accept();
@@ -69,8 +70,8 @@ auto accept_loop(tcp::acceptor& acceptor, int sessions, bench_state* st) -> ioco
   }
 }
 
-auto client_session(iocoro::io_context& ctx, tcp::endpoint ep, bench_state* st)
-  -> iocoro::awaitable<void> {
+auto client_session(iocoro::io_context& ctx, tcp::endpoint ep,
+                    bench_state* st) -> iocoro::awaitable<void> {
   tcp::socket socket{ctx};
   auto cr = co_await socket.async_connect(ep);
   if (!cr) {
@@ -180,14 +181,11 @@ int main(int argc, char* argv[]) {
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "iocoro_tcp_throughput"
-            << " listen=" << ep_r->to_string()
-            << " sessions=" << sessions
-            << " bytes_per_session=" << bytes_per_session
-            << " chunk_bytes=" << chunk_bytes
-            << " total_bytes=" << total_bytes
-            << " elapsed_s=" << elapsed_s
-            << " throughput_mib_s=" << throughput_mib_s
-            << " avg_session_ms=" << avg_session_ms << "\n";
+            << " listen=" << ep_r->to_string() << " sessions=" << sessions
+            << " bytes_per_session=" << bytes_per_session << " chunk_bytes=" << chunk_bytes
+            << " total_bytes=" << total_bytes << " elapsed_s=" << elapsed_s
+            << " throughput_mib_s=" << throughput_mib_s << " avg_session_ms=" << avg_session_ms
+            << "\n";
 
   return 0;
 }

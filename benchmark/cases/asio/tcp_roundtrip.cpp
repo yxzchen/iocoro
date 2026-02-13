@@ -1,7 +1,7 @@
 #include <boost/asio.hpp>
 
-#include <atomic>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -43,12 +43,14 @@ auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
     boost::system::error_code ec;
-    auto n = co_await net::async_read_until(socket, dbuf, '\n', net::redirect_error(use_awaitable, ec));
+    auto n =
+      co_await net::async_read_until(socket, dbuf, '\n', net::redirect_error(use_awaitable, ec));
     if (ec) {
       fail_and_stop(st, "asio_tcp_roundtrip: server read failed: " + ec.message());
       co_return;
     }
-    auto w = co_await net::async_write(socket, net::buffer(buffer.data(), n), net::redirect_error(use_awaitable, ec));
+    auto w = co_await net::async_write(socket, net::buffer(buffer.data(), n),
+                                       net::redirect_error(use_awaitable, ec));
     if (ec || w != n) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_roundtrip: server write failed: " + ec.message());
@@ -90,7 +92,8 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
   auto dbuf = net::dynamic_buffer(buffer, st->io_buffer_size);
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
-    auto w = co_await net::async_write(socket, net::buffer(st->msg), net::redirect_error(use_awaitable, ec));
+    auto w = co_await net::async_write(socket, net::buffer(st->msg),
+                                       net::redirect_error(use_awaitable, ec));
     if (ec || w != st->msg.size()) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_roundtrip: client write failed: " + ec.message());
@@ -99,7 +102,8 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
       }
       co_return;
     }
-    auto n = co_await net::async_read_until(socket, dbuf, '\n', net::redirect_error(use_awaitable, ec));
+    auto n =
+      co_await net::async_read_until(socket, dbuf, '\n', net::redirect_error(use_awaitable, ec));
     if (ec) {
       fail_and_stop(st, "asio_tcp_roundtrip: client read failed: " + ec.message());
       co_return;

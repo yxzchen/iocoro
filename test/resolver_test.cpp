@@ -31,13 +31,12 @@ TEST(resolver_test, resolve_cancelled_before_call_returns_operation_aborted) {
   stop_src.request_stop();
 
   auto r = iocoro::test::sync_wait(
-    ctx,
-    iocoro::co_spawn(
-      ctx.get_executor(), stop_src.get_token(),
-      [&]() -> iocoro::awaitable<iocoro::result<iocoro::ip::tcp::resolver::results_type>> {
-        co_return co_await resolver.async_resolve("127.0.0.1", "80");
-      }(),
-      iocoro::use_awaitable));
+    ctx, iocoro::co_spawn(
+           ctx.get_executor(), stop_src.get_token(),
+           [&]() -> iocoro::awaitable<iocoro::result<iocoro::ip::tcp::resolver::results_type>> {
+             co_return co_await resolver.async_resolve("127.0.0.1", "80");
+           }(),
+           iocoro::use_awaitable));
 
   ASSERT_TRUE(r);
   ASSERT_FALSE(static_cast<bool>(*r));

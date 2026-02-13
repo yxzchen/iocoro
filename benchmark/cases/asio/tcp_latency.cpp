@@ -41,8 +41,7 @@ auto percentile_sorted(std::vector<double> const& sorted, double q) -> double {
   if (q >= 1.0) {
     return sorted.back();
   }
-  auto const idx = static_cast<std::size_t>(
-    std::ceil(q * static_cast<double>(sorted.size() - 1)));
+  auto const idx = static_cast<std::size_t>(std::ceil(q * static_cast<double>(sorted.size() - 1)));
   return sorted[idx];
 }
 
@@ -68,7 +67,8 @@ auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
   std::vector<std::byte> recv_buf(st->payload.size());
   for (int i = 0; i < st->msgs_per_session; ++i) {
     boost::system::error_code ec;
-    auto n = co_await net::async_read(socket, net::buffer(recv_buf), net::redirect_error(use_awaitable, ec));
+    auto n = co_await net::async_read(socket, net::buffer(recv_buf),
+                                      net::redirect_error(use_awaitable, ec));
     if (ec || n != recv_buf.size()) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_latency: server read failed: " + ec.message());
@@ -77,7 +77,8 @@ auto echo_session(tcp::socket socket, bench_state* st) -> awaitable<void> {
       }
       co_return;
     }
-    n = co_await net::async_write(socket, net::buffer(recv_buf), net::redirect_error(use_awaitable, ec));
+    n = co_await net::async_write(socket, net::buffer(recv_buf),
+                                  net::redirect_error(use_awaitable, ec));
     if (ec || n != recv_buf.size()) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_latency: server write failed: " + ec.message());
@@ -119,7 +120,8 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
 
   for (int i = 0; i < st->msgs_per_session; ++i) {
     auto const start = std::chrono::steady_clock::now();
-    auto n = co_await net::async_write(socket, net::buffer(st->payload), net::redirect_error(use_awaitable, ec));
+    auto n = co_await net::async_write(socket, net::buffer(st->payload),
+                                       net::redirect_error(use_awaitable, ec));
     if (ec || n != st->payload.size()) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_latency: client write failed: " + ec.message());
@@ -128,7 +130,8 @@ auto client_session(net::io_context& ioc, tcp::endpoint ep, bench_state* st) -> 
       }
       co_return;
     }
-    n = co_await net::async_read(socket, net::buffer(response), net::redirect_error(use_awaitable, ec));
+    n = co_await net::async_read(socket, net::buffer(response),
+                                 net::redirect_error(use_awaitable, ec));
     if (ec || n != response.size()) {
       if (ec) {
         fail_and_stop(st, "asio_tcp_latency: client read failed: " + ec.message());
@@ -233,17 +236,10 @@ int main(int argc, char* argv[]) {
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "asio_tcp_latency"
             << " listen=" << listen_ep.address().to_string() << ":" << listen_ep.port()
-            << " sessions=" << sessions
-            << " msgs=" << msgs
-            << " msg_bytes=" << msg_bytes
-            << " samples=" << sample_count
-            << " expected_samples=" << expected_samples
-            << " elapsed_s=" << elapsed_s
-            << " rps=" << rps
-            << " avg_us=" << avg_us
-            << " p50_us=" << p50_us
-            << " p95_us=" << p95_us
-            << " p99_us=" << p99_us << "\n";
+            << " sessions=" << sessions << " msgs=" << msgs << " msg_bytes=" << msg_bytes
+            << " samples=" << sample_count << " expected_samples=" << expected_samples
+            << " elapsed_s=" << elapsed_s << " rps=" << rps << " avg_us=" << avg_us
+            << " p50_us=" << p50_us << " p95_us=" << p95_us << " p99_us=" << p99_us << "\n";
 
   return 0;
 }

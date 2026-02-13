@@ -34,8 +34,7 @@ inline void fail_and_stop(bench_state* st, std::string message) {
   st->ctx->stop();
 }
 
-auto server_session(udp::socket socket, bench_state* st)
-  -> iocoro::awaitable<void> {
+auto server_session(udp::socket socket, bench_state* st) -> iocoro::awaitable<void> {
   std::vector<std::byte> buffer(st->msg_bytes);
   udp::endpoint src{};
   for (int i = 0; i < st->msgs_per_session; ++i) {
@@ -61,8 +60,8 @@ auto server_session(udp::socket socket, bench_state* st)
   mark_done(st);
 }
 
-auto client_session(udp::socket socket, udp::endpoint destination, bench_state* st)
-  -> iocoro::awaitable<void> {
+auto client_session(udp::socket socket, udp::endpoint destination,
+                    bench_state* st) -> iocoro::awaitable<void> {
   std::vector<std::byte> payload(st->msg_bytes, std::byte{0x78});
   std::vector<std::byte> ack(st->msg_bytes);
   udp::endpoint src{};
@@ -161,7 +160,8 @@ int main(int argc, char* argv[]) {
   auto guard = iocoro::make_work_guard(ctx);
 
   for (int i = 0; i < sessions; ++i) {
-    iocoro::co_spawn(ex, server_session(std::move(server_sockets[static_cast<std::size_t>(i)]), &st),
+    iocoro::co_spawn(ex,
+                     server_session(std::move(server_sockets[static_cast<std::size_t>(i)]), &st),
                      iocoro::detached);
   }
   for (int i = 0; i < sessions; ++i) {
@@ -198,15 +198,10 @@ int main(int argc, char* argv[]) {
 
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "iocoro_udp_send_receive"
-            << " sessions=" << sessions
-            << " msgs=" << msgs
-            << " msg_bytes=" << msg_bytes
-            << " total_messages=" << total_messages
-            << " total_bytes=" << total_bytes
-            << " elapsed_s=" << elapsed_s
-            << " pps=" << pps
-            << " throughput_mib_s=" << throughput_mib_s
-            << " avg_us=" << avg_us << "\n";
+            << " sessions=" << sessions << " msgs=" << msgs << " msg_bytes=" << msg_bytes
+            << " total_messages=" << total_messages << " total_bytes=" << total_bytes
+            << " elapsed_s=" << elapsed_s << " pps=" << pps
+            << " throughput_mib_s=" << throughput_mib_s << " avg_us=" << avg_us << "\n";
 
   return 0;
 }

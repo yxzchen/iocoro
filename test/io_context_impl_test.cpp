@@ -9,8 +9,8 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
-#include <stop_token>
 #include <stdexcept>
+#include <stop_token>
 #include <system_error>
 #include <thread>
 #include <vector>
@@ -88,9 +88,8 @@ struct post_on_abort_state {
       abort_calls->fetch_add(1, std::memory_order_relaxed);
     }
     if (impl != nullptr && posted_calls != nullptr) {
-      impl->post([posted_calls = posted_calls]() {
-        posted_calls->fetch_add(1, std::memory_order_relaxed);
-      });
+      impl->post(
+        [posted_calls = posted_calls]() { posted_calls->fetch_add(1, std::memory_order_relaxed); });
     }
   }
 };
@@ -323,9 +322,8 @@ TEST(io_context_impl_test, backend_throw_aborts_all_inflight_ops_and_stops_loop)
   std::atomic<int> timer_abort_calls{0};
   std::atomic<int> timer_complete_calls{0};
   std::error_code const expected_internal = iocoro::error::internal_error;
-  auto timer_op = iocoro::detail::make_reactor_op<expect_abort_ec_state>(
-    expect_abort_ec_state{&timer_abort_calls, &timer_complete_calls, &timer_aborted,
-                          expected_internal});
+  auto timer_op = iocoro::detail::make_reactor_op<expect_abort_ec_state>(expect_abort_ec_state{
+    &timer_abort_calls, &timer_complete_calls, &timer_aborted, expected_internal});
   auto timer_h =
     impl->add_timer(std::chrono::steady_clock::now() + std::chrono::hours{1}, std::move(timer_op));
   ASSERT_TRUE(static_cast<bool>(timer_h));
@@ -404,9 +402,7 @@ TEST(io_context_impl_test, cancel_fd_from_foreign_thread_does_not_invoke_abort_i
   auto h = impl->register_fd_read(fds[0], std::move(op));
   ASSERT_TRUE(static_cast<bool>(h));
 
-  std::thread canceller([&] {
-    impl->cancel_fd_event(h.fd, h.fd_kind, h.token);
-  });
+  std::thread canceller([&] { impl->cancel_fd_event(h.fd, h.fd_kind, h.token); });
   canceller.join();
 
   EXPECT_EQ(abort_calls.load(std::memory_order_relaxed), 0);

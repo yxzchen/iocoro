@@ -2,8 +2,8 @@
 
 #include <iocoro/assert.hpp>
 #include <iocoro/awaitable.hpp>
-#include <iocoro/completion_token.hpp>
 #include <iocoro/co_spawn.hpp>
+#include <iocoro/completion_token.hpp>
 #include <iocoro/detail/when/when_state_base.hpp>
 #include <iocoro/error.hpp>
 #include <iocoro/result.hpp>
@@ -129,8 +129,9 @@ auto when_or_run_one(std::shared_ptr<when_or_state<A, B>> st) -> awaitable<void>
 /// This is useful for implementing timeouts where the losing operation must be stopped and fully
 /// completed before returning (to avoid lifetime hazards).
 template <class A, class B>
-auto when_any_cancel_join(awaitable<A> a, awaitable<B> b) -> awaitable<
-  std::pair<std::size_t, std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
+auto when_any_cancel_join(awaitable<A> a, awaitable<B> b)
+  -> awaitable<
+    std::pair<std::size_t, std::variant<detail::when_value_t<A>, detail::when_value_t<B>>>> {
   auto fallback_ex = co_await this_coro::executor;
   IOCORO_ENSURE(fallback_ex, "when_any_cancel_join: requires a bound executor");
   auto parent_stop = co_await this_coro::stop_token;
@@ -214,8 +215,7 @@ auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -
   // Timer completed first: distinguish natural expiry from cancellation due to stop.
   auto const& timer_res = std::get<1>(v);
   if (!timer_res) {
-    if (timer_res.error() == error::operation_aborted &&
-        parent_stop.stop_requested()) {
+    if (timer_res.error() == error::operation_aborted && parent_stop.stop_requested()) {
       co_return unexpected(error::operation_aborted);
     }
     co_return unexpected(timer_res.error());

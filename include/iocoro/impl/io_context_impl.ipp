@@ -329,9 +329,8 @@ inline auto io_context_impl::process_posted() -> std::size_t {
   return posted_.process();
 }
 
-inline auto io_context_impl::next_wait(
-  std::optional<std::chrono::steady_clock::time_point> deadline)
-  -> std::optional<std::chrono::milliseconds> {
+inline auto io_context_impl::next_wait(std::optional<std::chrono::steady_clock::time_point>
+                                         deadline) -> std::optional<std::chrono::milliseconds> {
   auto const timer_timeout = timers_.next_timeout();
   if (!deadline) {
     return timer_timeout;

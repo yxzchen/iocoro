@@ -101,8 +101,8 @@ inline auto endpoint_storage::family() const noexcept -> int {
   return static_cast<int>(storage_.ss_family);
 }
 
-inline auto endpoint_storage::to_native(sockaddr* addr, socklen_t len) const noexcept
-  -> result<socklen_t> {
+inline auto endpoint_storage::to_native(sockaddr* addr,
+                                        socklen_t len) const noexcept -> result<socklen_t> {
   if (addr == nullptr || len == 0) {
     return unexpected(error::invalid_argument);
   }
@@ -173,8 +173,8 @@ inline auto endpoint_storage::from_string(std::string const& s) -> result<endpoi
   return endpoint_storage{*a4, *port};
 }
 
-inline auto endpoint_storage::from_native(sockaddr const* addr, socklen_t len)
-  -> result<endpoint_storage> {
+inline auto endpoint_storage::from_native(sockaddr const* addr,
+                                          socklen_t len) -> result<endpoint_storage> {
   if (addr == nullptr || len <= 0) {
     return unexpected(error::invalid_argument);
   }
@@ -207,8 +207,8 @@ inline auto operator==(endpoint_storage const& a, endpoint_storage const& b) noe
   return a.address() == b.address() && a.port() == b.port();
 }
 
-inline auto operator<=>(endpoint_storage const& a, endpoint_storage const& b) noexcept
-  -> std::strong_ordering {
+inline auto operator<=>(endpoint_storage const& a,
+                        endpoint_storage const& b) noexcept -> std::strong_ordering {
   if (auto cmp = a.family() <=> b.family(); cmp != 0) {
     return cmp;
   }

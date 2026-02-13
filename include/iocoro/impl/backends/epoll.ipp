@@ -67,8 +67,8 @@ class backend_epoll final : public backend_interface {
   }
 
   void add_fd(int fd) override {
-    std::uint32_t events = static_cast<std::uint32_t>(
-      EPOLLET | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP);
+    std::uint32_t events =
+      static_cast<std::uint32_t>(EPOLLET | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP);
 
     epoll_event ev{};
     ev.events = events;
@@ -94,8 +94,8 @@ class backend_epoll final : public backend_interface {
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   }
 
-  auto wait(std::optional<std::chrono::milliseconds> timeout, std::vector<backend_event>& out)
-    -> void override {
+  auto wait(std::optional<std::chrono::milliseconds> timeout,
+            std::vector<backend_event>& out) -> void override {
     int timeout_ms = -1;
     if (timeout.has_value()) {
       timeout_ms = static_cast<int>(timeout->count());
@@ -127,8 +127,7 @@ class backend_epoll final : public backend_interface {
 
       bool const has_error = (ev & static_cast<std::uint32_t>(EPOLLERR)) != 0;
       bool const has_hup =
-        (ev & (static_cast<std::uint32_t>(EPOLLHUP) | static_cast<std::uint32_t>(EPOLLRDHUP))) !=
-        0;
+        (ev & (static_cast<std::uint32_t>(EPOLLHUP) | static_cast<std::uint32_t>(EPOLLRDHUP))) != 0;
       bool const has_read = (ev & static_cast<std::uint32_t>(EPOLLIN)) != 0;
       bool const has_write = (ev & static_cast<std::uint32_t>(EPOLLOUT)) != 0;
 
