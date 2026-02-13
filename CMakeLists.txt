@@ -9,6 +9,7 @@ option(IOCORO_ENABLE_WARNINGS "Enable warning flags for iocoro tests/examples" $
 option(IOCORO_ENABLE_URING "Enable io_uring backend if liburing is available" OFF)
 option(IOCORO_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(IOCORO_ENABLE_COVERAGE "Enable gcov-compatible coverage instrumentation" OFF)
+option(IOCORO_ENABLE_CLANG_TIDY "Enable clang-tidy during compilation" OFF)
 option(IOCORO_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(IOCORO_BUILD_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
 
@@ -94,6 +95,15 @@ if(IOCORO_ENABLE_COVERAGE)
     else()
         message(FATAL_ERROR "IOCORO_ENABLE_COVERAGE requires GCC/Clang-compatible compiler")
     endif()
+endif()
+
+if(IOCORO_ENABLE_CLANG_TIDY)
+    find_program(IOCORO_CLANG_TIDY_EXE NAMES clang-tidy clang-tidy-18 clang-tidy-17)
+    if(NOT IOCORO_CLANG_TIDY_EXE)
+        message(FATAL_ERROR "IOCORO_ENABLE_CLANG_TIDY=ON but clang-tidy was not found")
+    endif()
+    set(CMAKE_CXX_CLANG_TIDY "${IOCORO_CLANG_TIDY_EXE};--use-color;--quiet")
+    message(STATUS "iocoro: clang-tidy is ENABLED (${IOCORO_CLANG_TIDY_EXE})")
 endif()
 
 if(IOCORO_BUILD_TESTS)

@@ -1,0 +1,7 @@
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-use-after-move
+WarningsAsErrors: 'clang-analyzer-*,bugprone-use-after-move'
+HeaderFilterRegex: '^.*/include/iocoro/.*'
+FormatStyle: file

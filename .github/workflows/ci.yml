@@ -29,6 +29,37 @@ jobs:
         run: |
           pre-commit run --all-files --show-diff-on-failure
 
+  clang-tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config clang clang-tidy libgtest-dev
+
+          if [ -d /usr/src/gtest ]; then
+            cd /usr/src/gtest
+            sudo cmake -S . -B build
+            sudo cmake --build build -j
+            sudo cmake --install build
+          elif [ -d /usr/src/googletest ]; then
+            cd /usr/src/googletest
+            sudo cmake -S . -B build
+            sudo cmake --build build -j
+            sudo cmake --install build
+          fi
+
+      - name: Run clang-tidy checks
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          chmod +x ./scripts/run_clang_tidy.sh
+          ./scripts/run_clang_tidy.sh --clean --build-dir build-tidy --jobs "$(nproc)"
+
   build-test:
     runs-on: ubuntu-latest
     strategy:
