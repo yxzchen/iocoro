@@ -22,7 +22,6 @@ BENCH=false
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 VERBOSE=false
 SANITIZER=""
-COVERAGE=false
 
 # Print help information
 print_help() {
@@ -42,7 +41,6 @@ Options:
     --asan                  Enable AddressSanitizer
     --tsan                  Enable ThreadSanitizer
     --ubsan                 Enable UndefinedBehaviorSanitizer
-    --coverage              Enable gcov-compatible coverage instrumentation
     --prefix PATH           Set installation prefix (default: $INSTALL_PREFIX)
 
 Examples:
@@ -52,7 +50,6 @@ Examples:
     $0 -b                   # Build benchmarks
     $0 -c -r -i             # Clean, build in Release, and install
     $0 --asan -d -t         # Debug with AddressSanitizer and tests
-    $0 --coverage -t        # Build with coverage instrumentation and run tests
 EOF
 }
 
@@ -128,11 +125,6 @@ parse_args() {
                 INSTALL_PREFIX="$2"
                 shift 2
                 ;;
-            --coverage)
-                COVERAGE=true
-                BUILD_TYPE="Debug"
-                shift
-                ;;
             *)
                 log_error "Unknown option: $1"
                 print_help
@@ -171,11 +163,6 @@ clean_build() {
 configure_project() {
     log_info "Configuring project ($BUILD_TYPE mode)..."
 
-    if [ "$COVERAGE" = true ] && [ -n "$SANITIZER" ]; then
-        log_error "--coverage cannot be combined with sanitizer options"
-        exit 1
-    fi
-
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
 
@@ -192,11 +179,6 @@ configure_project() {
 
     if [ "$BENCH" = true ]; then
         CMAKE_ARGS+=(-DIOCORO_BUILD_BENCHMARKS=ON)
-    fi
-
-    if [ "$COVERAGE" = true ]; then
-        log_info "Enabling coverage instrumentation"
-        CMAKE_ARGS+=(-DIOCORO_ENABLE_COVERAGE=ON)
     fi
 
     # Add sanitizer options
