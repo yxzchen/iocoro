@@ -4,7 +4,7 @@ project(iocoro VERSION 0.1.0 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-option(IOCORO_BUILD_TESTS "Build tests" OFF)
+option(IOCORO_BUILD_TESTS "Build tests" ${PROJECT_IS_TOP_LEVEL})
 option(IOCORO_ENABLE_WARNINGS "Enable warning flags for iocoro tests/examples" ${PROJECT_IS_TOP_LEVEL})
 option(IOCORO_ENABLE_URING "Enable io_uring backend if liburing is available" OFF)
 option(IOCORO_ENABLE_ASAN "Enable AddressSanitizer" OFF)

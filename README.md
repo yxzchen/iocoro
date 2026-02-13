@@ -6,52 +6,72 @@
 
 - `0.x` preview: APIs and behavior can change.
 - No backward-compatibility promise during `0.x`.
-- Intended for advanced users who are comfortable with coroutine/executor semantics.
 
-## Platform and toolchain
+## Requirements
 
-- OS: Linux
-- Language: C++20
-- Build: CMake `>= 3.15`
-- Compilers: GCC/Clang with coroutine support
-- Runtime backend: epoll (default)
+- Linux
+- CMake `>= 3.15`
+- GCC/Clang with C++20 coroutine support
+- `pthread`
 
-## Build
+## Minimal Example
 
-### Quick build script
+```cpp
+#include <iocoro/iocoro.hpp>
 
-```bash
-./build.sh
+#include <chrono>
+#include <iostream>
+
+using namespace std::chrono_literals;
+
+auto hello() -> iocoro::awaitable<void> {
+  std::cout << "start\n";
+  co_await iocoro::co_sleep(50ms);
+  std::cout << "done\n";
+}
+
+int main() {
+  iocoro::io_context ctx;
+  iocoro::co_spawn(ctx.get_executor(), hello(), iocoro::detached);
+  ctx.run();
+}
 ```
 
-Useful flags:
-
-- `./build.sh -r` for Release
-- `./build.sh -t` to enable and run tests
-- `./build.sh -b` to build benchmarks (`-DIOCORO_BUILD_BENCHMARKS=ON`)
-
-### Raw CMake
+## Build
 
 ```bash
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DIOCORO_BUILD_EXAMPLES=ON \
-  -DIOCORO_BUILD_TESTS=ON \
-  -DIOCORO_BUILD_BENCHMARKS=ON
+  -DIOCORO_BUILD_TESTS=OFF \
+  -DIOCORO_BUILD_BENCHMARKS=OFF
 cmake --build build -j
-ctest --test-dir build --output-on-failure
+```
+
+Optional backend:
+
+- `-DIOCORO_ENABLE_URING=ON` to enable io_uring when `liburing` is available.
+
+## Install
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build build -j
+cmake --install build
+```
+
+## Use in CMake
+
+```cmake
+find_package(iocoro REQUIRED)
+target_link_libraries(your_target PRIVATE iocoro::iocoro)
 ```
 
 ## Examples
 
-Build examples:
-
-```bash
-cmake -S . -B build -DIOCORO_BUILD_EXAMPLES=ON
-cmake --build build -j
-```
-
-Run a few:
+Build with `-DIOCORO_BUILD_EXAMPLES=ON`, then run:
 
 ```bash
 ./build/examples/hello_io_context
@@ -59,52 +79,10 @@ Run a few:
 ./build/examples/tcp_echo_client
 ```
 
-## Performance benchmark entrypoint
+## More Docs
 
-Use a single unified script:
-
-```bash
-./benchmark/scripts/run_all_perf_benchmarks.sh \
-  --build-dir build \
-  --iterations 3 \
-  --warmup 1 \
-  --timeout-sec 180
-```
-
-This command runs all benchmark suites:
-
-- tcp roundtrip
-- tcp latency
-- tcp connect/accept
-- tcp throughput
-- udp send/receive
-- timer churn
-- thread pool scaling
-
-Default behavior:
-
-- Runs iocoro vs Asio comparison for all suites.
-- Applies baseline regression gate.
-- Validates generated JSON reports against schemas.
-
-For benchmark details, see `benchmark/README.md`.
-
-## Install and consume
-
-Install:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-cmake --build build -j
-cmake --install build
-```
-
-Consume:
-
-```cmake
-find_package(iocoro REQUIRED)
-target_link_libraries(your_target PRIVATE iocoro::iocoro)
-```
+- Contributing and developer workflows: `CONTRIBUTING.md`
+- Benchmark usage and reports: `benchmark/README.md`
 
 ## License
 

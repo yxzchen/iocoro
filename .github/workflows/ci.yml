@@ -103,15 +103,15 @@ jobs:
           CC: ${{ matrix.toolchain == 'clang' && 'clang' || 'gcc' }}
           CXX: ${{ matrix.toolchain == 'clang' && 'clang++' || 'g++' }}
         run: |
-          chmod +x ./build.sh
+          chmod +x ./scripts/build.sh
           if [ "${{ matrix.sanitizer }}" = "asan" ]; then
-            ./build.sh -c -t --asan
+            ./scripts/build.sh -c -t --asan
           elif [ "${{ matrix.sanitizer }}" = "ubsan" ]; then
-            ./build.sh -c -t --ubsan
+            ./scripts/build.sh -c -t --ubsan
           elif [ "${{ matrix.sanitizer }}" = "tsan" ]; then
-            ./build.sh -c -t --tsan
+            ./scripts/build.sh -c -t --tsan
           else
-            ./build.sh -c -t
+            ./scripts/build.sh -c -t
           fi
 
   install-test:
@@ -127,8 +127,8 @@ jobs:
 
       - name: Build and install
         run: |
-          chmod +x ./build.sh
-          ./build.sh -c -r
+          chmod +x ./scripts/build.sh
+          ./scripts/build.sh -c -r
           cmake --install build --prefix "$PWD/_install"
 
       - name: Build consumer with find_package
