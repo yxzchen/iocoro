@@ -8,6 +8,7 @@ option(IOCORO_BUILD_TESTS "Build tests" OFF)
 option(IOCORO_ENABLE_WARNINGS "Enable warning flags for iocoro tests/examples" ${PROJECT_IS_TOP_LEVEL})
 option(IOCORO_ENABLE_URING "Enable io_uring backend if liburing is available" OFF)
 option(IOCORO_ENABLE_ASAN "Enable AddressSanitizer" OFF)
+option(IOCORO_ENABLE_COVERAGE "Enable gcov-compatible coverage instrumentation" OFF)
 option(IOCORO_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(IOCORO_BUILD_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
 
@@ -65,6 +66,9 @@ if(IOCORO_ENABLE_WARNINGS)
 endif()
 
 if(IOCORO_ENABLE_ASAN)
+    if(IOCORO_ENABLE_COVERAGE)
+        message(FATAL_ERROR "IOCORO_ENABLE_ASAN and IOCORO_ENABLE_COVERAGE cannot be enabled together")
+    endif()
     target_compile_options(iocoro INTERFACE
         -g
         -fno-omit-frame-pointer
@@ -74,6 +78,22 @@ if(IOCORO_ENABLE_ASAN)
         -fsanitize=address
     )
     message(STATUS "iocoro: AddressSanitizer is ENABLED")
+endif()
+
+if(IOCORO_ENABLE_COVERAGE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(iocoro INTERFACE
+            -O0
+            -g
+            --coverage
+        )
+        target_link_options(iocoro INTERFACE
+            --coverage
+        )
+        message(STATUS "iocoro: Coverage instrumentation is ENABLED")
+    else()
+        message(FATAL_ERROR "IOCORO_ENABLE_COVERAGE requires GCC/Clang-compatible compiler")
+    endif()
 endif()
 
 if(IOCORO_BUILD_TESTS)
