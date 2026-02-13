@@ -231,7 +231,11 @@ jobs:
 
       - name: Build benchmarks
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DIOCORO_BUILD_BENCHMARKS=ON
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DIOCORO_BUILD_BENCHMARKS=ON \
+            -DIOCORO_BUILD_TESTS=OFF \
+            -DIOCORO_BUILD_EXAMPLES=OFF
           cmake --build build -j
 
       - name: Run perf baseline gate
