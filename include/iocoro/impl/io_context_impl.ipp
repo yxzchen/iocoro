@@ -240,6 +240,9 @@ inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> even
   }
   auto result = fd_registry_.register_read(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
+  if (result.ready_now) {
+    result.ready_now->vt->on_complete(result.ready_now->block);
+  }
   if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
@@ -253,6 +256,9 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   }
   auto result = fd_registry_.register_write(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
+  if (result.ready_now) {
+    result.ready_now->vt->on_complete(result.ready_now->block);
+  }
   if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
