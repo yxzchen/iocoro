@@ -18,6 +18,7 @@ class fd_registry {
   struct register_result {
     std::uint64_t token = 0;
     reactor_op_ptr replaced{};
+    reactor_op_ptr ready_now{};
   };
 
   struct cancel_result {
@@ -63,18 +64,25 @@ class fd_registry {
     reactor_op_ptr write_op;
     std::uint64_t read_token = invalid_token;
     std::uint64_t write_token = invalid_token;
+    bool read_ready = false;
+    bool write_ready = false;
   };
 
   struct slot_ref {
     reactor_op_ptr* op = nullptr;
     std::uint64_t* token = nullptr;
+    bool* ready = nullptr;
   };
 
   static auto slot_for(fd_ops& ops, fd_event_kind kind) noexcept -> slot_ref {
     if (kind == fd_event_kind::read) {
-      return slot_ref{&ops.read_op, &ops.read_token};
+      return slot_ref{&ops.read_op, &ops.read_token, &ops.read_ready};
     }
-    return slot_ref{&ops.write_op, &ops.write_token};
+    return slot_ref{&ops.write_op, &ops.write_token, &ops.write_ready};
+  }
+
+  static auto has_slot_state(fd_ops const& ops) noexcept -> bool {
+    return ops.read_op || ops.write_op || ops.read_ready || ops.write_ready;
   }
 
   auto register_impl(int fd, reactor_op_ptr op, fd_event_kind kind) -> register_result;
@@ -101,6 +109,7 @@ inline auto fd_registry::register_write(int fd, reactor_op_ptr op) -> register_r
 inline auto fd_registry::register_impl(int fd, reactor_op_ptr op,
                                        fd_event_kind kind) -> register_result {
   reactor_op_ptr old{};
+  reactor_op_ptr ready_now{};
   std::uint64_t token = 0;
 
   if (fd < 0) {
@@ -115,21 +124,32 @@ inline auto fd_registry::register_impl(int fd, reactor_op_ptr op,
 
   auto& ops = operations_[static_cast<std::size_t>(fd)];
   auto slot = slot_for(ops, kind);
+
+  // Edge-triggered backends can deliver readiness before the waiter is registered.
+  // Latch that readiness in the slot and consume it here to complete immediately.
+  if (op && *slot.ready) {
+    *slot.ready = false;
+    ready_now = std::move(op);
+    return register_result{0, {}, std::move(ready_now)};
+  }
+
   bool const had_op = static_cast<bool>(*slot.op);
   if (op) {
     token = *slot.token = next_token_++;
+  } else {
+    *slot.token = invalid_token;
   }
   if (!had_op && op) {
     ++active_count_;
-    if (static_cast<std::size_t>(fd) > max_active_fd_) {
-      max_active_fd_ = static_cast<std::size_t>(fd);
-    }
   }
   if (had_op && !op) {
     --active_count_;
   }
   old = std::exchange(*slot.op, std::move(op));
-  return register_result{token, std::move(old)};
+  if (has_slot_state(ops) && static_cast<std::size_t>(fd) > max_active_fd_) {
+    max_active_fd_ = static_cast<std::size_t>(fd);
+  }
+  return register_result{token, std::move(old), {}};
 }
 
 inline auto fd_registry::cancel(int fd, fd_event_kind kind,
@@ -154,7 +174,7 @@ inline auto fd_registry::cancel(int fd, fd_event_kind kind,
     return cancel_result{};
   }
 
-  if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+  if (static_cast<std::size_t>(fd) == max_active_fd_ && !has_slot_state(ops)) {
     trim_tail(static_cast<std::size_t>(fd));
   }
 
@@ -173,13 +193,15 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
     had_any = static_cast<bool>(read) || static_cast<bool>(write);
     ops.read_token = invalid_token;
     ops.write_token = invalid_token;
+    ops.read_ready = false;
+    ops.write_ready = false;
     if (read) {
       --active_count_;
     }
     if (write) {
       --active_count_;
     }
-    if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+    if (static_cast<std::size_t>(fd) == max_active_fd_ && !has_slot_state(ops)) {
       trim_tail(static_cast<std::size_t>(fd));
     }
   }
@@ -191,27 +213,41 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
   reactor_op_ptr read{};
   reactor_op_ptr write{};
 
-  if (fd < 0 || static_cast<std::size_t>(fd) >= operations_.size()) {
+  if (fd < 0) {
     return ready_result{};
+  }
+  if (static_cast<std::size_t>(fd) >= operations_.size()) {
+    if (!can_read && !can_write) {
+      return ready_result{};
+    }
+    operations_.resize(static_cast<std::size_t>(fd) + 1);
   }
 
   auto& ops = operations_[static_cast<std::size_t>(fd)];
   if (can_read) {
-    read = std::move(ops.read_op);
-    ops.read_token = 0;
-    if (read) {
+    if (ops.read_op) {
+      read = std::move(ops.read_op);
+      ops.read_token = 0;
       --active_count_;
+    } else {
+      ops.read_ready = true;
     }
   }
   if (can_write) {
-    write = std::move(ops.write_op);
-    ops.write_token = 0;
-    if (write) {
+    if (ops.write_op) {
+      write = std::move(ops.write_op);
+      ops.write_token = 0;
       --active_count_;
+    } else {
+      ops.write_ready = true;
     }
   }
 
-  if (static_cast<std::size_t>(fd) == max_active_fd_ && !ops.read_op && !ops.write_op) {
+  if (has_slot_state(ops) && static_cast<std::size_t>(fd) > max_active_fd_) {
+    max_active_fd_ = static_cast<std::size_t>(fd);
+  }
+
+  if (static_cast<std::size_t>(fd) == max_active_fd_ && !has_slot_state(ops)) {
     trim_tail(static_cast<std::size_t>(fd));
   }
 
@@ -230,12 +266,12 @@ inline void fd_registry::trim_tail(std::size_t fd_index) {
   std::size_t i = fd_index;
   while (i > 0) {
     auto const& ops = operations_[i];
-    if (ops.read_op || ops.write_op) {
+    if (has_slot_state(ops)) {
       break;
     }
     --i;
   }
-  if (i == 0 && !operations_[0].read_op && !operations_[0].write_op) {
+  if (i == 0 && !has_slot_state(operations_[0])) {
     operations_.clear();
     max_active_fd_ = 0;
     return;
@@ -257,7 +293,7 @@ inline auto fd_registry::drain_all() noexcept -> drain_all_result {
 
   for (std::size_t i = 0; i < operations_.size(); ++i) {
     auto& ops = operations_[i];
-    bool const had_any = static_cast<bool>(ops.read_op) || static_cast<bool>(ops.write_op);
+    bool const had_any = has_slot_state(ops);
     if (had_any) {
       out.fds.push_back(static_cast<int>(i));
     }
@@ -269,6 +305,8 @@ inline auto fd_registry::drain_all() noexcept -> drain_all_result {
       out.ops.push_back(std::move(ops.write_op));
       ops.write_token = invalid_token;
     }
+    ops.read_ready = false;
+    ops.write_ready = false;
   }
 
   operations_.clear();
