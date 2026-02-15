@@ -45,6 +45,40 @@ TEST(stream_socket_impl_test, read_without_connect_returns_not_connected) {
   EXPECT_EQ(r->error(), iocoro::error::not_connected);
 }
 
+TEST(stream_socket_impl_test,
+     repeated_connect_on_already_connected_socket_returns_already_connected_not_busy) {
+  iocoro::io_context ctx;
+  iocoro::detail::socket::stream_socket_impl impl{ctx.get_executor()};
+
+  int fds[2]{-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+  ASSERT_GE(fds[0], 0);
+  ASSERT_GE(fds[1], 0);
+
+  auto ec = impl.assign(fds[0]);
+  ASSERT_TRUE(ec) << (ec ? "" : ec.error().message());
+
+  sockaddr_storage dummy_addr{};
+  auto connect_once = [&]() -> iocoro::expected<iocoro::result<void>, std::exception_ptr> {
+    return iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<void>> {
+      co_return co_await impl.async_connect(reinterpret_cast<sockaddr const*>(&dummy_addr),
+                                            sizeof(dummy_addr));
+    }());
+  };
+
+  auto r1 = connect_once();
+  ASSERT_TRUE(r1);
+  ASSERT_FALSE(*r1);
+  EXPECT_EQ(r1->error(), iocoro::error::already_connected);
+
+  auto r2 = connect_once();
+  ASSERT_TRUE(r2);
+  ASSERT_FALSE(*r2);
+  EXPECT_EQ(r2->error(), iocoro::error::already_connected);
+
+  (void)::close(fds[1]);
+}
+
 TEST(stream_socket_impl_test, concurrent_reads_return_busy_and_cancel_aborts) {
   iocoro::io_context ctx;
   iocoro::detail::socket::stream_socket_impl impl{ctx.get_executor()};

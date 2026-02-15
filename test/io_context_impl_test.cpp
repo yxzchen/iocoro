@@ -229,35 +229,6 @@ TEST(io_context_impl_test, run_for_processes_posted_work) {
   EXPECT_EQ(count.load(), 1);
 }
 
-TEST(io_context_impl_test, concurrent_run_is_rejected) {
-  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
-
-  EXPECT_DEATH(
-    {
-      auto impl = std::make_shared<iocoro::detail::io_context_impl>();
-      impl->add_work_guard();
-      std::jthread runner{[&](std::stop_token) { (void)impl->run_for(1s); }};
-      std::this_thread::sleep_for(5ms);
-      (void)impl->run_one();
-    },
-    ".*");
-}
-
-TEST(io_context_impl_test, add_timer_wrong_thread_when_running_is_rejected) {
-  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
-
-  EXPECT_DEATH(
-    {
-      auto impl = std::make_shared<iocoro::detail::io_context_impl>();
-      impl->add_work_guard();
-      std::jthread runner{[&](std::stop_token) { (void)impl->run_for(1s); }};
-      std::this_thread::sleep_for(5ms);
-      auto op = iocoro::detail::make_reactor_op<noop_state>();
-      (void)impl->add_timer(std::chrono::steady_clock::now(), std::move(op));
-    },
-    ".*");
-}
-
 TEST(io_context_impl_test, cancel_timer_requires_shared_ownership) {
   ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
 

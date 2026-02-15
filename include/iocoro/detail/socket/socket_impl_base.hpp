@@ -109,6 +109,7 @@ class socket_impl_base {
       return {};
     }
 
+    std::scoped_lock lk{lifecycle_mtx_};
     auto current = res_.load(std::memory_order_acquire);
     if (!current || current.get() != res.get() || current->closing() ||
         current->native_handle() < 0) {
@@ -116,16 +117,6 @@ class socket_impl_base {
     }
 
     current->add_inflight();
-    if (current->closing() || current->native_handle() < 0) {
-      current->remove_inflight();
-      return {};
-    }
-
-    auto verify = res_.load(std::memory_order_acquire);
-    if (!verify || verify.get() != current.get()) {
-      current->remove_inflight();
-      return {};
-    }
 
     return operation_guard{std::move(current)};
   }

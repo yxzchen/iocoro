@@ -85,15 +85,15 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr,
   std::uint64_t my_epoch = 0;
   {
     std::scoped_lock lk{mtx_};
-    if (!connect_op_.try_start(my_epoch)) {
-      co_return fail(error::busy);
-    }
     auto const state = state_.load(std::memory_order_acquire);
     if (state == conn_state::connecting) {
       co_return fail(error::busy);
     }
     if (state == conn_state::connected) {
       co_return fail(error::already_connected);
+    }
+    if (!connect_op_.try_start(my_epoch)) {
+      co_return fail(error::busy);
     }
     state_.store(conn_state::connecting, std::memory_order_release);
     shutdown_.read.store(false, std::memory_order_release);
