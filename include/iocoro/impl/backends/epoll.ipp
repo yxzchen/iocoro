@@ -120,8 +120,11 @@ class backend_epoll final : public backend_interface {
       std::uint32_t const ev = events[i].events;
 
       if (fd == eventfd_) {
-        wakeup_pending_.store(false, std::memory_order_release);
         drain_eventfd(eventfd_);
+        // Clear the dedupe flag after draining.
+        // If a wakeup raced and its token was drained in this batch, we must
+        // not leave wakeup_pending_ stuck at true.
+        wakeup_pending_.store(false, std::memory_order_release);
         continue;
       }
 
@@ -162,6 +165,8 @@ class backend_epoll final : public backend_interface {
       if (errno == EINTR) {
         continue;
       }
+      // Best-effort rollback: if write failed, allow future wakeups to retry.
+      wakeup_pending_.store(false, std::memory_order_release);
       return;
     }
   }
