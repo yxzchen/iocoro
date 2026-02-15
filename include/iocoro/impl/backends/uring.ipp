@@ -188,8 +188,15 @@ class backend_uring final : public backend_interface {
       std::uint64_t const tag = unpack_tag(data);
 
       if (tag == tag_wakeup) {
-        wakeup_pending_.store(false, std::memory_order_release);
         drain_eventfd(eventfd_);
+        // Clear dedupe after draining so a raced wakeup cannot leave the flag
+        // stuck at true while its token is consumed by this drain.
+        wakeup_pending_.store(false, std::memory_order_release);
+        if (wakeup_missed_.exchange(false, std::memory_order_acq_rel)) {
+          // A wakeup request arrived while pending=true and was deduped.
+          // Re-emit one token so that no wake request is lost.
+          wakeup();
+        }
         arm_wakeup();
         return;
       }
@@ -309,6 +316,7 @@ class backend_uring final : public backend_interface {
       return;
     }
     if (wakeup_pending_.exchange(true, std::memory_order_acq_rel)) {
+      wakeup_missed_.store(true, std::memory_order_release);
       return;
     }
 
@@ -321,6 +329,8 @@ class backend_uring final : public backend_interface {
       if (errno == EINTR) {
         continue;
       }
+      // Allow future wakeups to retry if this write fails.
+      wakeup_pending_.store(false, std::memory_order_release);
       return;
     }
   }
@@ -412,6 +422,7 @@ class backend_uring final : public backend_interface {
   std::mutex poll_mtx_{};
   std::mutex ring_mtx_{};
   std::atomic<bool> wakeup_pending_{false};
+  std::atomic<bool> wakeup_missed_{false};
   std::vector<pending_add> pending_adds_{};
   std::vector<pending_remove> pending_removes_{};
 };
