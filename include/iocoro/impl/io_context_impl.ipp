@@ -234,27 +234,23 @@ inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint64_t gen
 }
 
 inline auto io_context_impl::register_fd_read(int fd, reactor_op_ptr op) -> event_handle {
-  if (running_.load(std::memory_order_acquire)) {
-    IOCORO_ENSURE(running_in_this_thread(),
-                  "io_context_impl::register_fd_read(): must run on io_context thread");
-  }
-  auto result = fd_registry_.register_read(fd, std::move(op));
-  abort_op(std::move(result.replaced), error::operation_aborted);
-  if (result.ready_now) {
-    result.ready_now->vt->on_complete(result.ready_now->block);
-  }
-  if (result.token == invalid_token) {
-    return event_handle::invalid_handle();
-  }
-  return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::read, result.token);
+  return register_fd_impl(fd, std::move(op), detail::fd_event_kind::read);
 }
 
 inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> event_handle {
+  return register_fd_impl(fd, std::move(op), detail::fd_event_kind::write);
+}
+
+inline auto io_context_impl::register_fd_impl(int fd, reactor_op_ptr op,
+                                              detail::fd_event_kind kind) -> event_handle {
   if (running_.load(std::memory_order_acquire)) {
     IOCORO_ENSURE(running_in_this_thread(),
-                  "io_context_impl::register_fd_write(): must run on io_context thread");
+                  "io_context_impl::register_fd_*(): must run on "
+                  "io_context thread");
   }
-  auto result = fd_registry_.register_write(fd, std::move(op));
+  auto result = (kind == detail::fd_event_kind::read)
+                  ? fd_registry_.register_read(fd, std::move(op))
+                  : fd_registry_.register_write(fd, std::move(op));
   abort_op(std::move(result.replaced), error::operation_aborted);
   if (result.ready_now) {
     result.ready_now->vt->on_complete(result.ready_now->block);
@@ -262,7 +258,7 @@ inline auto io_context_impl::register_fd_write(int fd, reactor_op_ptr op) -> eve
   if (result.token == invalid_token) {
     return event_handle::invalid_handle();
   }
-  return event_handle::make_fd(weak_from_this(), fd, detail::fd_event_kind::write, result.token);
+  return event_handle::make_fd(weak_from_this(), fd, kind, result.token);
 }
 
 inline auto io_context_impl::add_fd(int fd) noexcept -> bool {

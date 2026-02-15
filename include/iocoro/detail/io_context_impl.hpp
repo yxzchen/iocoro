@@ -83,6 +83,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto next_wait(std::optional<std::chrono::steady_clock::time_point> deadline)
     -> std::optional<std::chrono::milliseconds>;
   void wakeup();
+  auto register_fd_impl(int fd, reactor_op_ptr op, detail::fd_event_kind kind) -> event_handle;
 
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;

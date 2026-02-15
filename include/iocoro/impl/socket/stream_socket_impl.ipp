@@ -2,8 +2,6 @@
 
 #include <cerrno>
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -124,61 +122,6 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr,
     co_return fail(ec);
   }
 
-  int so_error = 0;
-  socklen_t optlen = sizeof(so_error);
-
-  auto is_loopback = [](sockaddr const* sa, socklen_t salen) noexcept -> bool {
-    if (!sa) {
-      return false;
-    }
-    if (sa->sa_family == AF_INET) {
-      if (salen < sizeof(sockaddr_in)) {
-        return false;
-      }
-      auto const* in = reinterpret_cast<sockaddr_in const*>(sa);
-      auto const addr_v4 = ntohl(in->sin_addr.s_addr);
-      return (addr_v4 >> 24) == 127;
-    }
-    if (sa->sa_family == AF_INET6) {
-      if (salen < sizeof(sockaddr_in6)) {
-        return false;
-      }
-      auto const* in6 = reinterpret_cast<sockaddr_in6 const*>(sa);
-      return IN6_IS_ADDR_LOOPBACK(&in6->sin6_addr) != 0;
-    }
-    return false;
-  };
-
-  if (is_loopback(addr, len)) {
-    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
-      ec = map_socket_errno(errno);
-      state_.store(conn_state::disconnected, std::memory_order_release);
-      co_return fail(ec);
-    }
-    if (so_error != 0 && so_error != EINPROGRESS) {
-      ec = map_socket_errno(so_error);
-      state_.store(conn_state::disconnected, std::memory_order_release);
-      co_return fail(ec);
-    }
-    if (so_error == 0) {
-      sockaddr_storage peer{};
-      socklen_t peer_len = sizeof(peer);
-      if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peer), &peer_len) == 0) {
-        if (!connect_op_.is_epoch_current(my_epoch) || res->closing()) {
-          state_.store(conn_state::disconnected, std::memory_order_release);
-          co_return fail(error::operation_aborted);
-        }
-        state_.store(conn_state::connected, std::memory_order_release);
-        co_return ok();
-      }
-      if (errno != ENOTCONN) {
-        ec = map_socket_errno(errno);
-        state_.store(conn_state::disconnected, std::memory_order_release);
-        co_return fail(ec);
-      }
-    }
-  }
-
   auto wait_r = co_await base_.wait_write_ready(res);
   if (!wait_r) {
     if (wait_r.error() != error::eof && wait_r.error() != error::connection_reset) {
@@ -192,8 +135,8 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr,
     co_return fail(error::operation_aborted);
   }
 
-  so_error = 0;
-  optlen = sizeof(so_error);
+  int so_error = 0;
+  socklen_t optlen = sizeof(so_error);
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0) {
     ec = map_socket_errno(errno);
     state_.store(conn_state::disconnected, std::memory_order_release);
