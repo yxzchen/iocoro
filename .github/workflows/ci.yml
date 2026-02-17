@@ -114,6 +114,54 @@ jobs:
             ./scripts/build.sh -c -t
           fi
 
+  build-test-uring:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [gcc, clang]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config libgtest-dev liburing-dev
+          if [ "${{ matrix.toolchain }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          else
+            sudo apt-get install -y g++
+          fi
+
+          if [ -d /usr/src/gtest ]; then
+            cd /usr/src/gtest
+            sudo cmake -S . -B build
+            sudo cmake --build build -j
+            sudo cmake --install build
+          elif [ -d /usr/src/googletest ]; then
+            cd /usr/src/googletest
+            sudo cmake -S . -B build
+            sudo cmake --build build -j
+            sudo cmake --install build
+          fi
+
+      - name: Configure (io_uring backend)
+        env:
+          CC: ${{ matrix.toolchain == 'clang' && 'clang' || 'gcc' }}
+          CXX: ${{ matrix.toolchain == 'clang' && 'clang++' || 'g++' }}
+        run: |
+          cmake -S . -B build-uring -G Ninja \
+            -DIOCORO_BUILD_TESTS=ON \
+            -DIOCORO_BUILD_EXAMPLES=OFF \
+            -DIOCORO_BUILD_BENCHMARKS=OFF \
+            -DIOCORO_ENABLE_URING=ON
+
+      - name: Build and test (io_uring backend)
+        run: |
+          cmake --build build-uring -j
+          ctest --test-dir build-uring --output-on-failure -j "$(nproc)"
+
   install-test:
     runs-on: ubuntu-latest
     steps:

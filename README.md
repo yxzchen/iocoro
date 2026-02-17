@@ -83,6 +83,7 @@ Build with `-DIOCORO_BUILD_EXAMPLES=ON`, then run:
 
 - Contributing and developer workflows: `CONTRIBUTING.md`
 - Benchmark usage and reports: `benchmark/README.md`
+- Architecture layering and contract boundaries: `docs/architecture-boundaries.md`
 
 ## Contract Notes
 
