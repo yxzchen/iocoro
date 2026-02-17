@@ -55,6 +55,10 @@ class thread_pool {
   /// - New tasks posted after `stop()` are dropped.
   /// - Already-queued tasks may continue to run while workers are active.
   /// - Workers exit once queue is empty and work_guard count reaches zero.
+  ///
+  /// IMPORTANT: this executor does not provide guaranteed delivery after `stop()`. Higher-level
+  /// coroutine orchestration that relies on `post()` for start/resume must ensure the pool is not
+  /// stopped while those coroutines are still expected to make progress.
   void stop() noexcept;
 
   /// Join all worker threads (idempotent).

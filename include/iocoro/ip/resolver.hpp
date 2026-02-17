@@ -33,6 +33,9 @@ namespace iocoro::ip {
 ///
 /// Cancellation is best-effort: a stop request prevents resumption with resolved results, but
 /// cannot interrupt an in-flight `getaddrinfo()` call running on the pool.
+/// A stop request observed before or during await suspension may still race with dispatch of the
+/// blocking task, so internal pool work can still run even when the awaiter eventually observes
+/// `operation_aborted`.
 template <class Protocol>
 class resolver {
  public:
@@ -54,6 +57,9 @@ class resolver {
   /// - `service` may be a service name or numeric port; empty is forwarded as nullptr.
   ///
   /// Returns `std::error_code` originating from `getaddrinfo()` on failure.
+  ///
+  /// NOTE: entries that cannot be converted into `Protocol::endpoint` are skipped silently.
+  /// Successful conversion of any subset still yields success.
   auto async_resolve(std::string host, std::string service) -> awaitable<result<results_type>> {
     auto pool_ex = pool_ex_ ? *pool_ex_ : get_default_executor();
     co_return co_await resolve_awaiter{std::move(pool_ex), std::move(host), std::move(service)};

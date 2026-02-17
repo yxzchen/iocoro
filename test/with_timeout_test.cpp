@@ -83,6 +83,13 @@ auto blocking_sleep_then_throw(std::chrono::milliseconds d) -> iocoro::awaitable
   co_return 0;
 }
 
+auto blocking_sleep_result(std::chrono::milliseconds d, std::shared_ptr<std::atomic<bool>> done,
+                           int value) -> iocoro::awaitable<iocoro::result<int>> {
+  std::this_thread::sleep_for(d);
+  done->store(true, std::memory_order_release);
+  co_return value;
+}
+
 TEST(with_timeout_test, timer_race_cancels_loser) {
   iocoro::io_context ctx;
 
@@ -334,6 +341,27 @@ TEST(with_timeout_test, timeout_zero_immediate_timeout_on_never_finishing_op) {
   auto r = iocoro::test::sync_wait(ctx, task());
   ASSERT_TRUE(r);
   EXPECT_TRUE(timed_out);
+}
+
+TEST(with_timeout_test, timeout_is_cooperative_and_waits_for_non_cancellable_loser) {
+  iocoro::io_context ctx;
+  iocoro::thread_pool pool{1};
+
+  auto done = std::make_shared<std::atomic<bool>>(false);
+  auto begin = std::chrono::steady_clock::now();
+
+  auto r = iocoro::test::sync_wait(ctx, [&]() -> iocoro::awaitable<iocoro::result<int>> {
+    auto op = iocoro::bind_executor(iocoro::any_executor{pool.get_executor()},
+                                    blocking_sleep_result(40ms, done, 7));
+    co_return co_await iocoro::with_timeout(std::move(op), 1ms);
+  }());
+
+  auto elapsed = std::chrono::steady_clock::now() - begin;
+  ASSERT_TRUE(r);
+  ASSERT_FALSE(*r);
+  EXPECT_EQ(r->error(), iocoro::error::timed_out);
+  EXPECT_TRUE(done->load(std::memory_order_acquire));
+  EXPECT_GE(elapsed, 30ms);
 }
 
 TEST(with_timeout_test, timeout_negative_treated_as_immediate_timeout) {

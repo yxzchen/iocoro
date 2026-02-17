@@ -42,6 +42,8 @@ concept completion_callback_for = std::invocable<F&, expected<T, std::exception_
 ///
 /// IMPORTANT: The coroutine is *started* by posting its first `resume()` onto `ex`.
 /// There is no guarantee of inline execution at the call site.
+/// If the selected executor drops `post()` (for example, `thread_pool` after `stop()`), spawned
+/// work may never start/resume.
 namespace detail {
 
 template <typename F, typename Completion>

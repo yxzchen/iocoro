@@ -191,6 +191,8 @@ auto when_any_cancel_join(awaitable<A> a, awaitable<B> b)
 /// Notes:
 /// - This helper is intentionally constrained to `awaitable<result<...>>` so timeout can be
 ///   represented in the library's error model without double-wrapping.
+/// - Timeout is cooperative, not preemptive: if the losing operation does not observe stop and
+///   complete, this function may return after the nominal deadline.
 template <class T, class Rep, class Period>
   requires detail::is_result_with_error_code_v<T>
 auto with_timeout(awaitable<T> op, std::chrono::duration<Rep, Period> timeout) -> awaitable<T> {

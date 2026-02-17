@@ -110,8 +110,12 @@ class io_context {
   /// Returns the number of completed callbacks executed.
   auto run() -> std::size_t { return impl_->run(); }
 
-  /// Run at most one completion and return.
-  /// Returns 0 if no completion was ready.
+  /// Run one scheduler turn and return.
+  ///
+  /// Notes:
+  /// - A single turn may complete multiple callbacks (for example, draining the current posted
+  ///   queue batch or a backend event batch).
+  /// - Returns 0 if no completion was ready.
   auto run_one() -> std::size_t { return impl_->run_one(); }
 
   /// Run the event loop for at most `timeout`, or until stopped / out of work.

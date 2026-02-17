@@ -42,6 +42,20 @@ TEST(io_context_test, run_one_does_not_drain_work_posted_during_execution) {
   EXPECT_EQ(count.load(), 2);
 }
 
+TEST(io_context_test, run_one_single_turn_may_complete_multiple_ready_callbacks) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::atomic<int> count{0};
+  ex.post([&] { ++count; });
+  ex.post([&] { ++count; });
+  ex.post([&] { ++count; });
+
+  auto n = ctx.run_one();
+  EXPECT_EQ(n, 3U);
+  EXPECT_EQ(count.load(), 3);
+}
+
 TEST(io_context_test, stop_prevents_run_and_restart_allows_processing) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();

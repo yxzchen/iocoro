@@ -84,6 +84,15 @@ Build with `-DIOCORO_BUILD_EXAMPLES=ON`, then run:
 - Contributing and developer workflows: `CONTRIBUTING.md`
 - Benchmark usage and reports: `benchmark/README.md`
 
+## Contract Notes
+
+- `io_context::run_one()` runs one scheduler turn and may complete multiple callbacks.
+- `thread_pool` drops new `post()` calls after `stop()`. Do not rely on it for guaranteed
+  coroutine start/resume once stopped.
+- `with_timeout()` is cooperative (cancel+join), not preemptive.
+- `ip::resolver` may still run blocking resolver work after cancellation races; unconvertible
+  `addrinfo` entries are skipped.
+
 ## License
 
 MIT. See `LICENSE`.
