@@ -48,30 +48,7 @@ cmake -S . -B build \
 cmake --build build -j
 ```
 
-Optional backend:
-
-- `-DIOCORO_ENABLE_URING=ON` to enable io_uring when `liburing` is available.
-
-## Install
-
-```bash
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-cmake --build build -j
-cmake --install build
-```
-
-## Use in CMake
-
-```cmake
-find_package(iocoro REQUIRED)
-target_link_libraries(your_target PRIVATE iocoro::iocoro)
-```
-
 ## Examples
-
-Build with `-DIOCORO_BUILD_EXAMPLES=ON`, then run:
 
 ```bash
 ./build/examples/hello_io_context
@@ -83,16 +60,6 @@ Build with `-DIOCORO_BUILD_EXAMPLES=ON`, then run:
 
 - Contributing and developer workflows: `CONTRIBUTING.md`
 - Benchmark usage and reports: `benchmark/README.md`
-- Architecture layering and contract boundaries: `docs/architecture-boundaries.md`
-
-## Contract Notes
-
-- `io_context::run_one()` runs one scheduler turn and may complete multiple callbacks.
-- `thread_pool` drops new `post()` calls after `stop()`. Do not rely on it for guaranteed
-  coroutine start/resume once stopped.
-- `with_timeout()` is cooperative (cancel+join), not preemptive.
-- `ip::resolver` may still run blocking resolver work after cancellation races; unconvertible
-  `addrinfo` entries are skipped.
 
 ## License
 
