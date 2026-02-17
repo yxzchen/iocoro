@@ -97,28 +97,25 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
       co_return unexpected(error::operation_aborted);
     }
 
+    int fd = -1;
+    bool needs_fd_setup = true;
 #if defined(__linux__)
-    int fd = ::accept4(res->native_handle(), nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
-    if (fd < 0 && errno == ENOSYS) {
+    fd = ::accept4(res->native_handle(), nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (fd >= 0) {
+      needs_fd_setup = false;
+    } else if (errno == ENOSYS) {
       fd = ::accept(res->native_handle(), nullptr, nullptr);
-      if (fd >= 0) {
-        if (!set_cloexec(fd) || !set_nonblocking(fd)) {
-          auto ec = map_socket_errno(errno);
-          (void)::close(fd);
-          co_return unexpected(ec);
-        }
-      }
     }
 #else
-    int fd = ::accept(res->native_handle(), nullptr, nullptr);
-    if (fd >= 0) {
+    fd = ::accept(res->native_handle(), nullptr, nullptr);
+#endif
+    if (fd >= 0 && needs_fd_setup) {
       if (!set_cloexec(fd) || !set_nonblocking(fd)) {
         auto ec = map_socket_errno(errno);
         (void)::close(fd);
         co_return unexpected(ec);
       }
     }
-#endif
 
     if (fd >= 0) {
       if (!accept_op_.is_epoch_current(my_epoch) || res->closing()) {
