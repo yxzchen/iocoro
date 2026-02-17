@@ -281,7 +281,11 @@ inline auto io_context_impl::add_fd(int fd) noexcept -> bool {
   } catch (...) {
     return false;
   }
-  fd_registry_.track(fd);
+  if (running_.load(std::memory_order_acquire) && !running_in_this_thread()) {
+    dispatch_reactor([fd](io_context_impl& self) noexcept { self.fd_registry_.track(fd); });
+  } else {
+    fd_registry_.track(fd);
+  }
   wakeup();
   return true;
 }

@@ -4,12 +4,12 @@
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
-#include <mutex>
+#include <memory>
 #include <system_error>
-#include <unordered_map>
 
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 namespace iocoro::detail {
@@ -74,6 +74,20 @@ class backend_epoll final : public backend_interface {
       close_if_valid(epoll_fd_);
       throw std::system_error(errno, std::generic_category(), "epoll_ctl(add eventfd) failed");
     }
+
+    std::size_t cap = 65536;
+    rlimit lim{};
+    if (::getrlimit(RLIMIT_NOFILE, &lim) == 0 && lim.rlim_cur != RLIM_INFINITY &&
+        lim.rlim_cur > 0) {
+      cap = static_cast<std::size_t>(lim.rlim_cur);
+    }
+    fd_capacity_ = cap;
+    fd_generations_ = std::make_unique<std::atomic<std::uint32_t>[]>(fd_capacity_);
+    fd_active_ = std::make_unique<std::atomic<std::uint8_t>[]>(fd_capacity_);
+    for (std::size_t i = 0; i < fd_capacity_; ++i) {
+      fd_generations_[i].store(0, std::memory_order_relaxed);
+      fd_active_[i].store(0, std::memory_order_relaxed);
+    }
   }
 
   ~backend_epoll() override {
@@ -82,17 +96,17 @@ class backend_epoll final : public backend_interface {
   }
 
   void add_fd(int fd) override {
-    std::uint32_t gen = 1;
-    {
-      std::scoped_lock lk{fd_states_mtx_};
-      auto& st = fd_states_[fd];
-      st.generation += 1;
-      if (st.generation == 0) {
-        st.generation += 1;
-      }
-      st.active = true;
-      gen = st.generation;
+    if (fd < 0 || static_cast<std::size_t>(fd) >= fd_capacity_) {
+      throw std::system_error(std::make_error_code(std::errc::invalid_argument),
+                              "epoll add_fd: fd out of range");
     }
+
+    std::uint32_t gen = 1;
+    gen = fd_generations_[fd].fetch_add(1, std::memory_order_acq_rel) + 1;
+    if (gen == 0) {
+      gen = fd_generations_[fd].fetch_add(1, std::memory_order_acq_rel) + 1;
+    }
+    fd_active_[fd].store(1, std::memory_order_release);
 
     std::uint32_t events =
       static_cast<std::uint32_t>(EPOLLET | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP);
@@ -118,12 +132,8 @@ class backend_epoll final : public backend_interface {
     if (epoll_fd_ < 0 || fd < 0) {
       return;
     }
-    {
-      std::scoped_lock lk{fd_states_mtx_};
-      auto it = fd_states_.find(fd);
-      if (it != fd_states_.end()) {
-        it->second.active = false;
-      }
+    if (static_cast<std::size_t>(fd) < fd_capacity_) {
+      fd_active_[fd].store(0, std::memory_order_release);
     }
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   }
@@ -164,12 +174,14 @@ class backend_epoll final : public backend_interface {
         continue;
       }
 
-      {
-        std::scoped_lock lk{fd_states_mtx_};
-        auto it = fd_states_.find(fd);
-        if (it == fd_states_.end() || !it->second.active || it->second.generation != gen) {
-          continue;
-        }
+      if (fd < 0 || static_cast<std::size_t>(fd) >= fd_capacity_) {
+        continue;
+      }
+      if (fd_active_[fd].load(std::memory_order_acquire) == 0) {
+        continue;
+      }
+      if (fd_generations_[fd].load(std::memory_order_acquire) != gen) {
+        continue;
       }
 
       bool const has_error = (ev & static_cast<std::uint32_t>(EPOLLERR)) != 0;
@@ -216,15 +228,11 @@ class backend_epoll final : public backend_interface {
   }
 
  private:
-  struct epoll_fd_state {
-    std::uint32_t generation = 0;
-    bool active = false;
-  };
-
   int epoll_fd_ = -1;
   int eventfd_ = -1;
-  std::mutex fd_states_mtx_{};
-  std::unordered_map<int, epoll_fd_state> fd_states_{};
+  std::size_t fd_capacity_ = 0;
+  std::unique_ptr<std::atomic<std::uint32_t>[]> fd_generations_{};
+  std::unique_ptr<std::atomic<std::uint8_t>[]> fd_active_{};
   std::atomic<bool> wakeup_pending_{false};
 };
 
