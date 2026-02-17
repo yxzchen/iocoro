@@ -55,7 +55,8 @@ inline void io_context_impl::set_thread_id() noexcept {
 }
 
 inline auto io_context_impl::running_in_this_thread() const noexcept -> bool {
-  return thread_token_.load(std::memory_order_acquire) == this_thread_token();
+  return running_.load(std::memory_order_acquire) &&
+         thread_token_.load(std::memory_order_acquire) == this_thread_token();
 }
 
 inline auto io_context_impl::is_stopped() const noexcept -> bool {
@@ -65,8 +66,10 @@ inline auto io_context_impl::is_stopped() const noexcept -> bool {
 inline auto io_context_impl::run() -> std::size_t {
   IOCORO_ENSURE(!running_.exchange(true, std::memory_order_acq_rel),
                 "io_context_impl::run(): concurrent event loops are not supported");
-  auto running_guard = detail::make_scope_exit(
-    [this]() noexcept { running_.store(false, std::memory_order_release); });
+  auto running_guard = detail::make_scope_exit([this]() noexcept {
+    thread_token_.store(0, std::memory_order_release);
+    running_.store(false, std::memory_order_release);
+  });
   set_thread_id();
 
   std::size_t count = 0;
@@ -94,8 +97,10 @@ inline auto io_context_impl::run() -> std::size_t {
 inline auto io_context_impl::run_one() -> std::size_t {
   IOCORO_ENSURE(!running_.exchange(true, std::memory_order_acq_rel),
                 "io_context_impl::run_one(): concurrent event loops are not supported");
-  auto running_guard = detail::make_scope_exit(
-    [this]() noexcept { running_.store(false, std::memory_order_release); });
+  auto running_guard = detail::make_scope_exit([this]() noexcept {
+    thread_token_.store(0, std::memory_order_release);
+    running_.store(false, std::memory_order_release);
+  });
   set_thread_id();
 
   if (is_stopped() || !has_work()) {
@@ -117,8 +122,10 @@ inline auto io_context_impl::run_one() -> std::size_t {
 inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::size_t {
   IOCORO_ENSURE(!running_.exchange(true, std::memory_order_acq_rel),
                 "io_context_impl::run_for(): concurrent event loops are not supported");
-  auto running_guard = detail::make_scope_exit(
-    [this]() noexcept { running_.store(false, std::memory_order_release); });
+  auto running_guard = detail::make_scope_exit([this]() noexcept {
+    thread_token_.store(0, std::memory_order_release);
+    running_.store(false, std::memory_order_release);
+  });
   set_thread_id();
 
   auto const deadline = std::chrono::steady_clock::now() + timeout;
@@ -193,7 +200,7 @@ inline void io_context_impl::dispatch_reactor(unique_function<void(io_context_im
   IOCORO_ENSURE(!weak.expired(),
                 "io_context_impl::dispatch_reactor(): io_context_impl must be shared-owned "
                 "(construct with std::make_shared<io_context_impl>())");
-  post([weak = std::move(weak), f = std::move(f)]() mutable noexcept {
+  post([weak = std::move(weak), f = std::move(f)]() mutable {
     auto self = weak.lock();
     if (!self) {
       return;
@@ -365,6 +372,8 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
     // hanging indefinitely.
     std::error_code const ec = error::internal_error;
 
+    stopped_.store(true, std::memory_order_release);
+
     auto drained = fd_registry_.drain_all();
     for (int fd : drained.fds) {
       backend_->remove_fd(fd);
@@ -378,10 +387,13 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
       abort_op(std::move(op), ec);
     }
 
-    // Best-effort: execute posted resumptions once before stopping the loop.
-    (void)process_posted();
-
-    stopped_.store(true, std::memory_order_release);
+    // Best-effort: drain posted tasks, swallowing user callback exceptions.
+    while (posted_.has_pending_tasks()) {
+      try {
+        (void)process_posted();
+      } catch (...) {
+      }
+    }
     return 0;
   }
   std::size_t count = 0;

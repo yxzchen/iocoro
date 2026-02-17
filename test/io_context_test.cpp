@@ -263,3 +263,20 @@ TEST(io_context_test, dispatch_while_stopped_is_not_inline) {
   ASSERT_EQ(order.size(), 3U);
   EXPECT_EQ(order[2], 2);
 }
+
+TEST(io_context_test, dispatch_after_run_exit_is_not_inline_until_next_run) {
+  iocoro::io_context ctx;
+  auto ex = ctx.get_executor();
+
+  std::vector<int> order;
+  ex.post([&] { order.push_back(1); });
+  ctx.run();
+
+  ex.dispatch([&] { order.push_back(2); });
+  ASSERT_EQ(order.size(), 1U);
+
+  ctx.run();
+  ASSERT_EQ(order.size(), 2U);
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 2);
+}

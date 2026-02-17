@@ -201,15 +201,16 @@ class socket_impl_base {
     auto pinned = inflight.resource();
 
     co_await this_coro::on(dispatch_ex_);
+    auto const cancel_epoch = is_read ? pinned->read_cancel_epoch() : pinned->write_cancel_epoch();
     auto r = co_await detail::operation_awaiter{
-      [this, pinned, is_read](detail::reactor_op_ptr rop) mutable {
+      [this, pinned, is_read, cancel_epoch](detail::reactor_op_ptr rop) mutable {
         event_handle h = is_read
                            ? ctx_impl_->register_fd_read(pinned->native_handle(), std::move(rop))
                            : ctx_impl_->register_fd_write(pinned->native_handle(), std::move(rop));
         if (is_read) {
-          pinned->set_read_handle(h);
+          pinned->set_read_handle(h, cancel_epoch);
         } else {
-          pinned->set_write_handle(h);
+          pinned->set_write_handle(h, cancel_epoch);
         }
         return h;
       }};

@@ -310,7 +310,6 @@ inline auto fd_registry::drain_all() noexcept -> drain_all_result {
   }
 
   operations_.clear();
-  next_token_ = 1;
   active_count_ = 0;
   max_active_fd_ = 0;
   return out;

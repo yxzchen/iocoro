@@ -29,10 +29,6 @@ class posted_queue {
       std::swap(local, queue_);
     }
 
-    if (local.size() > 0) {
-      (void)pending_count_.fetch_sub(local.size(), std::memory_order_acq_rel);
-    }
-
     if (local.empty()) {
       return 0;
     }
@@ -41,8 +37,18 @@ class posted_queue {
     while (!local.empty()) {
       auto f = std::move(local.front());
       local.pop();
+      (void)pending_count_.fetch_sub(1, std::memory_order_acq_rel);
       if (f) {
-        f();
+        try {
+          f();
+        } catch (...) {
+          std::scoped_lock lk{mtx_};
+          while (!local.empty()) {
+            queue_.push(std::move(local.front()));
+            local.pop();
+          }
+          throw;
+        }
       }
       ++n;
     }

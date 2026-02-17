@@ -80,3 +80,33 @@ TEST(fd_registry_test, old_token_does_not_cancel_new_registration_on_same_fd) {
   EXPECT_EQ(c2.load(std::memory_order_relaxed), 1);
   EXPECT_EQ(a2.load(std::memory_order_relaxed), 0);
 }
+
+TEST(fd_registry_test, stale_token_after_drain_all_does_not_cancel_new_registration) {
+  iocoro::detail::fd_registry reg;
+
+  constexpr int fd = 7;
+  std::atomic<int> complete{0};
+  std::atomic<int> abort{0};
+
+  auto first = reg.register_read(
+    fd, iocoro::detail::make_reactor_op<count_state>(count_state{&complete, &abort}));
+  ASSERT_NE(first.token, iocoro::detail::invalid_token);
+
+  auto drained = reg.drain_all();
+  ASSERT_EQ(drained.ops.size(), 1U);
+  abort_and_destroy(std::move(drained.ops.front()));
+  EXPECT_EQ(abort.load(std::memory_order_relaxed), 1);
+
+  auto second = reg.register_read(
+    fd, iocoro::detail::make_reactor_op<count_state>(count_state{&complete, &abort}));
+  ASSERT_NE(second.token, iocoro::detail::invalid_token);
+  ASSERT_NE(second.token, first.token);
+
+  auto stale = reg.cancel(fd, iocoro::detail::fd_event_kind::read, first.token);
+  EXPECT_FALSE(stale.matched);
+
+  auto ready = reg.take_ready(fd, /*can_read=*/true, /*can_write=*/false);
+  ASSERT_TRUE(static_cast<bool>(ready.read));
+  complete_and_destroy(std::move(ready.read));
+  EXPECT_EQ(complete.load(std::memory_order_relaxed), 1);
+}

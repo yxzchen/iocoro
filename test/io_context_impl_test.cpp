@@ -94,6 +94,28 @@ struct post_on_abort_state {
   }
 };
 
+struct post_throwing_and_tail_on_abort_state {
+  iocoro::detail::io_context_impl* impl{};
+  std::atomic<int>* abort_calls{};
+  std::atomic<int>* tail_calls{};
+
+  void on_complete() noexcept {}
+
+  void on_abort(std::error_code) noexcept {
+    if (abort_calls != nullptr) {
+      abort_calls->fetch_add(1, std::memory_order_relaxed);
+    }
+    if (impl != nullptr) {
+      impl->post([] { throw std::runtime_error{"fatal-post"}; });
+      impl->post([tail_calls = tail_calls]() {
+        if (tail_calls != nullptr) {
+          tail_calls->fetch_add(1, std::memory_order_relaxed);
+        }
+      });
+    }
+  }
+};
+
 class backend_throw final : public iocoro::detail::backend_interface {
  public:
   std::atomic<int>* remove_calls{};
@@ -384,6 +406,49 @@ TEST(io_context_impl_test, cancel_fd_from_foreign_thread_does_not_invoke_abort_i
   EXPECT_EQ(complete_calls.load(std::memory_order_relaxed), 0);
   ASSERT_EQ(abort_calls.load(std::memory_order_relaxed), 1);
   EXPECT_EQ(abort_tid.load(std::memory_order_relaxed), run_tid);
+
+  (void)::close(fds[0]);
+  (void)::close(fds[1]);
+}
+
+TEST(io_context_impl_test, throwing_posted_callback_does_not_drop_tail_callbacks) {
+  auto impl = std::make_shared<iocoro::detail::io_context_impl>();
+
+  std::atomic<int> ran{0};
+  impl->post([&] { throw std::runtime_error{"boom"}; });
+  impl->post([&] { ran.fetch_add(1, std::memory_order_relaxed); });
+
+  EXPECT_THROW((void)impl->run_one(), std::runtime_error);
+  EXPECT_EQ(ran.load(std::memory_order_relaxed), 0);
+
+  (void)impl->run_one();
+  EXPECT_EQ(ran.load(std::memory_order_relaxed), 1);
+}
+
+TEST(io_context_impl_test, backend_fatal_cleanup_swallows_throwing_posted_callbacks) {
+  std::atomic<int> remove_calls{0};
+  std::atomic<int> wakeup_calls{0};
+
+  auto backend = std::make_unique<backend_throw>(&remove_calls, &wakeup_calls);
+  auto impl = std::make_shared<iocoro::detail::io_context_impl>(std::move(backend));
+
+  int fds[2]{-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+  ASSERT_GE(fds[0], 0);
+  ASSERT_GE(fds[1], 0);
+
+  std::atomic<int> abort_calls{0};
+  std::atomic<int> tail_ran{0};
+  auto op = iocoro::detail::make_reactor_op<post_throwing_and_tail_on_abort_state>(
+    post_throwing_and_tail_on_abort_state{impl.get(), &abort_calls, &tail_ran});
+  auto h = impl->register_fd_read(fds[0], std::move(op));
+  ASSERT_TRUE(static_cast<bool>(h));
+
+  auto n = impl->run_one();
+  EXPECT_EQ(n, 0U);
+  EXPECT_TRUE(impl->stopped());
+  EXPECT_EQ(abort_calls.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(tail_ran.load(std::memory_order_relaxed), 1);
 
   (void)::close(fds[0]);
   (void)::close(fds[1]);

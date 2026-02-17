@@ -59,11 +59,20 @@ class fd_resource {
     return inflight_.load(std::memory_order_acquire);
   }
 
-  void set_read_handle(event_handle h) noexcept {
+  auto read_cancel_epoch() const noexcept -> std::uint64_t {
+    return read_cancel_epoch_.load(std::memory_order_acquire);
+  }
+
+  auto write_cancel_epoch() const noexcept -> std::uint64_t {
+    return write_cancel_epoch_.load(std::memory_order_acquire);
+  }
+
+  void set_read_handle(event_handle h, std::uint64_t expected_cancel_epoch) noexcept {
     bool accept = false;
     {
       std::scoped_lock lk{mtx_};
-      if (!closing_.load(std::memory_order_acquire) && native_handle() >= 0) {
+      if (!closing_.load(std::memory_order_acquire) && native_handle() >= 0 &&
+          read_cancel_epoch_.load(std::memory_order_acquire) == expected_cancel_epoch) {
         read_handle_ = h;
         accept = true;
       }
@@ -73,11 +82,12 @@ class fd_resource {
     }
   }
 
-  void set_write_handle(event_handle h) noexcept {
+  void set_write_handle(event_handle h, std::uint64_t expected_cancel_epoch) noexcept {
     bool accept = false;
     {
       std::scoped_lock lk{mtx_};
-      if (!closing_.load(std::memory_order_acquire) && native_handle() >= 0) {
+      if (!closing_.load(std::memory_order_acquire) && native_handle() >= 0 &&
+          write_cancel_epoch_.load(std::memory_order_acquire) == expected_cancel_epoch) {
         write_handle_ = h;
         accept = true;
       }
@@ -88,6 +98,7 @@ class fd_resource {
   }
 
   void cancel_read_handle() noexcept {
+    read_cancel_epoch_.fetch_add(1, std::memory_order_acq_rel);
     event_handle h{};
     {
       std::scoped_lock lk{mtx_};
@@ -97,6 +108,7 @@ class fd_resource {
   }
 
   void cancel_write_handle() noexcept {
+    write_cancel_epoch_.fetch_add(1, std::memory_order_acq_rel);
     event_handle h{};
     {
       std::scoped_lock lk{mtx_};
@@ -122,6 +134,8 @@ class fd_resource {
   std::atomic<int> fd_{-1};
   std::atomic<bool> closing_{false};
   std::atomic<std::uint32_t> inflight_{0};
+  std::atomic<std::uint64_t> read_cancel_epoch_{0};
+  std::atomic<std::uint64_t> write_cancel_epoch_{0};
   mutable std::mutex mtx_{};
   event_handle read_handle_{};
   event_handle write_handle_{};

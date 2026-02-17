@@ -72,7 +72,7 @@ class awaitable {
 
   bool await_ready() const noexcept { return false; }
   template <class Promise>
-  auto await_suspend(std::coroutine_handle<Promise> h) noexcept -> std::coroutine_handle<> {
+  auto await_suspend(std::coroutine_handle<Promise> h) -> std::coroutine_handle<> {
     // NOTE: We always suspend and resume through `coro_`. The continuation is stored in the
     // awaited coroutine's promise.
     coro_.promise().set_continuation(h);

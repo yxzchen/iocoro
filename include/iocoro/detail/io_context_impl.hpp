@@ -94,7 +94,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   // thread; this is the sole serialization mechanism for reactor state.
   //
   // Semantics:
-  // - If already on the reactor thread, executes inline (even if stopped).
+  // - If currently running on the reactor thread, executes inline.
   // - Otherwise, enqueues via `post()` and executes on the next event-loop iteration.
   // SAFETY: uses `weak_from_this()` to avoid self-owning cycles while still pinning lifetime
   // during callback execution.

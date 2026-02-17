@@ -235,11 +235,19 @@ inline auto timer_registry::drain_all() noexcept -> std::vector<reactor_op_ptr> 
       out.push_back(std::move(node.op));
     }
     node.op = {};
+    node.state = timer_state::fired;
+    ++node.generation;
+    if (node.generation == invalid_generation) {
+      ++node.generation;
+    }
   }
 
-  nodes_.clear();
   heap_.clear();
   free_.clear();
+  free_.reserve(nodes_.size());
+  for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(nodes_.size()); ++i) {
+    free_.push_back(i);
+  }
   active_count_ = 0;
   return out;
 }

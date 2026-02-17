@@ -90,3 +90,37 @@ TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slo
   EXPECT_EQ(complete.load(std::memory_order_relaxed), 1);
   EXPECT_EQ(abort.load(std::memory_order_relaxed), 1);
 }
+
+TEST(timer_registry_test, stale_generation_after_drain_all_does_not_cancel_new_timer) {
+  iocoro::detail::timer_registry reg;
+
+  std::atomic<int> complete{0};
+  std::atomic<int> abort{0};
+  std::atomic<bool> done{false};
+
+  auto tok1 = reg.add_timer(std::chrono::steady_clock::now() + std::chrono::hours{1},
+                            iocoro::detail::make_reactor_op<single_call_state>(
+                              single_call_state{&complete, &abort, nullptr}));
+
+  auto drained = reg.drain_all();
+  ASSERT_EQ(drained.size(), 1U);
+  abort_and_destroy(std::move(drained.front()));
+  EXPECT_EQ(abort.load(std::memory_order_relaxed), 1);
+
+  auto tok2 = reg.add_timer(std::chrono::steady_clock::now() + std::chrono::milliseconds{1},
+                            iocoro::detail::make_reactor_op<single_call_state>(
+                              single_call_state{&complete, &abort, &done}));
+  ASSERT_EQ(tok2.index, tok1.index);
+  ASSERT_NE(tok2.generation, tok1.generation);
+
+  auto stale = reg.cancel(tok1);
+  EXPECT_FALSE(stale.cancelled);
+
+  while (!done.load(std::memory_order_acquire)) {
+    (void)reg.process_expired();
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+
+  EXPECT_EQ(complete.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(abort.load(std::memory_order_relaxed), 1);
+}

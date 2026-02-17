@@ -52,7 +52,7 @@ struct operation_awaiter {
 
   template <class Promise>
     requires requires(Promise& p) { p.get_executor(); }
-  bool await_suspend(std::coroutine_handle<Promise> h) noexcept {
+  bool await_suspend(std::coroutine_handle<Promise> h) {
     st->h = h;
     st->ex = h.promise().get_executor();
     IOCORO_ENSURE(st->ex, "operation_awaiter: empty executor");
