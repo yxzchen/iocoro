@@ -15,8 +15,11 @@ inline auto socket_impl_base::open(int domain, int type, int protocol) noexcept 
     return fail(std::error_code(errno, std::generic_category()));
   }
 
-  (void)set_cloexec(fd);
-  (void)set_nonblocking(fd);
+  if (!set_cloexec(fd) || !set_nonblocking(fd)) {
+    auto ec = map_socket_errno(errno);
+    (void)::close(fd);
+    return fail(ec);
+  }
 
   if (!ctx_impl_->add_fd(fd)) {
     (void)::close(fd);
@@ -41,8 +44,11 @@ inline auto socket_impl_base::assign(int fd) noexcept -> result<void> {
 
   mark_closing(old);
 
-  (void)set_cloexec(fd);
-  (void)set_nonblocking(fd);
+  if (!set_cloexec(fd) || !set_nonblocking(fd)) {
+    auto ec = map_socket_errno(errno);
+    (void)::close(fd);
+    return fail(ec);
+  }
 
   if (!ctx_impl_->add_fd(fd)) {
     (void)::close(fd);

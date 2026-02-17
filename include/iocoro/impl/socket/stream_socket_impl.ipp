@@ -114,7 +114,11 @@ inline auto stream_socket_impl::async_connect(sockaddr const* addr,
     if (errno == EINTR) {
       continue;
     }
-    if (errno == EINPROGRESS) {
+    if (errno == EISCONN) {
+      state_.store(conn_state::connected, std::memory_order_release);
+      co_return ok();
+    }
+    if (errno == EINPROGRESS || errno == EALREADY || errno == EAGAIN) {
       break;
     }
     ec = map_socket_errno(errno);
@@ -254,7 +258,7 @@ inline auto stream_socket_impl::async_write_some(std::span<std::byte const> buff
     }
 
     // On Linux, ::write() can raise SIGPIPE for closed peers.
-    auto n = ::send(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
+    auto n = ::send(fd, buffer.data(), buffer.size(), detail::socket::send_no_signal_flags());
     if (n >= 0) {
       co_return n;
     }

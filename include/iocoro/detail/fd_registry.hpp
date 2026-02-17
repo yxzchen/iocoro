@@ -43,6 +43,7 @@ class fd_registry {
   auto register_write(int fd, reactor_op_ptr op) -> register_result;
   auto cancel(int fd, fd_event_kind kind, std::uint64_t token) noexcept -> cancel_result;
   auto deregister(int fd) -> deregister_result;
+  void track(int fd) noexcept;
 
   auto take_ready(int fd, bool can_read, bool can_write) -> ready_result;
 
@@ -66,6 +67,7 @@ class fd_registry {
     std::uint64_t write_token = invalid_token;
     bool read_ready = false;
     bool write_ready = false;
+    bool tracked = false;
   };
 
   struct slot_ref {
@@ -82,7 +84,7 @@ class fd_registry {
   }
 
   static auto has_slot_state(fd_ops const& ops) noexcept -> bool {
-    return ops.read_op || ops.write_op || ops.read_ready || ops.write_ready;
+    return ops.tracked || ops.read_op || ops.write_op || ops.read_ready || ops.write_ready;
   }
 
   auto register_impl(int fd, reactor_op_ptr op, fd_event_kind kind) -> register_result;
@@ -123,6 +125,7 @@ inline auto fd_registry::register_impl(int fd, reactor_op_ptr op,
   }
 
   auto& ops = operations_[static_cast<std::size_t>(fd)];
+  ops.tracked = true;
   auto slot = slot_for(ops, kind);
 
   // Edge-triggered backends can deliver readiness before the waiter is registered.
@@ -195,6 +198,7 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
     ops.write_token = invalid_token;
     ops.read_ready = false;
     ops.write_ready = false;
+    ops.tracked = false;
     if (read) {
       --active_count_;
     }
@@ -209,6 +213,21 @@ inline auto fd_registry::deregister(int fd) -> deregister_result {
   return deregister_result{std::move(read), std::move(write), had_any};
 }
 
+inline void fd_registry::track(int fd) noexcept {
+  if (fd < 0) {
+    return;
+  }
+  auto idx = static_cast<std::size_t>(fd);
+  if (idx >= operations_.size()) {
+    operations_.resize(idx + 1);
+  }
+  auto& ops = operations_[idx];
+  ops.tracked = true;
+  if (idx > max_active_fd_) {
+    max_active_fd_ = idx;
+  }
+}
+
 inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> ready_result {
   reactor_op_ptr read{};
   reactor_op_ptr write{};
@@ -217,13 +236,13 @@ inline auto fd_registry::take_ready(int fd, bool can_read, bool can_write) -> re
     return ready_result{};
   }
   if (static_cast<std::size_t>(fd) >= operations_.size()) {
-    if (!can_read && !can_write) {
-      return ready_result{};
-    }
-    operations_.resize(static_cast<std::size_t>(fd) + 1);
+    return ready_result{};
   }
 
   auto& ops = operations_[static_cast<std::size_t>(fd)];
+  if (!ops.tracked) {
+    return ready_result{};
+  }
   if (can_read) {
     if (ops.read_op) {
       read = std::move(ops.read_op);

@@ -209,13 +209,15 @@ class backend_uring final : public backend_interface {
       int const res = cqe->res;
       std::uint32_t const ev = (res >= 0) ? static_cast<std::uint32_t>(res) : 0U;
       bool const is_cancelled = (res == -ECANCELED);
+      bool generation_matched = false;
 
       {
         std::scoped_lock lk{poll_mtx_};
         auto it = polls_.find(fd);
         if (it != polls_.end()) {
           auto& st = it->second;
-          if (st.armed && st.active_gen == gen) {
+          generation_matched = (st.armed && st.active_gen == gen);
+          if (generation_matched) {
             st.armed = false;
             st.cancel_requested = false;
             st.active_user_data = 0;
@@ -234,6 +236,10 @@ class backend_uring final : public backend_interface {
             polls_.erase(it);
           }
         }
+      }
+
+      if (!generation_matched) {
+        return;
       }
 
       if (is_cancelled) {

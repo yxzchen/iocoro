@@ -411,6 +411,29 @@ TEST(io_context_impl_test, cancel_fd_from_foreign_thread_does_not_invoke_abort_i
   (void)::close(fds[1]);
 }
 
+TEST(io_context_impl_test, remove_fd_aborts_registered_waiters_and_clears_registry_state) {
+  auto impl = std::make_shared<iocoro::detail::io_context_impl>();
+
+  int fds[2]{-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+  ASSERT_GE(fds[0], 0);
+  ASSERT_GE(fds[1], 0);
+
+  std::atomic<int> abort_calls{0};
+  std::atomic<int> complete_calls{0};
+  auto op = iocoro::detail::make_reactor_op<record_abort_thread_state>(
+    record_abort_thread_state{nullptr, &abort_calls, &complete_calls});
+  auto h = impl->register_fd_read(fds[0], std::move(op));
+  ASSERT_TRUE(static_cast<bool>(h));
+
+  impl->remove_fd(fds[0]);
+  EXPECT_EQ(abort_calls.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(complete_calls.load(std::memory_order_relaxed), 0);
+
+  (void)::close(fds[0]);
+  (void)::close(fds[1]);
+}
+
 TEST(io_context_impl_test, throwing_posted_callback_does_not_drop_tail_callbacks) {
   auto impl = std::make_shared<iocoro::detail::io_context_impl>();
 

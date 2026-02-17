@@ -19,6 +19,10 @@
 // Both backends define internal helpers in anonymous namespaces; including both in the same TU
 // would cause redefinition errors.
 
+#if !defined(__linux__)
+#error "iocoro currently supports Linux backends only"
+#endif
+
 #if defined(IOCORO_BACKEND_EPOLL)
 #include <iocoro/impl/backends/epoll.ipp>
 #elif defined(IOCORO_BACKEND_URING)
@@ -277,6 +281,7 @@ inline auto io_context_impl::add_fd(int fd) noexcept -> bool {
   } catch (...) {
     return false;
   }
+  fd_registry_.track(fd);
   wakeup();
   return true;
 }
@@ -285,7 +290,20 @@ inline void io_context_impl::remove_fd(int fd) noexcept {
   if (fd < 0) {
     return;
   }
-  backend_->remove_fd(fd);
+
+  auto do_remove = [fd](io_context_impl& self) noexcept {
+    auto removed = self.fd_registry_.deregister(fd);
+    abort_op(std::move(removed.read), error::operation_aborted);
+    abort_op(std::move(removed.write), error::operation_aborted);
+    self.backend_->remove_fd(fd);
+  };
+
+  if (running_.load(std::memory_order_acquire) && !running_in_this_thread()) {
+    dispatch_reactor(std::move(do_remove));
+    return;
+  }
+
+  do_remove(*this);
 }
 
 inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,

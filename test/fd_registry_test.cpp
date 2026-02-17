@@ -110,3 +110,19 @@ TEST(fd_registry_test, stale_token_after_drain_all_does_not_cancel_new_registrat
   complete_and_destroy(std::move(ready.read));
   EXPECT_EQ(complete.load(std::memory_order_relaxed), 1);
 }
+
+TEST(fd_registry_test, stale_readiness_is_ignored_for_untracked_fd_after_deregister) {
+  iocoro::detail::fd_registry reg;
+  constexpr int fd = 33;
+
+  reg.track(fd);
+  (void)reg.take_ready(fd, /*can_read=*/true, /*can_write=*/false);
+  (void)reg.deregister(fd);
+
+  std::atomic<int> complete{0};
+  std::atomic<int> abort{0};
+  auto r = reg.register_read(
+    fd, iocoro::detail::make_reactor_op<count_state>(count_state{&complete, &abort}));
+  ASSERT_NE(r.token, iocoro::detail::invalid_token);
+  EXPECT_FALSE(static_cast<bool>(r.ready_now));
+}

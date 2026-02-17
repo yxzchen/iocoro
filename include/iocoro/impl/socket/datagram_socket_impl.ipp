@@ -184,9 +184,10 @@ inline auto datagram_socket_impl::async_send_to(std::span<std::byte const> buffe
 
     ssize_t n;
     if (is_connected) {
-      n = ::send(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
+      n = ::send(fd, buffer.data(), buffer.size(), detail::socket::send_no_signal_flags());
     } else {
-      n = ::sendto(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL, dest_addr, dest_len);
+      n = ::sendto(fd, buffer.data(), buffer.size(), detail::socket::send_no_signal_flags(),
+                   dest_addr, dest_len);
     }
 
     if (n >= 0) {

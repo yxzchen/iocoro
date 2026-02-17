@@ -4,7 +4,9 @@
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
+#include <mutex>
 #include <system_error>
+#include <unordered_map>
 
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -13,6 +15,19 @@
 namespace iocoro::detail {
 
 namespace {
+
+auto pack_fd_gen(int fd, std::uint32_t gen) noexcept -> std::uint64_t {
+  return (static_cast<std::uint64_t>(gen) << 32) |
+         static_cast<std::uint64_t>(static_cast<std::uint32_t>(fd));
+}
+
+auto unpack_fd(std::uint64_t data) noexcept -> int {
+  return static_cast<int>(data & 0xFFFFFFFFULL);
+}
+
+auto unpack_gen(std::uint64_t data) noexcept -> std::uint32_t {
+  return static_cast<std::uint32_t>(data >> 32);
+}
 
 void close_if_valid(int& fd) noexcept {
   if (fd >= 0) {
@@ -53,7 +68,7 @@ class backend_epoll final : public backend_interface {
 
     epoll_event ev{};
     ev.events = EPOLLIN | EPOLLET;
-    ev.data.fd = eventfd_;
+    ev.data.u64 = pack_fd_gen(eventfd_, 0);
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, eventfd_, &ev) < 0) {
       close_if_valid(eventfd_);
       close_if_valid(epoll_fd_);
@@ -67,12 +82,24 @@ class backend_epoll final : public backend_interface {
   }
 
   void add_fd(int fd) override {
+    std::uint32_t gen = 1;
+    {
+      std::scoped_lock lk{fd_states_mtx_};
+      auto& st = fd_states_[fd];
+      st.generation += 1;
+      if (st.generation == 0) {
+        st.generation += 1;
+      }
+      st.active = true;
+      gen = st.generation;
+    }
+
     std::uint32_t events =
       static_cast<std::uint32_t>(EPOLLET | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP);
 
     epoll_event ev{};
     ev.events = events;
-    ev.data.fd = fd;
+    ev.data.u64 = pack_fd_gen(fd, gen);
 
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0) {
       return;
@@ -90,6 +117,13 @@ class backend_epoll final : public backend_interface {
   void remove_fd(int fd) noexcept override {
     if (epoll_fd_ < 0 || fd < 0) {
       return;
+    }
+    {
+      std::scoped_lock lk{fd_states_mtx_};
+      auto it = fd_states_.find(fd);
+      if (it != fd_states_.end()) {
+        it->second.active = false;
+      }
     }
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   }
@@ -116,7 +150,9 @@ class backend_epoll final : public backend_interface {
     out.reserve(static_cast<std::size_t>(nfds));
 
     for (int i = 0; i < nfds; ++i) {
-      int const fd = events[i].data.fd;
+      std::uint64_t const data = events[i].data.u64;
+      int const fd = unpack_fd(data);
+      std::uint32_t const gen = unpack_gen(data);
       std::uint32_t const ev = events[i].events;
 
       if (fd == eventfd_) {
@@ -126,6 +162,14 @@ class backend_epoll final : public backend_interface {
         // not leave wakeup_pending_ stuck at true.
         wakeup_pending_.store(false, std::memory_order_release);
         continue;
+      }
+
+      {
+        std::scoped_lock lk{fd_states_mtx_};
+        auto it = fd_states_.find(fd);
+        if (it == fd_states_.end() || !it->second.active || it->second.generation != gen) {
+          continue;
+        }
       }
 
       bool const has_error = (ev & static_cast<std::uint32_t>(EPOLLERR)) != 0;
@@ -172,8 +216,15 @@ class backend_epoll final : public backend_interface {
   }
 
  private:
+  struct epoll_fd_state {
+    std::uint32_t generation = 0;
+    bool active = false;
+  };
+
   int epoll_fd_ = -1;
   int eventfd_ = -1;
+  std::mutex fd_states_mtx_{};
+  std::unordered_map<int, epoll_fd_state> fd_states_{};
   std::atomic<bool> wakeup_pending_{false};
 };
 

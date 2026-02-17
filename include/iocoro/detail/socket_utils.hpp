@@ -51,6 +51,30 @@ inline auto map_socket_errno(int err) noexcept -> std::error_code {
   }
 }
 
+inline constexpr auto send_no_signal_flags() noexcept -> int {
+#if defined(MSG_NOSIGNAL)
+  return MSG_NOSIGNAL;
+#else
+  return 0;
+#endif
+}
+
+inline auto is_accept_transient_error(int err) noexcept -> bool {
+  switch (err) {
+    case ENETDOWN:
+    case EPROTO:
+    case ENOPROTOOPT:
+    case EHOSTDOWN:
+    case ENONET:
+    case EHOSTUNREACH:
+    case EOPNOTSUPP:
+    case ENETUNREACH:
+      return true;
+    default:
+      return false;
+  }
+}
+
 inline auto retry_fcntl(int fd, int cmd, long arg) noexcept -> int {
   for (;;) {
     int const r = ::fcntl(fd, cmd, arg);

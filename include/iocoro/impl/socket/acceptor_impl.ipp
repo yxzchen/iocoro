@@ -99,6 +99,16 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
 
 #if defined(__linux__)
     int fd = ::accept4(res->native_handle(), nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (fd < 0 && errno == ENOSYS) {
+      fd = ::accept(res->native_handle(), nullptr, nullptr);
+      if (fd >= 0) {
+        if (!set_cloexec(fd) || !set_nonblocking(fd)) {
+          auto ec = map_socket_errno(errno);
+          (void)::close(fd);
+          co_return unexpected(ec);
+        }
+      }
+    }
 #else
     int fd = ::accept(res->native_handle(), nullptr, nullptr);
     if (fd >= 0) {
@@ -119,6 +129,10 @@ inline auto acceptor_impl::async_accept() -> awaitable<result<int>> {
     }
 
     if (errno == EINTR) {
+      continue;
+    }
+
+    if (is_accept_transient_error(errno)) {
       continue;
     }
 
