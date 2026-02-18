@@ -17,11 +17,10 @@ This directory uses one unified entrypoint:
 Default behavior:
 
 - Runs all benchmark suites.
-- Runs baseline gate and report schema validation.
+- Runs report schema validation.
 
 ## Common options
 
-- `--no-baseline`: disable threshold gate.
 - `--no-schema-validate`: skip JSON schema validation.
 - `--timeout-sec N`: set per-process timeout for all suites.
 - `--*-scenarios ...`: override suite scenario matrix.

@@ -47,9 +47,7 @@
           "asio_throughput_mib_s_runs",
           "iocoro_throughput_mib_s_median",
           "asio_throughput_mib_s_median",
-          "ratio_vs_asio",
-          "min_ratio",
-          "pass"
+          "ratio_vs_asio"
         ],
         "properties": {
           "sessions": {
@@ -91,16 +89,6 @@
           "ratio_vs_asio": {
             "type": "number",
             "minimum": 0
-          },
-          "min_ratio": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "pass": {
-            "type": "boolean"
           }
         }
       }

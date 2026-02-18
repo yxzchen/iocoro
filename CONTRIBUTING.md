@@ -93,7 +93,7 @@ Unified benchmark runner:
   --timeout-sec 180
 ```
 
-For benchmark suites, threshold files, and report schemas, see `benchmark/README.md`.
+For benchmark suites and report schemas, see `benchmark/README.md`.
 
 ## Backend Notes
 

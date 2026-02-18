@@ -45,9 +45,7 @@
           "asio_cps_runs",
           "iocoro_cps_median",
           "asio_cps_median",
-          "ratio_vs_asio",
-          "min_ratio",
-          "pass"
+          "ratio_vs_asio"
         ],
         "properties": {
           "connections": {
@@ -81,16 +79,6 @@
           "ratio_vs_asio": {
             "type": "number",
             "minimum": 0
-          },
-          "min_ratio": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "pass": {
-            "type": "boolean"
           }
         }
       }

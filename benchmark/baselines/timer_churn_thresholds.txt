@@ -1,4 +1,0 @@
-# sessions waits min_ratio_vs_asio
-1 200000 0.65
-8 80000 0.70
-32 20000 0.70

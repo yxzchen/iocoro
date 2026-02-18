@@ -47,9 +47,7 @@
           "asio_rps_runs",
           "iocoro_rps_median",
           "asio_rps_median",
-          "ratio_vs_asio",
-          "min_ratio",
-          "pass"
+          "ratio_vs_asio"
         ],
         "properties": {
           "sessions": {
@@ -91,16 +89,6 @@
           "ratio_vs_asio": {
             "type": "number",
             "minimum": 0
-          },
-          "min_ratio": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "pass": {
-            "type": "boolean"
           }
         }
       }

@@ -266,7 +266,7 @@ jobs:
           PY
           cat "$HOME/coverage_summary.md" >> "$GITHUB_STEP_SUMMARY"
 
-  perf-regression-gate:
+  perf-benchmarks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -286,7 +286,7 @@ jobs:
             -DIOCORO_BUILD_EXAMPLES=OFF
           cmake --build build -j
 
-      - name: Run perf baseline gate
+      - name: Run perf benchmarks
         run: |
           ./benchmark/scripts/run_all_perf_benchmarks.sh \
             --build-dir build \

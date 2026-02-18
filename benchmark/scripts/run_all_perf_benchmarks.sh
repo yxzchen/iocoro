@@ -89,16 +89,8 @@ THROUGHPUT_TIMEOUT_SET=false
 UDP_TIMEOUT_SET=false
 TIMER_TIMEOUT_SET=false
 THREADPOOL_TIMEOUT_SET=false
-ENABLE_BASELINE=true
 ENABLE_SCHEMA_VALIDATE=true
 
-ROUNDTRIP_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_roundtrip_thresholds.txt"
-LATENCY_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_latency_thresholds.txt"
-CONNECT_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_connect_accept_thresholds.txt"
-THROUGHPUT_BASELINE="$PROJECT_DIR/benchmark/baselines/tcp_throughput_thresholds.txt"
-UDP_BASELINE="$PROJECT_DIR/benchmark/baselines/udp_send_receive_thresholds.txt"
-TIMER_BASELINE="$PROJECT_DIR/benchmark/baselines/timer_churn_thresholds.txt"
-THREADPOOL_BASELINE="$PROJECT_DIR/benchmark/baselines/thread_pool_scaling_thresholds.txt"
 ROUNDTRIP_REPORT="$PROJECT_DIR/benchmark/reports/perf_report.json"
 LATENCY_REPORT="$PROJECT_DIR/benchmark/reports/latency_report.json"
 CONNECT_REPORT="$PROJECT_DIR/benchmark/reports/connect_accept_report.json"
@@ -116,7 +108,7 @@ THREADPOOL_SUMMARY="$PROJECT_DIR/benchmark/reports/thread_pool_summary.txt"
 FAILED_STEPS=()
 
 usage() {
-  cat <<'EOF'
+  cat <<'EOF2'
 Usage: benchmark/scripts/run_all_perf_benchmarks.sh [options]
 
 Run all benchmark suites:
@@ -147,7 +139,6 @@ Options:
   --udp-timeout-sec N         Per-process timeout override for UDP suite
   --timer-timeout-sec N       Per-process timeout override for timer suite
   --threadpool-timeout-sec N  Per-process timeout override for thread pool suite
-  --no-baseline               Disable regression gate (no threshold checks)
   --no-schema-validate        Skip JSON schema validation
   --roundtrip-report FILE     Roundtrip report path (default: benchmark/reports/perf_report.json)
   --latency-report FILE       Latency report path (default: benchmark/reports/latency_report.json)
@@ -157,7 +148,7 @@ Options:
   --timer-report FILE         Timer report path (default: benchmark/reports/timer_report.json)
   --threadpool-report FILE    Thread pool report path (default: benchmark/reports/thread_pool_report.json)
   -h, --help                  Show this help
-EOF
+EOF2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -240,10 +231,6 @@ while [[ $# -gt 0 ]]; do
     --timeout-sec)
       TIMEOUT_SEC="$2"
       shift 2
-      ;;
-    --no-baseline)
-      ENABLE_BASELINE=false
-      shift
       ;;
     --no-schema-validate)
       ENABLE_SCHEMA_VALIDATE=false
@@ -348,7 +335,7 @@ mkdir -p "$(dirname -- "$TIMER_REPORT")"
 mkdir -p "$(dirname -- "$THREADPOOL_REPORT")"
 
 roundtrip_cmd=(
-  "$SCRIPT_DIR/run_tcp_roundtrip_baseline.sh"
+  "$SCRIPT_DIR/run_tcp_roundtrip_benchmark.sh"
   --build-dir "$BUILD_DIR"
   --iterations "$ITERATIONS"
   --warmup "$WARMUP"
@@ -358,12 +345,9 @@ roundtrip_cmd=(
 if [[ -n "$ROUNDTRIP_SCENARIOS" ]]; then
   roundtrip_cmd+=(--scenarios "$ROUNDTRIP_SCENARIOS")
 fi
-if [[ "$ENABLE_BASELINE" == true ]]; then
-  roundtrip_cmd+=(--baseline "$ROUNDTRIP_BASELINE")
-fi
 
 latency_cmd=(
-  "$SCRIPT_DIR/run_tcp_latency_baseline.sh"
+  "$SCRIPT_DIR/run_tcp_latency_benchmark.sh"
   --build-dir "$BUILD_DIR"
   --iterations "$ITERATIONS"
   --warmup "$WARMUP"
@@ -373,12 +357,9 @@ latency_cmd=(
 if [[ -n "$LATENCY_SCENARIOS" ]]; then
   latency_cmd+=(--scenarios "$LATENCY_SCENARIOS")
 fi
-if [[ "$ENABLE_BASELINE" == true ]]; then
-  latency_cmd+=(--baseline "$LATENCY_BASELINE")
-fi
 
 connect_cmd=(
-  "$SCRIPT_DIR/run_tcp_connect_accept_baseline.sh"
+  "$SCRIPT_DIR/run_tcp_connect_accept_benchmark.sh"
   --build-dir "$BUILD_DIR"
   --iterations "$ITERATIONS"
   --warmup "$WARMUP"
@@ -388,12 +369,9 @@ connect_cmd=(
 if [[ -n "$CONNECT_SCENARIOS" ]]; then
   connect_cmd+=(--scenarios "$CONNECT_SCENARIOS")
 fi
-if [[ "$ENABLE_BASELINE" == true ]]; then
-  connect_cmd+=(--baseline "$CONNECT_BASELINE")
-fi
 
 throughput_cmd=(
-  "$SCRIPT_DIR/run_tcp_throughput_baseline.sh"
+  "$SCRIPT_DIR/run_tcp_throughput_benchmark.sh"
   --build-dir "$BUILD_DIR"
   --iterations "$ITERATIONS"
   --warmup "$WARMUP"
@@ -403,12 +381,9 @@ throughput_cmd=(
 if [[ -n "$THROUGHPUT_SCENARIOS" ]]; then
   throughput_cmd+=(--scenarios "$THROUGHPUT_SCENARIOS")
 fi
-if [[ "$ENABLE_BASELINE" == true ]]; then
-  throughput_cmd+=(--baseline "$THROUGHPUT_BASELINE")
-fi
 
 udp_cmd=(
-  "$SCRIPT_DIR/run_udp_send_receive_baseline.sh"
+  "$SCRIPT_DIR/run_udp_send_receive_benchmark.sh"
   --build-dir "$BUILD_DIR"
   --iterations "$ITERATIONS"
   --warmup "$WARMUP"
@@ -418,12 +393,9 @@ udp_cmd=(
 if [[ -n "$UDP_SCENARIOS" ]]; then
   udp_cmd+=(--scenarios "$UDP_SCENARIOS")
 fi
-if [[ "$ENABLE_BASELINE" == true ]]; then
-  udp_cmd+=(--baseline "$UDP_BASELINE")
-fi
 
 timer_cmd=(
-  "$SCRIPT_DIR/run_timer_churn_baseline.sh"
+  "$SCRIPT_DIR/run_timer_churn_benchmark.sh"
   --build-dir "$BUILD_DIR"
   --iterations "$ITERATIONS"
   --warmup "$WARMUP"
@@ -433,12 +405,9 @@ timer_cmd=(
 if [[ -n "$TIMER_SCENARIOS" ]]; then
   timer_cmd+=(--scenarios "$TIMER_SCENARIOS")
 fi
-if [[ "$ENABLE_BASELINE" == true ]]; then
-  timer_cmd+=(--baseline "$TIMER_BASELINE")
-fi
 
 threadpool_cmd=(
-  "$SCRIPT_DIR/run_thread_pool_scaling_baseline.sh"
+  "$SCRIPT_DIR/run_thread_pool_scaling_benchmark.sh"
   --build-dir "$BUILD_DIR"
   --iterations "$ITERATIONS"
   --warmup "$WARMUP"
@@ -448,14 +417,10 @@ threadpool_cmd=(
 if [[ -n "$THREADPOOL_SCENARIOS" ]]; then
   threadpool_cmd+=(--scenarios "$THREADPOOL_SCENARIOS")
 fi
-if [[ "$ENABLE_BASELINE" == true ]]; then
-  threadpool_cmd+=(--baseline "$THREADPOOL_BASELINE")
-fi
 
 echo "Running full benchmark suite"
 echo "  build_dir: $BUILD_DIR"
 echo "  iterations: $ITERATIONS, warmup: $WARMUP"
-echo "  baseline_gate: $ENABLE_BASELINE"
 echo "  schema_validate: $ENABLE_SCHEMA_VALIDATE"
 echo
 

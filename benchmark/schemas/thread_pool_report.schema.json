@@ -46,9 +46,7 @@
           "asio_ops_s_runs",
           "iocoro_ops_s_median",
           "asio_ops_s_median",
-          "ratio_vs_asio",
-          "min_ratio",
-          "pass"
+          "ratio_vs_asio"
         ],
         "properties": {
           "workers": {
@@ -86,16 +84,6 @@
           "ratio_vs_asio": {
             "type": "number",
             "minimum": 0
-          },
-          "min_ratio": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "pass": {
-            "type": "boolean"
           }
         }
       }

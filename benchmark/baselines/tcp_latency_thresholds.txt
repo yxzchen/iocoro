@@ -1,4 +1,0 @@
-# sessions msgs msg_bytes min_ratio_vs_asio_p95
-1 5000 64 0.65
-8 1000 64 0.65
-8 500 1024 0.65

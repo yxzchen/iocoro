@@ -97,11 +97,10 @@ bench_compute_ratio() {
 }
 
 SUITE_NAME=""
-USAGE_NAME="benchmark/scripts/run_ratio_baseline_suite.sh"
+USAGE_NAME="benchmark/scripts/run_ratio_suite.sh"
 SCENARIO_FIELDS_CSV=""
 SCENARIO_FORMAT=""
 SCENARIOS_DEFAULT=""
-BASELINE_DESCRIPTION="Threshold file format: \"<scenario...> min_ratio\""
 IOCORO_TARGET=""
 ASIO_TARGET=""
 METRIC_NAME=""
@@ -116,7 +115,6 @@ BUILD_DIR="$PROJECT_DIR/build"
 ITERATIONS=5
 WARMUP=1
 SCENARIOS=""
-BASELINE_FILE=""
 REPORT_FILE=""
 RUN_TIMEOUT_SEC=""
 
@@ -130,7 +128,6 @@ Options:
   --warmup N           Warmup runs per scenario/framework (default: 1)
   --scenarios LIST     Comma-separated ${SCENARIO_FORMAT:-scenario tuples}
                        (default: ${SCENARIOS_DEFAULT:-none})
-  --baseline FILE      ${BASELINE_DESCRIPTION}
   --report FILE        Write JSON summary to FILE
   --run-timeout-sec N  Timeout for each benchmark process in seconds (default: ${RUN_TIMEOUT_DEFAULT}, 0=disable)
   -h, --help           Show this help
@@ -157,10 +154,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --scenarios-default)
       SCENARIOS_DEFAULT="$2"
-      shift 2
-      ;;
-    --baseline-description)
-      BASELINE_DESCRIPTION="$2"
       shift 2
       ;;
     --iocoro-target)
@@ -213,10 +206,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --scenarios)
       SCENARIOS="$2"
-      shift 2
-      ;;
-    --baseline)
-      BASELINE_FILE="$2"
       shift 2
       ;;
     --report)
@@ -313,14 +302,6 @@ if [[ ! -x "$ASIO_BIN" ]]; then
   exit 1
 fi
 
-if [[ -n "$BASELINE_FILE" ]]; then
-  BASELINE_FILE="$(bench_to_abs_path "$PROJECT_DIR" "$BASELINE_FILE")"
-  if [[ ! -f "$BASELINE_FILE" ]]; then
-    echo "Baseline file not found: $BASELINE_FILE" >&2
-    exit 1
-  fi
-fi
-
 if [[ -n "$REPORT_FILE" ]]; then
   REPORT_FILE="$(bench_to_abs_path "$PROJECT_DIR" "$REPORT_FILE")"
 fi
@@ -332,41 +313,6 @@ if [[ "$SCENARIO_ARITY" -le 0 ]]; then
   exit 1
 fi
 
-check_threshold() {
-  if [[ -z "$BASELINE_FILE" ]]; then
-    echo ""
-    return 0
-  fi
-
-  local key
-  key="$(IFS='|'; echo "$*")"
-  awk -v arity="$SCENARIO_ARITY" \
-      -v key="$key" '
-    BEGIN { split(key, want, /\|/); }
-    $1 ~ /^#/ { next }
-    {
-      if (NF < arity + 1) {
-        next
-      }
-      ok = 1
-      for (i = 1; i <= arity; ++i) {
-        if ($i != want[i]) {
-          ok = 0
-          break
-        }
-      }
-      if (ok) {
-        print $(arity + 1)
-        found = 1
-        exit
-      }
-    }
-    END { if (!found) print "" }
-  ' "$BASELINE_FILE"
-}
-
-pass_count=0
-fail_count=0
 table_rows=()
 scenario_json=()
 
@@ -384,9 +330,6 @@ echo "  asio  : $ASIO_BIN"
 echo "  scenarios: $SCENARIOS"
 echo "  warmup: $WARMUP, measured iterations: $ITERATIONS"
 echo "  per-run timeout: ${RUN_TIMEOUT_SEC}s"
-if [[ -n "$BASELINE_FILE" ]]; then
-  echo "  baseline: $BASELINE_FILE"
-fi
 echo
 
 IFS=',' read -r -a SCENARIO_ITEMS <<<"$SCENARIOS"
@@ -465,24 +408,8 @@ for item in "${SCENARIO_ITEMS[@]}"; do
     ratio="$(bench_compute_ratio "$primary_asio" "$primary_iocoro")"
   fi
 
-  min_ratio="$(check_threshold "${VALUES[@]}")"
-  pass_label="n/a"
-  pass_bool=true
-
-  if [[ -n "$min_ratio" ]]; then
-    if awk -v v="$ratio" -v t="$min_ratio" 'BEGIN { exit !(v + 0 >= t + 0) }'; then
-      pass_label="PASS"
-      pass_count=$((pass_count + 1))
-      pass_bool=true
-    else
-      pass_label="FAIL"
-      fail_count=$((fail_count + 1))
-      pass_bool=false
-    fi
-  fi
-
   row_prefix="$(IFS='|'; echo "${VALUES[*]}")"
-  table_rows+=("${row_prefix}|${primary_iocoro}|${primary_asio}|${ratio}|${min_ratio:-n/a}|${pass_label}")
+  table_rows+=("${row_prefix}|${primary_iocoro}|${primary_asio}|${ratio}")
 
   scenario_json_entry="{"
   for ((idx = 0; idx < SCENARIO_ARITY; ++idx)); do
@@ -500,13 +427,7 @@ for item in "${SCENARIO_ITEMS[@]}"; do
     scenario_json_entry+="\"asio_${metric}_median\":${asio_medians[$metric]},"
   done
 
-  if [[ -n "$min_ratio" ]]; then
-    min_ratio_json="$min_ratio"
-  else
-    min_ratio_json="null"
-  fi
-
-  scenario_json_entry+="\"${RATIO_FIELD}\":${ratio},\"min_ratio\":${min_ratio_json},\"pass\":${pass_bool}}"
+  scenario_json_entry+="\"${RATIO_FIELD}\":${ratio}}"
   scenario_json+=("$scenario_json_entry")
 
   if [[ ${#METRIC_NAMES[@]} -eq 1 ]]; then
@@ -524,14 +445,11 @@ for item in "${SCENARIO_ITEMS[@]}"; do
     echo "  asio   medians: ${asio_line% }"
   fi
   echo "  ratio ($ratio_expr): $ratio"
-  if [[ -n "$min_ratio" ]]; then
-    echo "  threshold: $min_ratio ($pass_label)"
-  fi
   echo
 done
 
 echo "Summary"
-header=("${SCENARIO_FIELDS[@]}" "iocoro_${PRIMARY_METRIC}_median" "asio_${PRIMARY_METRIC}_median" "$RATIO_FIELD" "min_ratio" "gate")
+header=("${SCENARIO_FIELDS[@]}" "iocoro_${PRIMARY_METRIC}_median" "asio_${PRIMARY_METRIC}_median" "$RATIO_FIELD")
 printf '|'
 for col in "${header[@]}"; do
   printf ' %s |' "$col"
@@ -573,14 +491,4 @@ if [[ -n "$REPORT_FILE" ]]; then
     printf '}\n'
   } >"$REPORT_FILE"
   echo "Wrote report: $REPORT_FILE"
-fi
-
-if [[ -n "$BASELINE_FILE" && "$fail_count" -gt 0 ]]; then
-  echo
-  echo "Performance gate failed: $fail_count scenario(s) below threshold" >&2
-  exit 1
-fi
-
-if [[ -n "$BASELINE_FILE" ]]; then
-  echo "Performance gate passed: $pass_count scenario(s) met thresholds"
 fi

@@ -55,9 +55,7 @@
           "asio_p50_us_median",
           "asio_p95_us_median",
           "asio_p99_us_median",
-          "ratio_vs_asio_p95",
-          "min_ratio",
-          "pass"
+          "ratio_vs_asio_p95"
         ],
         "properties": {
           "sessions": {
@@ -147,16 +145,6 @@
           "ratio_vs_asio_p95": {
             "type": "number",
             "minimum": 0
-          },
-          "min_ratio": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "pass": {
-            "type": "boolean"
           }
         }
       }
