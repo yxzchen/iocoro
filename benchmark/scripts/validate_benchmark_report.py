@@ -33,16 +33,16 @@ def format_error(err: jsonschema.ValidationError) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate perf_report.json against schema")
+    parser = argparse.ArgumentParser(description="Validate a benchmark report JSON against a schema")
     parser.add_argument(
         "--schema",
-        default="benchmark/schemas/perf_report.schema.json",
+        required=True,
         help="Path to JSON schema file",
     )
     parser.add_argument(
         "--report",
-        default="benchmark/reports/perf_report.json",
-        help="Path to perf report JSON file",
+        required=True,
+        help="Path to benchmark report JSON file",
     )
     args = parser.parse_args()
 

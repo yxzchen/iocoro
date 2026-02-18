@@ -288,7 +288,7 @@ jobs:
 
       - name: Run perf benchmarks
         run: |
-          ./benchmark/scripts/run_all_perf_benchmarks.sh \
+          ./benchmark/scripts/run_perf_benchmarks.sh \
             --build-dir build \
             --iterations 3 \
             --warmup 1 \

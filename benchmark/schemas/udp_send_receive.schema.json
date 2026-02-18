@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iocoro.dev/schemas/udp_report.schema.json",
-  "title": "iocoro udp send receive perf report",
+  "$id": "https://iocoro.dev/schemas/udp_send_receive.schema.json",
+  "title": "iocoro udp_send_receive benchmark report",
   "type": "object",
   "additionalProperties": false,
   "required": [

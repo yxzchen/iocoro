@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iocoro.dev/schemas/perf_report.schema.json",
-  "title": "iocoro perf report",
+  "$id": "https://iocoro.dev/schemas/tcp_roundtrip.schema.json",
+  "title": "iocoro tcp_roundtrip benchmark report",
   "type": "object",
   "additionalProperties": false,
   "required": [

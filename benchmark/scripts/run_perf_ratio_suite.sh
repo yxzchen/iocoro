@@ -97,7 +97,7 @@ bench_compute_ratio() {
 }
 
 SUITE_NAME=""
-USAGE_NAME="benchmark/scripts/run_ratio_suite.sh"
+USAGE_NAME="benchmark/scripts/run_perf_ratio_suite.sh"
 SCENARIO_FIELDS_CSV=""
 SCENARIO_FORMAT=""
 SCENARIOS_DEFAULT=""

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iocoro.dev/schemas/thread_pool_report.schema.json",
-  "title": "iocoro thread_pool scaling perf report",
+  "$id": "https://iocoro.dev/schemas/tcp_throughput.schema.json",
+  "title": "iocoro tcp_throughput benchmark report",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -40,24 +40,29 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "workers",
-          "tasks",
-          "iocoro_ops_s_runs",
-          "asio_ops_s_runs",
-          "iocoro_ops_s_median",
-          "asio_ops_s_median",
+          "sessions",
+          "bytes_per_session",
+          "chunk_bytes",
+          "iocoro_throughput_mib_s_runs",
+          "asio_throughput_mib_s_runs",
+          "iocoro_throughput_mib_s_median",
+          "asio_throughput_mib_s_median",
           "ratio_vs_asio"
         ],
         "properties": {
-          "workers": {
+          "sessions": {
             "type": "integer",
             "minimum": 1
           },
-          "tasks": {
+          "bytes_per_session": {
             "type": "integer",
             "minimum": 1
           },
-          "iocoro_ops_s_runs": {
+          "chunk_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "iocoro_throughput_mib_s_runs": {
             "type": "array",
             "minItems": 1,
             "items": {
@@ -65,7 +70,7 @@
               "exclusiveMinimum": 0
             }
           },
-          "asio_ops_s_runs": {
+          "asio_throughput_mib_s_runs": {
             "type": "array",
             "minItems": 1,
             "items": {
@@ -73,11 +78,11 @@
               "exclusiveMinimum": 0
             }
           },
-          "iocoro_ops_s_median": {
+          "iocoro_throughput_mib_s_median": {
             "type": "number",
             "exclusiveMinimum": 0
           },
-          "asio_ops_s_median": {
+          "asio_throughput_mib_s_median": {
             "type": "number",
             "exclusiveMinimum": 0
           },

@@ -18,11 +18,11 @@ endfunction()
 
 set(BENCHMARK_NAMES
   tcp_roundtrip
+  tcp_latency
   tcp_connect_accept
   tcp_throughput
   udp_send_receive
   timer_churn
-  tcp_latency
   thread_pool_scaling
 )
 

@@ -4,9 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-exec "$SCRIPT_DIR/run_ratio_suite.sh" \
-  --suite-name "tcp throughput benchmark" \
-  --usage-name "benchmark/scripts/run_tcp_throughput_benchmark.sh" \
+exec "$SCRIPT_DIR/../run_perf_ratio_suite.sh" \
+  --suite-name "tcp_throughput benchmark suite" \
+  --usage-name "benchmark/scripts/suites/run_perf_tcp_throughput.sh" \
   --scenario-fields "sessions,bytes_per_session,chunk_bytes" \
   --scenario-format "sessions:bytes_per_session:chunk_bytes tuples" \
   --scenarios-default "1:16777216:16384,8:4194304:16384,32:1048576:8192" \

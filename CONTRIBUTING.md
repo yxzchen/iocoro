@@ -86,7 +86,7 @@ Current hooks include formatting and basic safety checks.
 Unified benchmark runner:
 
 ```bash
-./benchmark/scripts/run_all_perf_benchmarks.sh \
+./benchmark/scripts/run_perf_benchmarks.sh \
   --build-dir build \
   --iterations 3 \
   --warmup 1 \
@@ -135,4 +135,4 @@ pre-commit run --all-files
 ./scripts/build.sh -c -t
 ```
 
-If your change touches performance/bench code, also run the benchmark gate script.
+If your change touches performance/bench code, also run the benchmark suite script.

@@ -4,9 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-exec "$SCRIPT_DIR/run_ratio_suite.sh" \
-  --suite-name "thread_pool scaling benchmark" \
-  --usage-name "benchmark/scripts/run_thread_pool_scaling_benchmark.sh" \
+exec "$SCRIPT_DIR/../run_perf_ratio_suite.sh" \
+  --suite-name "thread_pool_scaling benchmark suite" \
+  --usage-name "benchmark/scripts/suites/run_perf_thread_pool_scaling.sh" \
   --scenario-fields "workers,tasks" \
   --scenario-format "workers:tasks tuples" \
   --scenarios-default "1:200000,2:400000" \

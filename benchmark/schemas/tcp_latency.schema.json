@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iocoro.dev/schemas/latency_report.schema.json",
-  "title": "iocoro tcp latency perf report",
+  "$id": "https://iocoro.dev/schemas/tcp_latency.schema.json",
+  "title": "iocoro tcp_latency benchmark report",
   "type": "object",
   "additionalProperties": false,
   "required": [

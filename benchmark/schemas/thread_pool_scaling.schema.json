@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iocoro.dev/schemas/connect_accept_report.schema.json",
-  "title": "iocoro tcp connect accept perf report",
+  "$id": "https://iocoro.dev/schemas/thread_pool_scaling.schema.json",
+  "title": "iocoro thread_pool_scaling benchmark report",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -40,19 +40,24 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "connections",
-          "iocoro_cps_runs",
-          "asio_cps_runs",
-          "iocoro_cps_median",
-          "asio_cps_median",
+          "workers",
+          "tasks",
+          "iocoro_ops_s_runs",
+          "asio_ops_s_runs",
+          "iocoro_ops_s_median",
+          "asio_ops_s_median",
           "ratio_vs_asio"
         ],
         "properties": {
-          "connections": {
+          "workers": {
             "type": "integer",
             "minimum": 1
           },
-          "iocoro_cps_runs": {
+          "tasks": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "iocoro_ops_s_runs": {
             "type": "array",
             "minItems": 1,
             "items": {
@@ -60,7 +65,7 @@
               "exclusiveMinimum": 0
             }
           },
-          "asio_cps_runs": {
+          "asio_ops_s_runs": {
             "type": "array",
             "minItems": 1,
             "items": {
@@ -68,11 +73,11 @@
               "exclusiveMinimum": 0
             }
           },
-          "iocoro_cps_median": {
+          "iocoro_ops_s_median": {
             "type": "number",
             "exclusiveMinimum": 0
           },
-          "asio_cps_median": {
+          "asio_ops_s_median": {
             "type": "number",
             "exclusiveMinimum": 0
           },

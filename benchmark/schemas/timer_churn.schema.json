@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iocoro.dev/schemas/timer_report.schema.json",
-  "title": "iocoro timer churn perf report",
+  "$id": "https://iocoro.dev/schemas/timer_churn.schema.json",
+  "title": "iocoro timer_churn benchmark report",
   "type": "object",
   "additionalProperties": false,
   "required": [
