@@ -8,6 +8,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -72,7 +74,7 @@ TEST(io_context_test, stop_prevents_run_and_restart_allows_processing) {
   EXPECT_EQ(count.load(), 1);
 }
 
-TEST(io_context_test, dispatch_runs_inline_on_context_thread) {
+TEST(io_context_test, dispatch_on_context_thread_is_post_semantics) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -86,8 +88,41 @@ TEST(io_context_test, dispatch_runs_inline_on_context_thread) {
   ctx.run();
   ASSERT_EQ(order.size(), 3U);
   EXPECT_EQ(order[0], 1);
-  EXPECT_EQ(order[1], 2);
-  EXPECT_EQ(order[2], 3);
+  EXPECT_EQ(order[1], 3);
+  EXPECT_EQ(order[2], 2);
+}
+
+TEST(io_context_test, dispatch_throwing_callback_does_not_terminate_noexcept_call_site) {
+  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+
+  ASSERT_EXIT(
+    {
+      iocoro::io_context ctx;
+      auto ex = ctx.get_executor();
+
+      std::vector<int> order;
+      ex.post([&] {
+        order.push_back(1);
+        ex.dispatch([&] {
+          order.push_back(2);
+          throw std::runtime_error{"dispatch failure"};
+        });
+        order.push_back(3);
+      });
+
+      bool threw = false;
+      try {
+        (void)ctx.run();
+      } catch (std::runtime_error const&) {
+        threw = true;
+      }
+
+      if (!threw || order.size() != 3U || order[0] != 1 || order[1] != 3 || order[2] != 2) {
+        std::_Exit(1);
+      }
+      std::_Exit(0);
+    },
+    ::testing::ExitedWithCode(0), ".*");
 }
 
 TEST(io_context_test, run_for_processes_posted_work) {
