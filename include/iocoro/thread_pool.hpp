@@ -104,7 +104,7 @@ class thread_pool::executor_type {
   executor_type(executor_type&&) noexcept = default;
   auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
-  void post(detail::unique_function<void()> f) const noexcept {
+  void post(detail::unique_function<void()> f) const {
     auto st = state_;
     if (!st) {
       return;
@@ -124,7 +124,7 @@ class thread_pool::executor_type {
     }
   }
 
-  void dispatch(detail::unique_function<void()> f) const noexcept {
+  void dispatch(detail::unique_function<void()> f) const {
     auto st = state_;
     if (!st) {
       return;
@@ -142,7 +142,7 @@ class thread_pool::executor_type {
             try {
               (*handler_ptr)(std::current_exception());
             } catch (...) {
-              // Swallow exceptions from handler to preserve noexcept behavior.
+              // Preserve detached-style behavior if the exception handler throws.
             }
           }
         }

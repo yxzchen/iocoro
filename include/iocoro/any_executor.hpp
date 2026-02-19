@@ -22,8 +22,7 @@
 // Semantics (interface-level, not capability extension):
 // - post(fn): enqueue fn for later execution; never assumes inline execution.
 // - dispatch(fn): may execute fn inline on the calling thread when permitted by the executor.
-// - All operations are noexcept: scheduling failure must be handled by the executor implementation
-//   (e.g. terminate/log/drop) rather than by throwing.
+// - Scheduling behavior is executor-defined (including failure handling policy).
 
 namespace iocoro {
 
@@ -53,13 +52,13 @@ class any_executor {
     return !(a == b);
   }
 
-  void post(detail::unique_function<void()> fn) const noexcept {
+  void post(detail::unique_function<void()> fn) const {
     if (!storage_) {
       return;
     }
     storage_.post(std::move(fn));
   }
-  void dispatch(detail::unique_function<void()> fn) const noexcept {
+  void dispatch(detail::unique_function<void()> fn) const {
     if (!storage_) {
       return;
     }

@@ -32,7 +32,7 @@ class strand_executor {
   template <executor Ex>
   explicit strand_executor(Ex ex) : strand_executor(any_executor{std::move(ex)}) {}
 
-  void post(detail::unique_function<void()> f) const noexcept {
+  void post(detail::unique_function<void()> f) const {
     IOCORO_ENSURE(state_, "strand_executor::post: empty state");
     IOCORO_ENSURE(state_->base, "strand_executor::post: empty base executor");
 
@@ -45,7 +45,7 @@ class strand_executor {
     }
   }
 
-  void dispatch(detail::unique_function<void()> f) const noexcept {
+  void dispatch(detail::unique_function<void()> f) const {
     IOCORO_ENSURE(state_, "strand_executor::dispatch: empty state");
     IOCORO_ENSURE(state_->base, "strand_executor::dispatch: empty base executor");
 
@@ -56,7 +56,7 @@ class strand_executor {
       try {
         f();
       } catch (...) {
-        // Scheduling APIs are noexcept; swallow task exceptions.
+        // Preserve detached-style behavior for inline-dispatched task exceptions.
       }
       return;
     }
@@ -142,7 +142,7 @@ class strand_executor {
       try {
         fn();
       } catch (...) {
-        // Scheduling APIs are noexcept; swallow task exceptions.
+        // Preserve detached-style behavior while draining queued tasks.
       }
       fn = {};
       ++n;

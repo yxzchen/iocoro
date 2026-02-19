@@ -44,14 +44,14 @@ class io_context {
     executor_type(executor_type&&) noexcept = default;
     auto operator=(executor_type&&) noexcept -> executor_type& = default;
 
-    void post(detail::unique_function<void()> f) const noexcept {
+    void post(detail::unique_function<void()> f) const {
       ensure_impl().post([ex = *this, fn = std::move(f)]() mutable {
         detail::executor_guard g{any_executor{ex}};
         fn();
       });
     }
 
-    void dispatch(detail::unique_function<void()> f) const noexcept { post(std::move(f)); }
+    void dispatch(detail::unique_function<void()> f) const { post(std::move(f)); }
 
     /// True if the underlying context has been stopped (or this executor is empty).
     auto stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }

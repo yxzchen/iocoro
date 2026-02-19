@@ -79,12 +79,12 @@ class any_executor_storage {
     return !(a == b);
   }
 
-  void post(unique_function<void()> fn) const noexcept {
+  void post(unique_function<void()> fn) const {
     ensure_impl();
     vtable_->post(ptr_, std::move(fn));
   }
 
-  void dispatch(unique_function<void()> fn) const noexcept {
+  void dispatch(unique_function<void()> fn) const {
     ensure_impl();
     vtable_->dispatch(ptr_, std::move(fn));
   }
@@ -115,8 +115,8 @@ class any_executor_storage {
 
  private:
   struct vtable {
-    void (*post)(void* object, unique_function<void()> fn) noexcept;
-    void (*dispatch)(void* object, unique_function<void()> fn) noexcept;
+    void (*post)(void* object, unique_function<void()> fn);
+    void (*dispatch)(void* object, unique_function<void()> fn);
     auto (*equals)(void const* lhs, void const* rhs) noexcept -> bool;
     auto (*target)(void const* object, std::type_info const& ti) noexcept -> void const*;
     auto (*capabilities)(void const* object) noexcept -> iocoro::executor_capability;
@@ -127,12 +127,12 @@ class any_executor_storage {
   };
 
   template <class Ex>
-  static void post_impl(void* object, unique_function<void()> fn) noexcept {
+  static void post_impl(void* object, unique_function<void()> fn) {
     static_cast<Ex*>(object)->post(std::move(fn));
   }
 
   template <class Ex>
-  static void dispatch_impl(void* object, unique_function<void()> fn) noexcept {
+  static void dispatch_impl(void* object, unique_function<void()> fn) {
     static_cast<Ex*>(object)->dispatch(std::move(fn));
   }
 
