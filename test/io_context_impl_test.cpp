@@ -6,9 +6,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <stop_token>
 #include <system_error>
@@ -164,6 +166,64 @@ class backend_scripted final : public iocoro::detail::backend_interface {
 
  private:
   std::vector<iocoro::detail::backend_event> events_{};
+};
+
+class backend_blocking_remove final : public iocoro::detail::backend_interface {
+ public:
+  std::atomic<int>* remove_calls{};
+  std::atomic<std::size_t>* remove_thread{};
+  std::atomic<bool>* remove_entered{};
+
+  explicit backend_blocking_remove(std::atomic<int>* remove_calls_,
+                                   std::atomic<std::size_t>* remove_thread_,
+                                   std::atomic<bool>* remove_entered_) noexcept
+      : remove_calls(remove_calls_),
+        remove_thread(remove_thread_),
+        remove_entered(remove_entered_) {}
+
+  void add_fd(int /*fd*/) override {}
+
+  void remove_fd(int /*fd*/) noexcept override {
+    if (remove_thread != nullptr) {
+      remove_thread->store(thread_hash(), std::memory_order_relaxed);
+    }
+    if (remove_calls != nullptr) {
+      remove_calls->fetch_add(1, std::memory_order_relaxed);
+    }
+    if (remove_entered != nullptr) {
+      remove_entered->store(true, std::memory_order_release);
+    }
+
+    std::unique_lock lk{mtx_};
+    cv_.wait(lk, [this] { return allow_remove_.load(std::memory_order_acquire); });
+  }
+
+  auto wait(std::optional<std::chrono::milliseconds> /*timeout*/,
+            std::vector<iocoro::detail::backend_event>& out) -> void override {
+    out.clear();
+    std::unique_lock lk{mtx_};
+    cv_.wait(lk, [this] { return wake_count_ > 0; });
+    --wake_count_;
+  }
+
+  void wakeup() noexcept override {
+    {
+      std::scoped_lock lk{mtx_};
+      ++wake_count_;
+    }
+    cv_.notify_all();
+  }
+
+  void allow_remove() noexcept {
+    allow_remove_.store(true, std::memory_order_release);
+    cv_.notify_all();
+  }
+
+ private:
+  std::mutex mtx_{};
+  std::condition_variable cv_{};
+  int wake_count_{0};
+  std::atomic<bool> allow_remove_{false};
 };
 
 }  // namespace
@@ -429,6 +489,64 @@ TEST(io_context_impl_test, remove_fd_aborts_registered_waiters_and_clears_regist
   impl->remove_fd(fds[0]);
   EXPECT_EQ(abort_calls.load(std::memory_order_relaxed), 1);
   EXPECT_EQ(complete_calls.load(std::memory_order_relaxed), 0);
+
+  (void)::close(fds[0]);
+  (void)::close(fds[1]);
+}
+
+TEST(io_context_impl_test, remove_fd_sync_waits_for_reactor_deregistration_completion) {
+  std::atomic<int> remove_calls{0};
+  std::atomic<std::size_t> remove_thread{0};
+  std::atomic<bool> remove_entered{false};
+  auto backend =
+    std::make_unique<backend_blocking_remove>(&remove_calls, &remove_thread, &remove_entered);
+  auto* backend_ptr = backend.get();
+  auto impl = std::make_shared<iocoro::detail::io_context_impl>(std::move(backend));
+
+  int fds[2]{-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+  ASSERT_GE(fds[0], 0);
+  ASSERT_GE(fds[1], 0);
+  ASSERT_TRUE(impl->add_fd(fds[0]));
+
+  impl->add_work_guard();
+
+  std::atomic<bool> started{false};
+  impl->post([&] { started.store(true, std::memory_order_release); });
+  std::thread reactor([&] { (void)impl->run(); });
+
+  auto const started_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+  while (!started.load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < started_deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_TRUE(started.load(std::memory_order_acquire));
+
+  std::atomic<bool> remove_returned{false};
+  std::thread remover([&] {
+    impl->remove_fd_sync(fds[0]);
+    remove_returned.store(true, std::memory_order_release);
+  });
+
+  auto const entered_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+  while (!remove_entered.load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < entered_deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_TRUE(remove_entered.load(std::memory_order_acquire));
+  EXPECT_FALSE(remove_returned.load(std::memory_order_acquire));
+
+  backend_ptr->allow_remove();
+  remover.join();
+
+  EXPECT_TRUE(remove_returned.load(std::memory_order_acquire));
+  EXPECT_EQ(remove_calls.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(remove_thread.load(std::memory_order_relaxed),
+            std::hash<std::thread::id>{}(reactor.get_id()));
+
+  impl->remove_work_guard();
+  impl->stop();
+  reactor.join();
 
   (void)::close(fds[0]);
   (void)::close(fds[1]);

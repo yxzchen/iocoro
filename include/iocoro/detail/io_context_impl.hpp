@@ -61,6 +61,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   auto add_fd(int fd) noexcept -> bool;
   void remove_fd(int fd) noexcept;
+  void remove_fd_sync(int fd) noexcept;
 
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
 
@@ -84,6 +85,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
     -> std::optional<std::chrono::milliseconds>;
   void wakeup();
   auto register_fd_impl(int fd, reactor_op_ptr op, detail::fd_event_kind kind) -> event_handle;
+  void remove_fd_impl(int fd) noexcept;
 
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;

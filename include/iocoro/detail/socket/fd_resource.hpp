@@ -38,7 +38,7 @@ class fd_resource {
 
     auto* ctx = ex_.io_context_ptr();
     if (ctx != nullptr) {
-      ctx->remove_fd(fd);
+      ctx->remove_fd_sync(fd);
     }
 
     ::close(fd);
