@@ -99,6 +99,32 @@ TEST(thread_pool_test, dispatch_runs_inline_on_worker_thread) {
   EXPECT_EQ(order[2], 3);
 }
 
+TEST(thread_pool_test, dispatch_inline_exception_propagates_to_caller) {
+  iocoro::thread_pool pool{1};
+  auto ex = pool.get_executor();
+
+  std::mutex m;
+  std::condition_variable cv;
+  std::atomic<bool> caught{false};
+  std::atomic<bool> done{false};
+
+  ex.post([&] {
+    try {
+      ex.dispatch([] { throw std::runtime_error{"boom"}; });
+    } catch (std::runtime_error const&) {
+      caught.store(true, std::memory_order_release);
+    }
+
+    std::scoped_lock lk{m};
+    done.store(true, std::memory_order_release);
+    cv.notify_all();
+  });
+
+  std::unique_lock lk{m};
+  cv.wait(lk, [&] { return done.load(std::memory_order_acquire); });
+  EXPECT_TRUE(caught.load(std::memory_order_acquire));
+}
+
 TEST(thread_pool_test, work_guard_keeps_context_alive_until_reset) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();

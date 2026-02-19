@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <iocoro/io_context.hpp>
 #include <iocoro/strand.hpp>
 #include <iocoro/thread_pool.hpp>
 
@@ -114,32 +115,51 @@ TEST(strand_test, dispatch_runs_inline_on_same_strand) {
   EXPECT_EQ(order[2], 3);
 }
 
-TEST(strand_test, dispatch_inline_exception_is_swallowed) {
+TEST(strand_test, dispatch_inline_exception_propagates_to_caller) {
   iocoro::thread_pool pool{2};
   auto s = iocoro::make_strand(pool.get_executor());
 
   std::mutex m;
   std::condition_variable cv;
-  std::array<int, 3> order{};
+  std::array<int, 2> order{};
   std::atomic<int> index{0};
+  std::atomic<bool> caught{false};
   std::atomic<bool> done{false};
 
   s.post([&] {
     order[static_cast<std::size_t>(index++)] = 1;
-    s.dispatch([&] { throw std::runtime_error{"boom"}; });
+    try {
+      s.dispatch([&] { throw std::runtime_error{"boom"}; });
+    } catch (std::runtime_error const&) {
+      caught.store(true, std::memory_order_release);
+    }
     order[static_cast<std::size_t>(index++)] = 2;
-
-    s.post([&] {
-      order[static_cast<std::size_t>(index++)] = 3;
-      std::scoped_lock lk{m};
-      done.store(true);
-      cv.notify_all();
-    });
+    std::scoped_lock lk{m};
+    done.store(true);
+    cv.notify_all();
   });
 
   std::unique_lock lk{m};
   cv.wait(lk, [&] { return done.load(); });
+  EXPECT_TRUE(caught.load(std::memory_order_acquire));
   EXPECT_EQ(order[0], 1);
   EXPECT_EQ(order[1], 2);
-  EXPECT_EQ(order[2], 3);
+}
+
+TEST(strand_test, drain_does_not_swallow_task_exception) {
+  iocoro::io_context ctx;
+  auto s = iocoro::make_strand(ctx.get_executor());
+
+  std::atomic<int> ran{0};
+  s.post([&] {
+    ran.fetch_add(1, std::memory_order_relaxed);
+    throw std::runtime_error{"boom"};
+  });
+  s.post([&] { ran.fetch_add(1, std::memory_order_relaxed); });
+
+  EXPECT_THROW((void)ctx.run(), std::runtime_error);
+  EXPECT_EQ(ran.load(std::memory_order_relaxed), 1);
+
+  (void)ctx.run();
+  EXPECT_EQ(ran.load(std::memory_order_relaxed), 2);
 }

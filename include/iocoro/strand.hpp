@@ -41,7 +41,7 @@ class strand_executor {
     if (should_schedule) {
       // Schedule a drain on the underlying executor.
       auto st = state_;
-      state_->base.post([st]() noexcept { strand_executor::drain(std::move(st)); });
+      state_->base.post([st]() { strand_executor::drain(std::move(st)); });
     }
   }
 
@@ -53,18 +53,14 @@ class strand_executor {
     auto const* cur =
       cur_any ? detail::any_executor_access::target<strand_executor>(cur_any) : nullptr;
     if (cur != nullptr && (*cur == *this)) {
-      try {
-        f();
-      } catch (...) {
-        // Preserve detached-style behavior for inline-dispatched task exceptions.
-      }
+      f();
       return;
     }
 
     bool const should_schedule = state_->enqueue(std::move(f));
     if (should_schedule) {
       auto st = state_;
-      state_->base.post([st]() noexcept { strand_executor::drain(std::move(st)); });
+      state_->base.post([st]() { strand_executor::drain(std::move(st)); });
     }
   }
 
@@ -126,7 +122,7 @@ class strand_executor {
     }
   };
 
-  static void drain(std::shared_ptr<state> st) noexcept {
+  static void drain(std::shared_ptr<state> st) {
     IOCORO_ENSURE(st, "strand_executor::drain: empty state");
     IOCORO_ENSURE(st->base, "strand_executor::drain: empty base executor");
 
@@ -138,20 +134,24 @@ class strand_executor {
 
     detail::unique_function<void()> fn{};
     std::size_t n = 0;
-    while (n < max_drain_per_tick && st->try_pop(fn)) {
-      try {
+    try {
+      while (n < max_drain_per_tick && st->try_pop(fn)) {
         fn();
-      } catch (...) {
-        // Preserve detached-style behavior while draining queued tasks.
+        fn = {};
+        ++n;
       }
-      fn = {};
-      ++n;
+    } catch (...) {
+      if (st->keep_active_for_more()) {
+        auto again = st;
+        st->base.post([again]() { strand_executor::drain(std::move(again)); });
+      }
+      throw;
     }
 
     // Fairness: if more tasks remain, reschedule another drain onto the base executor.
     if (st->keep_active_for_more()) {
       auto again = st;
-      st->base.post([again]() noexcept { strand_executor::drain(std::move(again)); });
+      st->base.post([again]() { strand_executor::drain(std::move(again)); });
     }
   }
 

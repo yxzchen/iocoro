@@ -134,18 +134,7 @@ class thread_pool::executor_type {
     if (cur_any) {
       auto const* cur = detail::any_executor_access::target<executor_type>(cur_any);
       if (cur != nullptr && cur->state_.get() == st.get()) {
-        try {
-          f();
-        } catch (...) {
-          auto handler_ptr = st->on_task_exception.load(std::memory_order_acquire);
-          if (handler_ptr) {
-            try {
-              (*handler_ptr)(std::current_exception());
-            } catch (...) {
-              // Preserve detached-style behavior if the exception handler throws.
-            }
-          }
-        }
+        f();
         return;
       }
     }

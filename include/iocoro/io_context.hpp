@@ -51,7 +51,12 @@ class io_context {
       });
     }
 
-    void dispatch(detail::unique_function<void()> f) const { post(std::move(f)); }
+    void dispatch(detail::unique_function<void()> f) const {
+      ensure_impl().dispatch([ex = *this, fn = std::move(f)]() mutable {
+        detail::executor_guard g{any_executor{ex}};
+        fn();
+      });
+    }
 
     /// True if the underlying context has been stopped (or this executor is empty).
     auto stopped() const noexcept -> bool { return impl_ == nullptr || impl_->stopped(); }
