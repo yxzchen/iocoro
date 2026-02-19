@@ -33,6 +33,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <utility>
 
 namespace iocoro::detail {
@@ -308,6 +310,52 @@ inline void io_context_impl::remove_fd(int fd) noexcept {
   }
 
   remove_fd_impl(fd);
+}
+
+inline void io_context_impl::remove_fd_sync(int fd) noexcept {
+  if (fd < 0) {
+    return;
+  }
+
+  if (!running_.load(std::memory_order_acquire) || running_in_this_thread()) {
+    remove_fd_impl(fd);
+    return;
+  }
+
+  struct sync_remove_state {
+    std::mutex mtx{};
+    std::condition_variable cv{};
+    std::atomic<bool> removed{false};
+    bool done = false;
+  };
+
+  auto state = std::make_shared<sync_remove_state>();
+  auto remove_once = [fd, state](io_context_impl& self) noexcept {
+    if (!state->removed.exchange(true, std::memory_order_acq_rel)) {
+      self.remove_fd_impl(fd);
+    }
+    {
+      std::scoped_lock lk{state->mtx};
+      state->done = true;
+    }
+    state->cv.notify_all();
+  };
+
+  dispatch_reactor(std::move(remove_once));
+
+  std::unique_lock lk{state->mtx};
+  while (!state->done) {
+    if (!running_.load(std::memory_order_acquire)) {
+      lk.unlock();
+      if (!state->removed.exchange(true, std::memory_order_acq_rel)) {
+        remove_fd_impl(fd);
+      }
+      lk.lock();
+      state->done = true;
+      break;
+    }
+    state->cv.wait_for(lk, std::chrono::milliseconds{1});
+  }
 }
 
 inline void io_context_impl::cancel_fd_event(int fd, detail::fd_event_kind kind,

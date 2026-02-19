@@ -559,6 +559,64 @@ TEST(io_context_impl_test, remove_fd_from_foreign_thread_is_async_and_runs_on_re
   (void)::close(fds[1]);
 }
 
+TEST(io_context_impl_test, remove_fd_sync_waits_for_reactor_deregistration_completion) {
+  std::atomic<int> remove_calls{0};
+  std::atomic<std::size_t> remove_thread{0};
+  std::atomic<bool> remove_entered{false};
+  auto backend =
+    std::make_unique<backend_blocking_remove>(&remove_calls, &remove_thread, &remove_entered);
+  auto* backend_ptr = backend.get();
+  auto impl = std::make_shared<iocoro::detail::io_context_impl>(std::move(backend));
+
+  int fds[2]{-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+  ASSERT_GE(fds[0], 0);
+  ASSERT_GE(fds[1], 0);
+  ASSERT_TRUE(impl->add_fd(fds[0]));
+
+  impl->add_work_guard();
+
+  std::atomic<bool> started{false};
+  impl->post([&] { started.store(true, std::memory_order_release); });
+  std::thread reactor([&] { (void)impl->run(); });
+
+  auto const started_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+  while (!started.load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < started_deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_TRUE(started.load(std::memory_order_acquire));
+
+  std::atomic<bool> remove_returned{false};
+  std::thread remover([&] {
+    impl->remove_fd_sync(fds[0]);
+    remove_returned.store(true, std::memory_order_release);
+  });
+
+  auto const entered_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+  while (!remove_entered.load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < entered_deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_TRUE(remove_entered.load(std::memory_order_acquire));
+  EXPECT_FALSE(remove_returned.load(std::memory_order_acquire));
+
+  backend_ptr->allow_remove();
+  remover.join();
+
+  EXPECT_TRUE(remove_returned.load(std::memory_order_acquire));
+  EXPECT_EQ(remove_calls.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(remove_thread.load(std::memory_order_relaxed),
+            std::hash<std::thread::id>{}(reactor.get_id()));
+
+  impl->remove_work_guard();
+  impl->stop();
+  reactor.join();
+
+  (void)::close(fds[0]);
+  (void)::close(fds[1]);
+}
+
 TEST(io_context_impl_test, throwing_posted_callback_does_not_drop_tail_callbacks) {
   auto impl = std::make_shared<iocoro::detail::io_context_impl>();
 

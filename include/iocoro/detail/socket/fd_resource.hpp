@@ -37,16 +37,8 @@ class fd_resource {
     }
 
     auto* ctx = ex_.io_context_ptr();
-    if (ctx != nullptr && ctx->running() && !ctx->running_in_this_thread() && !ctx->stopped()) {
-      ex_.post([ctx, fd]() noexcept {
-        ctx->remove_fd(fd);
-        (void)::close(fd);
-      });
-      return;
-    }
-
     if (ctx != nullptr) {
-      ctx->remove_fd(fd);
+      ctx->remove_fd_sync(fd);
     }
 
     (void)::close(fd);
