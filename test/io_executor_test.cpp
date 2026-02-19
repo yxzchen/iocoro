@@ -52,7 +52,7 @@ TEST(io_executor_test, dispatch_posts_when_not_on_context_thread) {
   EXPECT_EQ(count.load(), 1);
 }
 
-TEST(io_executor_test, dispatch_runs_inline_on_context_thread) {
+TEST(io_executor_test, dispatch_posts_on_context_thread) {
   iocoro::io_context ctx;
   auto ex = ctx.get_executor();
 
@@ -66,8 +66,8 @@ TEST(io_executor_test, dispatch_runs_inline_on_context_thread) {
   ctx.run();
   ASSERT_EQ(order.size(), 3U);
   EXPECT_EQ(order[0], 1);
-  EXPECT_EQ(order[1], 2);
-  EXPECT_EQ(order[2], 3);
+  EXPECT_EQ(order[1], 3);
+  EXPECT_EQ(order[2], 2);
 }
 
 TEST(io_executor_test, any_io_executor_any_executor_roundtrip_preserves_equality) {
