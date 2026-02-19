@@ -140,6 +140,7 @@ struct resolver<Protocol>::resolve_awaiter {
           st->res = unexpected(error::operation_aborted);
           st->ex.post([st]() { st->continuation.resume(); });
         }
+        return;
       } else {
         // IMPORTANT: stop requests only affect the awaiting coroutine. The blocking
         // getaddrinfo() call cannot be interrupted; we only prevent delivering results.
