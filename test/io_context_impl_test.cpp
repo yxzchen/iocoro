@@ -494,7 +494,7 @@ TEST(io_context_impl_test, remove_fd_aborts_registered_waiters_and_clears_regist
   (void)::close(fds[1]);
 }
 
-TEST(io_context_impl_test, remove_fd_sync_waits_for_reactor_deregistration_completion) {
+TEST(io_context_impl_test, remove_fd_from_foreign_thread_is_async_and_runs_on_reactor_thread) {
   std::atomic<int> remove_calls{0};
   std::atomic<std::size_t> remove_thread{0};
   std::atomic<bool> remove_entered{false};
@@ -524,9 +524,16 @@ TEST(io_context_impl_test, remove_fd_sync_waits_for_reactor_deregistration_compl
 
   std::atomic<bool> remove_returned{false};
   std::thread remover([&] {
-    impl->remove_fd_sync(fds[0]);
+    impl->remove_fd(fds[0]);
     remove_returned.store(true, std::memory_order_release);
   });
+
+  auto const returned_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+  while (!remove_returned.load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < returned_deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_TRUE(remove_returned.load(std::memory_order_acquire));
 
   auto const entered_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
   while (!remove_entered.load(std::memory_order_acquire) &&
@@ -534,7 +541,7 @@ TEST(io_context_impl_test, remove_fd_sync_waits_for_reactor_deregistration_compl
     std::this_thread::yield();
   }
   ASSERT_TRUE(remove_entered.load(std::memory_order_acquire));
-  EXPECT_FALSE(remove_returned.load(std::memory_order_acquire));
+  EXPECT_TRUE(remove_returned.load(std::memory_order_acquire));
 
   backend_ptr->allow_remove();
   remover.join();

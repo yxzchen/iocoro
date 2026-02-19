@@ -120,7 +120,7 @@ inline auto socket_impl_base::release() noexcept -> result<int> {
 
   auto fd = old->release_fd();
   if (fd >= 0) {
-    ctx_impl_->remove_fd_sync(fd);
+    ctx_impl_->remove_fd(fd);
   }
   return fd;
 }

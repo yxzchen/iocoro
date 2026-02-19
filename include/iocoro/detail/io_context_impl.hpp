@@ -40,6 +40,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   void stop();
   void restart();
   auto stopped() const noexcept -> bool { return stopped_.load(std::memory_order_acquire); }
+  auto running() const noexcept -> bool { return running_.load(std::memory_order_acquire); }
 
   void post(unique_function<void()> f);
   void dispatch(unique_function<void()> f);
@@ -61,7 +62,6 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   auto add_fd(int fd) noexcept -> bool;
   void remove_fd(int fd) noexcept;
-  void remove_fd_sync(int fd) noexcept;
 
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
 
