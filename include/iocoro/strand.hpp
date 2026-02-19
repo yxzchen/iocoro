@@ -53,7 +53,11 @@ class strand_executor {
     auto const* cur =
       cur_any ? detail::any_executor_access::target<strand_executor>(cur_any) : nullptr;
     if (cur != nullptr && (*cur == *this)) {
-      f();
+      try {
+        f();
+      } catch (...) {
+        // Scheduling APIs are noexcept; swallow task exceptions.
+      }
       return;
     }
 

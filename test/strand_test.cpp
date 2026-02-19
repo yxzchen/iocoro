@@ -8,6 +8,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 
 TEST(strand_test, tasks_on_same_strand_never_run_concurrently) {
@@ -104,6 +105,36 @@ TEST(strand_test, dispatch_runs_inline_on_same_strand) {
     std::scoped_lock lk{m};
     done.store(true);
     cv.notify_all();
+  });
+
+  std::unique_lock lk{m};
+  cv.wait(lk, [&] { return done.load(); });
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 2);
+  EXPECT_EQ(order[2], 3);
+}
+
+TEST(strand_test, dispatch_inline_exception_is_swallowed) {
+  iocoro::thread_pool pool{2};
+  auto s = iocoro::make_strand(pool.get_executor());
+
+  std::mutex m;
+  std::condition_variable cv;
+  std::array<int, 3> order{};
+  std::atomic<int> index{0};
+  std::atomic<bool> done{false};
+
+  s.post([&] {
+    order[static_cast<std::size_t>(index++)] = 1;
+    s.dispatch([&] { throw std::runtime_error{"boom"}; });
+    order[static_cast<std::size_t>(index++)] = 2;
+
+    s.post([&] {
+      order[static_cast<std::size_t>(index++)] = 3;
+      std::scoped_lock lk{m};
+      done.store(true);
+      cv.notify_all();
+    });
   });
 
   std::unique_lock lk{m};
