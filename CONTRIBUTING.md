@@ -71,7 +71,7 @@ Current hooks include formatting and basic safety checks.
 ```
 
 - Configuration: `.clang-tidy`
-- CI treats enabled checks as errors.
+- Enabled checks listed in `.clang-tidy` are treated as errors.
 
 ### Coverage
 
@@ -119,11 +119,15 @@ ctest --test-dir build --output-on-failure -j
 ## Commit Guidance
 
 - Keep commits focused and atomic.
-- Use short, explicit subjects (project convention):
-  - `fix: ...`
-  - `feat: ...`
+- Follow the repository's Conventional Commits style with a short optional scope.
+- Prefer subjects like:
+  - `fix(socket): ...`
+  - `refactor(executor): ...`
+  - `test(io_context): ...`
+  - `docs(architecture): ...`
   - `perf: ...`
-  - `chore: ...`
+  - `chore(ci): ...`
+  - `revert(...): ...`
 
 ## CI Alignment
 
@@ -131,8 +135,12 @@ Before opening PR, run at least:
 
 ```bash
 pre-commit run --all-files
-./scripts/run_clang_tidy.sh --build-dir build-tidy
 ./scripts/build.sh -c -t
 ```
 
-If your change touches performance/bench code, also run the benchmark suite script.
+Also run these when relevant:
+
+- `./scripts/run_clang_tidy.sh --clean --build-dir build-tidy` for code paths touched by lint/static-analysis-sensitive changes
+- io_uring configure/build/test flow if you touched backend or reactor behavior
+- `./scripts/run_coverage.sh --clean --build-dir build-coverage --min-line 70` if you are validating coverage-sensitive changes
+- `./benchmark/scripts/run_perf_benchmarks.sh ...` if your change touches performance or benchmark code
