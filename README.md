@@ -58,9 +58,6 @@ cmake --build build -j
 
 ## More Docs
 
-- Contributing and developer workflows: `CONTRIBUTING.md`
-- Benchmark usage and reports: `benchmark/README.md`
-
-## License
-
-MIT. See `LICENSE`.
+- Contributing and developer workflows: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md)
+- Benchmark usage and reports: [benchmark/README.md](benchmark/README.md)
