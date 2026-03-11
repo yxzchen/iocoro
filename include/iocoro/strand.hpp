@@ -99,20 +99,18 @@ class strand_executor {
       return true;
     }
 
-    auto try_pop(detail::unique_function<void()>& out) -> bool {
+    auto pop_one() -> detail::unique_function<void()> {
       std::scoped_lock lk{m};
       if (tasks.empty()) {
         active = false;
-        return false;
+        return {};
       }
-      out = std::move(tasks.front());
+      auto out = std::move(tasks.front());
       tasks.pop();
-      return true;
+      return out;
     }
 
-    // INVARIANT: `active == true` means there is a drain running or scheduled.
-    // Keep it set while work remains to avoid double-scheduling drains.
-    auto keep_active_for_more() noexcept -> bool {
+    auto should_schedule_drain() noexcept -> bool {
       std::scoped_lock lk{m};
       if (tasks.empty()) {
         active = false;
@@ -135,13 +133,17 @@ class strand_executor {
     detail::unique_function<void()> fn{};
     std::size_t n = 0;
     try {
-      while (n < max_drain_per_tick && st->try_pop(fn)) {
+      while (n < max_drain_per_tick) {
+        fn = st->pop_one();
+        if (!fn) {
+          break;
+        }
         fn();
         fn = {};
         ++n;
       }
     } catch (...) {
-      if (st->keep_active_for_more()) {
+      if (st->should_schedule_drain()) {
         auto again = st;
         st->base.post([again]() { strand_executor::drain(std::move(again)); });
       }
@@ -149,7 +151,7 @@ class strand_executor {
     }
 
     // Fairness: if more tasks remain, reschedule another drain onto the base executor.
-    if (st->keep_active_for_more()) {
+    if (st->should_schedule_drain()) {
       auto again = st;
       st->base.post([again]() { strand_executor::drain(std::move(again)); });
     }
