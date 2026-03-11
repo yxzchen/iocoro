@@ -16,26 +16,31 @@ static constexpr std::uint64_t invalid_token = 0;
 struct event_handle {
   enum class kind : std::uint8_t { none, timer, fd };
 
+  struct fd_data {
+    int fd = -1;
+    fd_event_kind kind = fd_event_kind::read;
+    std::uint64_t token = invalid_token;
+  };
+
+  struct timer_data {
+    std::uint32_t index = 0;
+    std::uint64_t token = invalid_token;
+  };
+
   // Weak reference for safe cancellation. The control block is owned by
   // io_context_impl (via shared_ptr) and any executors/objects that keep it alive.
   std::weak_ptr<io_context_impl> impl{};
   kind type = kind::none;
 
-  int fd = -1;
-  fd_event_kind fd_kind = fd_event_kind::read;
-  std::uint64_t fd_token = invalid_token;
-
-  std::uint32_t timer_index = 0;
-  std::uint64_t timer_token = invalid_token;
+  fd_data fd{};
+  timer_data timer{};
 
   static auto make_fd(std::weak_ptr<io_context_impl> impl_, int fd_, fd_event_kind kind_,
                       std::uint64_t token_) noexcept -> event_handle {
     return event_handle{
       .impl = std::move(impl_),
       .type = kind::fd,
-      .fd = fd_,
-      .fd_kind = kind_,
-      .fd_token = token_,
+      .fd = fd_data{fd_, kind_, token_},
     };
   }
 
@@ -44,8 +49,7 @@ struct event_handle {
     return event_handle{
       .impl = std::move(impl_),
       .type = kind::timer,
-      .timer_index = index,
-      .timer_token = token_,
+      .timer = timer_data{index, token_},
     };
   }
 
@@ -57,9 +61,9 @@ struct event_handle {
     }
     switch (type) {
       case kind::fd:
-        return fd >= 0 && fd_token != invalid_token;
+        return fd.fd >= 0 && fd.token != invalid_token;
       case kind::timer:
-        return timer_token != invalid_token;
+        return timer.token != invalid_token;
       case kind::none:
       default:
         return false;

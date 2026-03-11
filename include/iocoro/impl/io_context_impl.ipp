@@ -377,11 +377,11 @@ inline void io_context_impl::cancel_event(event_handle h) noexcept {
     return;
   }
   if (h.type == event_handle::kind::fd) {
-    cancel_fd_event(h.fd, h.fd_kind, h.fd_token);
+    cancel_fd_event(h.fd.fd, h.fd.kind, h.fd.token);
     return;
   }
   if (h.type == event_handle::kind::timer) {
-    cancel_timer(h.timer_index, h.timer_token);
+    cancel_timer(h.timer.index, h.timer.token);
   }
 }
 
