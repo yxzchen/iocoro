@@ -36,7 +36,6 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   auto run() -> std::size_t;
   auto run_one() -> std::size_t;
   auto run_for(std::chrono::milliseconds timeout) -> std::size_t;
-
   void stop();
   void restart();
   auto stopped() const noexcept -> bool { return stopped_.load(std::memory_order_acquire); }
@@ -55,40 +54,41 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   /// Thread-safe: can be called from any thread. Completion/abort callbacks
   /// and operation destruction still occur on the reactor thread.
   void cancel_timer(std::uint32_t index, std::uint64_t token) noexcept;
-  void cancel_event(event_handle h) noexcept;
 
   auto register_fd_read(int fd, reactor_op_ptr op) -> event_handle;
   auto register_fd_write(int fd, reactor_op_ptr op) -> event_handle;
   auto add_fd(int fd) noexcept -> bool;
   void remove_fd(int fd) noexcept;
   void remove_fd_sync(int fd) noexcept;
-
   void cancel_fd_event(int fd, detail::fd_event_kind kind, std::uint64_t token) noexcept;
+
+  void cancel_event(event_handle h) noexcept;
 
   void add_work_guard() noexcept;
   void remove_work_guard() noexcept;
 
-  void set_thread_id() noexcept;
   auto running_in_this_thread() const noexcept -> bool;
 
  private:
   // Opaque per-thread identity token.
   // Only valid for equality comparison within the process lifetime.
   static auto this_thread_token() noexcept -> std::uintptr_t;
-
-  auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt)
-    -> std::size_t;
-  auto process_timers() -> std::size_t;
-  auto process_posted() -> std::size_t;
+  void set_thread_id() noexcept;
+  auto is_stopped() const noexcept -> bool;
+  auto has_work() -> bool;
 
   auto next_wait(std::optional<std::chrono::steady_clock::time_point> deadline)
     -> std::optional<std::chrono::milliseconds>;
-  void wakeup();
+  auto process_posted() -> std::size_t;
+  auto process_timers() -> std::size_t;
+  auto process_events(std::optional<std::chrono::milliseconds> max_wait = std::nullopt)
+    -> std::size_t;
+
   auto register_fd_impl(int fd, reactor_op_ptr op, detail::fd_event_kind kind) -> event_handle;
   void remove_fd_impl(int fd) noexcept;
-
-  auto is_stopped() const noexcept -> bool;
-  auto has_work() -> bool;
+  // Abort a reactor op. Must only be called on the reactor thread.
+  static void abort_op(reactor_op_ptr op, std::error_code ec) noexcept;
+  void wakeup();
 
   // Execute `f` on the reactor thread (registry/backend ownership thread).
   //
@@ -101,9 +101,6 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   // SAFETY: uses `weak_from_this()` to avoid self-owning cycles while still pinning lifetime
   // during callback execution.
   void dispatch_reactor(unique_function<void(io_context_impl&)> f) noexcept;
-
-  // Abort a reactor op. Must only be called on the reactor thread.
-  static void abort_op(reactor_op_ptr op, std::error_code ec) noexcept;
 
   std::unique_ptr<backend_interface> backend_;
 
