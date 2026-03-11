@@ -1,4 +1,6 @@
 #include <iocoro/detail/reactor_backend.hpp>
+#include <iocoro/detail/scope_guard.hpp>
+#include <iocoro/detail/wake_state.hpp>
 #include <iocoro/error.hpp>
 
 #include <atomic>
@@ -148,22 +150,11 @@ class backend_uring final : public backend_interface {
   auto wait(std::optional<std::chrono::milliseconds> timeout,
             std::vector<backend_event>& out) -> void override {
     out.clear();
+    auto wait_guard = detail::make_scope_exit([this]() noexcept { wakeup_.finish_wait(); });
 
     // Drain any interest updates recorded by other threads.
     // These are submitted by the reactor thread to avoid concurrent ring access.
-    std::vector<pending_add> pending_adds{};
-    std::vector<pending_remove> pending_removes{};
-    {
-      std::scoped_lock lk{poll_mtx_};
-      pending_adds.swap(pending_adds_);
-      pending_removes.swap(pending_removes_);
-    }
-    for (auto const& r : pending_removes) {
-      submit_poll_remove(r.fd, r.user_data);
-    }
-    for (auto const& a : pending_adds) {
-      submit_poll_add(a.fd, a.mask, a.user_data);
-    }
+    flush_pending_updates();
 
     io_uring_cqe* first = nullptr;
     int wait_ret = 0;
@@ -183,94 +174,6 @@ class backend_uring final : public backend_interface {
     }
 
     std::vector<pending_add> local_arms{};
-    auto handle_one = [&](io_uring_cqe* cqe) {
-      std::uint64_t const data = ::io_uring_cqe_get_data64(cqe);
-      std::uint64_t const tag = unpack_tag(data);
-
-      if (tag == tag_wakeup) {
-        drain_eventfd(eventfd_);
-        // Clear dedupe after draining so a raced wakeup cannot leave the flag
-        // stuck at true while its token is consumed by this drain.
-        wakeup_pending_.store(false, std::memory_order_release);
-        if (wakeup_missed_.exchange(false, std::memory_order_acq_rel)) {
-          // A wakeup request arrived while pending=true and was deduped.
-          // Re-emit one token so that no wake request is lost.
-          wakeup();
-        }
-        arm_wakeup();
-        return;
-      }
-      if (tag == tag_remove) {
-        return;
-      }
-
-      int const fd = unpack_fd(data);
-      std::uint32_t const gen = unpack_gen(data);
-      int const res = cqe->res;
-      std::uint32_t const ev = (res >= 0) ? static_cast<std::uint32_t>(res) : 0U;
-      bool const is_cancelled = (res == -ECANCELED);
-      bool generation_matched = false;
-
-      {
-        std::scoped_lock lk{poll_mtx_};
-        auto it = polls_.find(fd);
-        if (it != polls_.end()) {
-          auto& st = it->second;
-          generation_matched = (st.armed && st.active_gen == gen);
-          if (generation_matched) {
-            st.armed = false;
-            st.cancel_requested = false;
-            st.active_user_data = 0;
-            st.active_gen = 0;
-            st.active_mask = 0;
-          }
-          if (!st.armed && st.desired_mask != 0) {
-            st.armed = true;
-            st.cancel_requested = false;
-            st.active_mask = st.desired_mask;
-            st.active_gen = st.next_gen++;
-            st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
-            local_arms.push_back(pending_add{fd, st.active_mask, st.active_user_data});
-          }
-          if (!st.armed && st.desired_mask == 0) {
-            polls_.erase(it);
-          }
-        }
-      }
-
-      if (!generation_matched) {
-        return;
-      }
-
-      if (is_cancelled) {
-        return;
-      }
-
-      bool const has_error = (ev & static_cast<std::uint32_t>(POLLERR)) != 0;
-      bool const has_hup =
-        (ev & (static_cast<std::uint32_t>(POLLHUP) | static_cast<std::uint32_t>(POLLRDHUP))) != 0;
-      bool const has_read = (ev & static_cast<std::uint32_t>(POLLIN)) != 0;
-      bool const has_write = (ev & static_cast<std::uint32_t>(POLLOUT)) != 0;
-      bool const is_error = (res < 0) || has_error;
-
-      backend_event e{};
-      e.fd = fd;
-      e.is_error = is_error;
-      // POLLHUP/POLLRDHUP are treated as readiness to allow callers to drain pending data.
-      e.can_read = is_error || has_hup || has_read;
-      e.can_write = is_error || has_hup || has_write;
-
-      if (is_error) {
-        if (res < 0) {
-          e.ec = std::error_code{-res, std::generic_category()};
-        } else {
-          e.ec = error::connection_reset;
-        }
-      }
-
-      out.push_back(e);
-    };
-
     auto handle_one_and_seen = [&](io_uring_cqe* cqe) {
       struct seen_guard {
         io_uring* ring = nullptr;
@@ -282,7 +185,7 @@ class backend_uring final : public backend_interface {
         }
       };
       seen_guard g{&ring_, cqe};
-      handle_one(cqe);
+      handle_cqe(cqe, out, local_arms);
     };
 
     handle_one_and_seen(first);
@@ -300,29 +203,16 @@ class backend_uring final : public backend_interface {
     }
 
     // Apply any interest updates that arrived while we were handling CQEs.
-    pending_adds.clear();
-    pending_removes.clear();
-    {
-      std::scoped_lock lk{poll_mtx_};
-      pending_adds.swap(pending_adds_);
-      pending_removes.swap(pending_removes_);
-    }
-    for (auto const& r : pending_removes) {
-      submit_poll_remove(r.fd, r.user_data);
-    }
-    for (auto const& a : pending_adds) {
-      submit_poll_add(a.fd, a.mask, a.user_data);
-    }
-
-    return;
+    flush_pending_updates();
   }
+
+  void prepare_wait() noexcept override { wakeup_.begin_wait(); }
 
   void wakeup() noexcept override {
     if (eventfd_ < 0) {
       return;
     }
-    if (wakeup_pending_.exchange(true, std::memory_order_acq_rel)) {
-      wakeup_missed_.store(true, std::memory_order_release);
+    if (!wakeup_.notify()) {
       return;
     }
 
@@ -336,7 +226,7 @@ class backend_uring final : public backend_interface {
         continue;
       }
       // Allow future wakeups to retry if this write fails.
-      wakeup_pending_.store(false, std::memory_order_release);
+      wakeup_.notify_failed();
       return;
     }
   }
@@ -362,26 +252,106 @@ class backend_uring final : public backend_interface {
     std::uint32_t next_gen = 1;
   };
 
+  void flush_pending_updates() {
+    std::vector<pending_add> pending_adds{};
+    std::vector<pending_remove> pending_removes{};
+    {
+      std::scoped_lock lk{poll_mtx_};
+      pending_adds.swap(pending_adds_);
+      pending_removes.swap(pending_removes_);
+    }
+    for (auto const& r : pending_removes) {
+      submit_poll_remove(r.fd, r.user_data);
+    }
+    for (auto const& a : pending_adds) {
+      submit_poll_add(a.fd, a.mask, a.user_data);
+    }
+  }
+
+  void handle_cqe(io_uring_cqe* cqe, std::vector<backend_event>& out,
+                  std::vector<pending_add>& local_arms) {
+    std::uint64_t const data = ::io_uring_cqe_get_data64(cqe);
+    std::uint64_t const tag = unpack_tag(data);
+
+    if (tag == tag_wakeup) {
+      drain_eventfd(eventfd_);
+      wakeup_.consume_notification();
+      arm_wakeup();
+      return;
+    }
+    if (tag == tag_remove) {
+      return;
+    }
+
+    int const fd = unpack_fd(data);
+    std::uint32_t const gen = unpack_gen(data);
+    int const res = cqe->res;
+    std::uint32_t const ev = (res >= 0) ? static_cast<std::uint32_t>(res) : 0U;
+    bool const is_cancelled = (res == -ECANCELED);
+    bool generation_matched = false;
+
+    {
+      std::scoped_lock lk{poll_mtx_};
+      auto it = polls_.find(fd);
+      if (it != polls_.end()) {
+        auto& st = it->second;
+        generation_matched = (st.armed && st.active_gen == gen);
+        if (generation_matched) {
+          st.armed = false;
+          st.cancel_requested = false;
+          st.active_user_data = 0;
+          st.active_gen = 0;
+          st.active_mask = 0;
+        }
+        if (!st.armed && st.desired_mask != 0) {
+          st.armed = true;
+          st.cancel_requested = false;
+          st.active_mask = st.desired_mask;
+          st.active_gen = st.next_gen++;
+          st.active_user_data = pack_fd(fd, tag_poll, st.active_gen);
+          local_arms.push_back(pending_add{fd, st.active_mask, st.active_user_data});
+        }
+        if (!st.armed && st.desired_mask == 0) {
+          polls_.erase(it);
+        }
+      }
+    }
+
+    if (!generation_matched || is_cancelled) {
+      return;
+    }
+
+    bool const has_error = (ev & static_cast<std::uint32_t>(POLLERR)) != 0;
+    bool const has_hup =
+      (ev & (static_cast<std::uint32_t>(POLLHUP) | static_cast<std::uint32_t>(POLLRDHUP))) != 0;
+    bool const has_read = (ev & static_cast<std::uint32_t>(POLLIN)) != 0;
+    bool const has_write = (ev & static_cast<std::uint32_t>(POLLOUT)) != 0;
+    bool const is_error = (res < 0) || has_error;
+
+    backend_event e{};
+    e.fd = fd;
+    e.is_error = is_error;
+    // POLLHUP/POLLRDHUP are treated as readiness to allow callers to drain pending data.
+    e.can_read = is_error || has_hup || has_read;
+    e.can_write = is_error || has_hup || has_write;
+
+    if (is_error) {
+      if (res < 0) {
+        e.ec = std::error_code{-res, std::generic_category()};
+      } else {
+        e.ec = error::connection_reset;
+      }
+    }
+
+    out.push_back(e);
+  }
+
   void arm_wakeup() {
-    std::scoped_lock lk{ring_mtx_};
-    auto* sqe = ::io_uring_get_sqe(&ring_);
-    if (sqe == nullptr) {
-      int const submit = ::io_uring_submit(&ring_);
-      if (submit < 0) {
-        throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
-      }
-      sqe = ::io_uring_get_sqe(&ring_);
-      if (sqe == nullptr) {
-        throw std::system_error(std::make_error_code(std::errc::no_buffer_space),
-                                "io_uring_get_sqe failed");
-      }
-    }
-    ::io_uring_prep_poll_add(sqe, eventfd_, POLLIN | POLLERR | POLLHUP);
-    ::io_uring_sqe_set_data64(sqe, pack_fd(0, tag_wakeup));
-    int const submit = ::io_uring_submit(&ring_);
-    if (submit < 0) {
-      throw std::system_error(-submit, std::generic_category(), "io_uring_submit failed");
-    }
+    submit_poll_add_entry(eventfd_, POLLIN | POLLERR | POLLHUP, pack_fd(0, tag_wakeup));
+  }
+
+  void submit_poll_add(int fd, int mask, std::uint64_t user_data) {
+    submit_poll_add_entry(fd, mask, user_data);
   }
 
   void submit_poll_remove(int fd, std::uint64_t user_data) {
@@ -399,7 +369,7 @@ class backend_uring final : public backend_interface {
     (void)::io_uring_submit(&ring_);
   }
 
-  void submit_poll_add(int fd, int mask, std::uint64_t user_data) {
+  void submit_poll_add_entry(int fd, int mask, std::uint64_t user_data) {
     std::scoped_lock lk{ring_mtx_};
     auto* sqe = ::io_uring_get_sqe(&ring_);
     if (sqe == nullptr) {
@@ -427,8 +397,7 @@ class backend_uring final : public backend_interface {
   std::unordered_map<int, uring_poll_state> polls_{};
   std::mutex poll_mtx_{};
   std::mutex ring_mtx_{};
-  std::atomic<bool> wakeup_pending_{false};
-  std::atomic<bool> wakeup_missed_{false};
+  wake_state wakeup_{};
   std::vector<pending_add> pending_adds_{};
   std::vector<pending_remove> pending_removes_{};
 };

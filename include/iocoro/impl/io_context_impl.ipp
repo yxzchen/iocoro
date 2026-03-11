@@ -435,6 +435,10 @@ inline auto io_context_impl::process_events(std::optional<std::chrono::milliseco
   IOCORO_ENSURE(running_in_this_thread(),
                 "io_context_impl::process_events(): must run on io_context thread");
   try {
+    bool const can_block = !max_wait.has_value() || *max_wait > std::chrono::milliseconds{0};
+    if (can_block) {
+      backend_->prepare_wait();
+    }
     backend_->wait(max_wait, backend_events_);
   } catch (...) {
     // Backend failure is treated as a fatal internal error for this io_context instance.

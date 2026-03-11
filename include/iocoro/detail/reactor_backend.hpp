@@ -32,6 +32,7 @@ class backend_interface {
 
   virtual auto wait(std::optional<std::chrono::milliseconds> timeout,
                     std::vector<backend_event>& out) -> void = 0;
+  virtual void prepare_wait() noexcept {}
   virtual void wakeup() noexcept = 0;
 };
 

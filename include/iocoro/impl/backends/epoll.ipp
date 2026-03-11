@@ -1,4 +1,6 @@
 #include <iocoro/detail/reactor_backend.hpp>
+#include <iocoro/detail/scope_guard.hpp>
+#include <iocoro/detail/wake_state.hpp>
 #include <iocoro/error.hpp>
 
 #include <atomic>
@@ -140,6 +142,8 @@ class backend_epoll final : public backend_interface {
 
   auto wait(std::optional<std::chrono::milliseconds> timeout,
             std::vector<backend_event>& out) -> void override {
+    auto wait_guard = detail::make_scope_exit([this]() noexcept { wakeup_.finish_wait(); });
+
     int timeout_ms = -1;
     if (timeout.has_value()) {
       timeout_ms = static_cast<int>(timeout->count());
@@ -167,10 +171,7 @@ class backend_epoll final : public backend_interface {
 
       if (fd == eventfd_) {
         drain_eventfd(eventfd_);
-        // Clear the dedupe flag after draining.
-        // If a wakeup raced and its token was drained in this batch, we must
-        // not leave wakeup_pending_ stuck at true.
-        wakeup_pending_.store(false, std::memory_order_release);
+        wakeup_.consume_notification();
         continue;
       }
 
@@ -208,8 +209,10 @@ class backend_epoll final : public backend_interface {
     return;
   }
 
+  void prepare_wait() noexcept override { wakeup_.begin_wait(); }
+
   void wakeup() noexcept override {
-    if (wakeup_pending_.exchange(true, std::memory_order_acq_rel)) {
+    if (!wakeup_.notify()) {
       return;
     }
     std::uint64_t value = 1;
@@ -222,7 +225,7 @@ class backend_epoll final : public backend_interface {
         continue;
       }
       // Best-effort rollback: if write failed, allow future wakeups to retry.
-      wakeup_pending_.store(false, std::memory_order_release);
+      wakeup_.notify_failed();
       return;
     }
   }
@@ -233,7 +236,7 @@ class backend_epoll final : public backend_interface {
   std::size_t fd_capacity_ = 0;
   std::unique_ptr<std::atomic<std::uint32_t>[]> fd_generations_{};
   std::unique_ptr<std::atomic<std::uint8_t>[]> fd_active_{};
-  std::atomic<bool> wakeup_pending_{false};
+  wake_state wakeup_{};
 };
 
 inline auto make_backend() -> std::unique_ptr<backend_interface> {
