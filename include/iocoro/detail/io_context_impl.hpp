@@ -10,8 +10,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 namespace iocoro::detail {
@@ -76,6 +78,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   void set_thread_id() noexcept;
   auto is_stopped() const noexcept -> bool;
   auto has_work() -> bool;
+  void notify_state_change() noexcept;
 
   auto next_wait(std::optional<std::chrono::steady_clock::time_point> deadline)
     -> std::optional<std::chrono::milliseconds>;
@@ -115,6 +118,8 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   work_guard_counter work_guard_{};
   std::vector<backend_event> backend_events_{};
   std::atomic<std::uintptr_t> thread_token_{0};
+  mutable std::mutex state_change_mtx_{};
+  std::condition_variable state_change_cv_{};
 };
 
 }  // namespace iocoro::detail

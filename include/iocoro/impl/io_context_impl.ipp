@@ -62,6 +62,7 @@ inline auto io_context_impl::run() -> std::size_t {
   auto running_guard = detail::make_scope_exit([this]() noexcept {
     thread_token_.store(0, std::memory_order_release);
     running_.store(false, std::memory_order_release);
+    notify_state_change();
   });
   set_thread_id();
 
@@ -93,6 +94,7 @@ inline auto io_context_impl::run_one() -> std::size_t {
   auto running_guard = detail::make_scope_exit([this]() noexcept {
     thread_token_.store(0, std::memory_order_release);
     running_.store(false, std::memory_order_release);
+    notify_state_change();
   });
   set_thread_id();
 
@@ -118,6 +120,7 @@ inline auto io_context_impl::run_for(std::chrono::milliseconds timeout) -> std::
   auto running_guard = detail::make_scope_exit([this]() noexcept {
     thread_token_.store(0, std::memory_order_release);
     running_.store(false, std::memory_order_release);
+    notify_state_change();
   });
   set_thread_id();
 
@@ -248,10 +251,8 @@ inline void io_context_impl::remove_fd_sync(int fd) noexcept {
   }
 
   struct sync_remove_state {
-    std::mutex mtx{};
-    std::condition_variable cv{};
     std::atomic<bool> removed{false};
-    bool done = false;
+    std::atomic<bool> done{false};
   };
 
   auto state = std::make_shared<sync_remove_state>();
@@ -259,27 +260,23 @@ inline void io_context_impl::remove_fd_sync(int fd) noexcept {
     if (!state->removed.exchange(true, std::memory_order_acq_rel)) {
       self.remove_fd_impl(fd);
     }
-    {
-      std::scoped_lock lk{state->mtx};
-      state->done = true;
-    }
-    state->cv.notify_all();
+    state->done.store(true, std::memory_order_release);
+    self.notify_state_change();
   };
 
   dispatch_reactor(std::move(remove_once));
 
-  std::unique_lock lk{state->mtx};
-  while (!state->done) {
-    if (!running_.load(std::memory_order_acquire)) {
-      lk.unlock();
-      if (!state->removed.exchange(true, std::memory_order_acq_rel)) {
-        remove_fd_impl(fd);
-      }
-      lk.lock();
-      state->done = true;
-      break;
+  std::unique_lock lk{state_change_mtx_};
+  state_change_cv_.wait(lk, [this, state] {
+    return state->done.load(std::memory_order_acquire) || !running_.load(std::memory_order_acquire);
+  });
+  lk.unlock();
+
+  if (!state->done.load(std::memory_order_acquire)) {
+    if (!state->removed.exchange(true, std::memory_order_acq_rel)) {
+      remove_fd_impl(fd);
     }
-    state->cv.wait_for(lk, std::chrono::milliseconds{1});
+    state->done.store(true, std::memory_order_release);
   }
 }
 
@@ -366,6 +363,10 @@ inline auto io_context_impl::next_wait(std::optional<std::chrono::steady_clock::
 inline auto io_context_impl::has_work() -> bool {
   return work_guard_.has_work() || posted_.has_pending_tasks() || !timers_.empty() ||
          !fd_registry_.empty();
+}
+
+inline void io_context_impl::notify_state_change() noexcept {
+  state_change_cv_.notify_all();
 }
 
 inline auto io_context_impl::register_fd_impl(int fd, reactor_op_ptr op,
