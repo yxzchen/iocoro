@@ -53,7 +53,7 @@ inline void thread_pool::worker_loop(std::shared_ptr<shared_state> state, std::s
     }
 
     try {
-      detail::executor_guard pool_guard{any_executor{executor_type{state}}};
+      detail::executor_guard pool_guard{executor_type{state}};
       task();
     } catch (...) {
       auto handler_ptr = state->on_task_exception.load(std::memory_order_acquire);

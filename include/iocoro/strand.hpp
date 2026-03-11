@@ -128,7 +128,7 @@ class strand_executor {
 
     // Make the strand visible as the current executor during the whole drain.
     strand_executor ex{st};
-    detail::executor_guard g{any_executor{ex}};
+    detail::executor_guard g{ex};
 
     constexpr std::size_t max_drain_per_tick = 256;
 

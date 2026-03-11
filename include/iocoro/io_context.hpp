@@ -46,14 +46,14 @@ class io_context {
 
     void post(detail::unique_function<void()> f) const {
       ensure_impl().post([ex = *this, fn = std::move(f)]() mutable {
-        detail::executor_guard g{any_executor{ex}};
+        detail::executor_guard g{ex};
         fn();
       });
     }
 
     void dispatch(detail::unique_function<void()> f) const {
       ensure_impl().dispatch([ex = *this, fn = std::move(f)]() mutable {
-        detail::executor_guard g{any_executor{ex}};
+        detail::executor_guard g{ex};
         fn();
       });
     }
