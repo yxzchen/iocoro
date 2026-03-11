@@ -28,13 +28,17 @@ template <typename R, typename... Args>
 class unique_function<R(Args...)> {
  public:
   unique_function() = default;
+  unique_function(std::nullptr_t) noexcept {}
   ~unique_function() { reset(); }
 
   template <typename F>
     requires(!std::is_same_v<std::decay_t<F>, unique_function>) &&
-            (std::is_invocable_r_v<R, F&, Args...> || std::is_invocable_r_v<R, F const&, Args...>)
+            std::is_invocable_r_v<R, std::decay_t<F>&, Args...>
   unique_function(F&& f) {
     using functor = std::decay_t<F>;
+    if (is_null_callable(f)) {
+      return;
+    }
     if constexpr (fits_inline<functor>) {
       ::new (storage_ptr()) functor(std::forward<F>(f));
       ptr_ = storage_ptr();
@@ -56,13 +60,17 @@ class unique_function<R(Args...)> {
     }
     return *this;
   }
+  auto operator=(std::nullptr_t) noexcept -> unique_function& {
+    reset();
+    return *this;
+  }
 
   unique_function(unique_function const&) = delete;
   auto operator=(unique_function const&) -> unique_function& = delete;
 
   explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
-  auto operator()(Args... args) const -> R {
+  auto operator()(Args... args) -> R {
     IOCORO_ASSERT(ptr_);
     return vtable_->invoke(ptr_, std::forward<Args>(args)...);
   }
@@ -113,10 +121,29 @@ class unique_function<R(Args...)> {
                                       std::is_nothrow_move_constructible_v<F>;
 
   template <typename F>
+  static constexpr auto is_null_callable(F const& f) noexcept -> bool {
+    using functor = std::decay_t<F>;
+    if constexpr (std::is_pointer_v<functor> || std::is_member_pointer_v<functor>) {
+      return f == nullptr;
+    } else {
+      return false;
+    }
+  }
+
+  template <typename F>
+  static consteval auto move_inline_for() noexcept -> void (*)(void*, void*) noexcept {
+    if constexpr (fits_inline<F>) {
+      return &move_inline_impl<F>;
+    } else {
+      return nullptr;
+    }
+  }
+
+  template <typename F>
   static inline constexpr vtable vtable_for{
     .invoke = &invoke_impl<F>,
     .destroy = &destroy_impl<F>,
-    .move_inline = &move_inline_impl<F>,
+    .move_inline = move_inline_for<F>(),
   };
 
   void reset() noexcept {
@@ -138,6 +165,7 @@ class unique_function<R(Args...)> {
     vtable_ = other.vtable_;
     if (other.is_inline_) {
       ptr_ = storage_ptr();
+      IOCORO_ASSERT(vtable_->move_inline != nullptr);
       vtable_->move_inline(other.ptr_, ptr_);
       is_inline_ = true;
     } else {
