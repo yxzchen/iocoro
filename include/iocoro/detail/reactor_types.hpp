@@ -12,7 +12,6 @@ class io_context_impl;
 
 enum class fd_event_kind : std::uint8_t { read, write };
 static constexpr std::uint64_t invalid_token = 0;
-static constexpr std::uint64_t invalid_generation = 0;
 
 struct event_handle {
   enum class kind : std::uint8_t { none, timer, fd };
@@ -24,10 +23,10 @@ struct event_handle {
 
   int fd = -1;
   fd_event_kind fd_kind = fd_event_kind::read;
-  std::uint64_t token = invalid_token;
+  std::uint64_t fd_token = invalid_token;
 
   std::uint32_t timer_index = 0;
-  std::uint64_t timer_generation = invalid_generation;
+  std::uint64_t timer_token = invalid_token;
 
   static auto make_fd(std::weak_ptr<io_context_impl> impl_, int fd_, fd_event_kind kind_,
                       std::uint64_t token_) noexcept -> event_handle {
@@ -36,17 +35,17 @@ struct event_handle {
       .type = kind::fd,
       .fd = fd_,
       .fd_kind = kind_,
-      .token = token_,
+      .fd_token = token_,
     };
   }
 
   static auto make_timer(std::weak_ptr<io_context_impl> impl_, std::uint32_t index,
-                         std::uint64_t generation) noexcept -> event_handle {
+                         std::uint64_t token_) noexcept -> event_handle {
     return event_handle{
       .impl = std::move(impl_),
       .type = kind::timer,
       .timer_index = index,
-      .timer_generation = generation,
+      .timer_token = token_,
     };
   }
 
@@ -58,9 +57,9 @@ struct event_handle {
     }
     switch (type) {
       case kind::fd:
-        return fd >= 0 && token != invalid_token;
+        return fd >= 0 && fd_token != invalid_token;
       case kind::timer:
-        return timer_generation != invalid_generation;
+        return timer_token != invalid_token;
       case kind::none:
       default:
         return false;

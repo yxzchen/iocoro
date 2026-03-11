@@ -54,7 +54,7 @@ class io_context_impl : public std::enable_shared_from_this<io_context_impl> {
   ///
   /// Thread-safe: can be called from any thread. Completion/abort callbacks
   /// and operation destruction still occur on the reactor thread.
-  void cancel_timer(std::uint32_t index, std::uint64_t generation) noexcept;
+  void cancel_timer(std::uint32_t index, std::uint64_t token) noexcept;
   void cancel_event(event_handle h) noexcept;
 
   auto register_fd_read(int fd, reactor_op_ptr op) -> event_handle;

@@ -23,22 +23,23 @@ enum class timer_state : std::uint8_t {
 // All accesses must be serialized by io_context_impl (reactor thread ownership).
 class timer_registry {
  public:
-  struct timer_token {
+  struct register_result {
     std::uint32_t index = 0;
-    std::uint64_t generation = invalid_generation;
+    std::uint64_t token = invalid_token;
   };
 
   // Token model (ABA defense):
-  // - Each timer slot has a `generation` that increments on recycle.
-  // - A `timer_token` matches only if both (index, generation) match the current slot.
+  // - Each timer slot has a `token` that increments on recycle.
+  // - Cancellation matches only if both (index, token) match the current slot.
   // This ensures a stale cancellation cannot cancel a different timer that reused the slot.
   struct cancel_result {
     reactor_op_ptr op{};
     bool cancelled = false;
   };
 
-  auto add_timer(std::chrono::steady_clock::time_point expiry, reactor_op_ptr op) -> timer_token;
-  auto cancel(timer_token tok) noexcept -> cancel_result;
+  auto add_timer(std::chrono::steady_clock::time_point expiry,
+                 reactor_op_ptr op) -> register_result;
+  auto cancel(std::uint32_t index, std::uint64_t token) noexcept -> cancel_result;
   auto next_timeout() -> std::optional<std::chrono::milliseconds>;
   auto process_expired() -> std::size_t;
   auto empty() const -> bool;
@@ -52,13 +53,14 @@ class timer_registry {
   struct timer_node {
     std::chrono::steady_clock::time_point expiry{};
     reactor_op_ptr op{};
-    std::uint64_t generation = 1;
+    std::uint64_t token = 1;
     timer_state state{timer_state::pending};
   };
 
   auto push_heap(std::uint32_t index) -> void;
   auto pop_heap() -> std::uint32_t;
   auto top_index() const -> std::uint32_t;
+  void advance_token(timer_node& node) noexcept;
   auto recycle_node(std::uint32_t index) -> void;
 
   std::vector<timer_node> nodes_{};
@@ -68,7 +70,7 @@ class timer_registry {
 };
 
 inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expiry,
-                                      reactor_op_ptr op) -> timer_token {
+                                      reactor_op_ptr op) -> register_result {
   std::uint32_t index = 0;
   if (!free_.empty()) {
     index = free_.back();
@@ -86,15 +88,16 @@ inline auto timer_registry::add_timer(std::chrono::steady_clock::time_point expi
 
   push_heap(index);
 
-  return timer_token{index, node.generation};
+  return register_result{index, node.token};
 }
 
-inline auto timer_registry::cancel(timer_token tok) noexcept -> cancel_result {
-  if (tok.generation == invalid_generation || tok.index >= nodes_.size()) {
+inline auto timer_registry::cancel(std::uint32_t index,
+                                   std::uint64_t token) noexcept -> cancel_result {
+  if (token == invalid_token || index >= nodes_.size()) {
     return {};
   }
-  auto& node = nodes_[tok.index];
-  if (node.generation != tok.generation) {
+  auto& node = nodes_[index];
+  if (node.token != token) {
     return {};
   }
   if (node.state != timer_state::pending) {
@@ -212,11 +215,18 @@ inline auto timer_registry::top_index() const -> std::uint32_t {
   return heap_.front();
 }
 
+inline void timer_registry::advance_token(timer_node& node) noexcept {
+  ++node.token;
+  if (node.token == invalid_token) {
+    ++node.token;
+  }
+}
+
 inline auto timer_registry::recycle_node(std::uint32_t index) -> void {
   auto& node = nodes_[index];
   node.op = {};
   node.state = timer_state::fired;
-  ++node.generation;
+  advance_token(node);
   free_.push_back(index);
   if (active_count_ > 0) {
     --active_count_;
@@ -236,10 +246,7 @@ inline auto timer_registry::drain_all() noexcept -> std::vector<reactor_op_ptr> 
     }
     node.op = {};
     node.state = timer_state::fired;
-    ++node.generation;
-    if (node.generation == invalid_generation) {
-      ++node.generation;
-    }
+    advance_token(node);
   }
 
   heap_.clear();

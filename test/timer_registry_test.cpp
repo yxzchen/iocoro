@@ -45,7 +45,7 @@ inline void abort_and_destroy(iocoro::detail::reactor_op_ptr op) noexcept {
 
 }  // namespace
 
-TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slot) {
+TEST(timer_registry_test, stale_token_does_not_cancel_new_timer_in_same_slot) {
   iocoro::detail::timer_registry reg;
 
   std::atomic<int> complete{0};
@@ -59,13 +59,13 @@ TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slo
                             iocoro::detail::make_reactor_op<single_call_state>(
                               single_call_state{&complete, &abort, &done1}));
 
-  auto cr1 = reg.cancel(tok1);
+  auto cr1 = reg.cancel(tok1.index, tok1.token);
   ASSERT_TRUE(cr1.cancelled);
   abort_and_destroy(std::move(cr1.op));
   ASSERT_TRUE(done1.load(std::memory_order_acquire));
   EXPECT_EQ(abort.load(std::memory_order_relaxed), 1);
 
-  // Drive the registry so the cancelled node is popped and recycled (generation increments).
+  // Drive the registry so the cancelled node is popped and recycled (token increments).
   while (!reg.empty()) {
     (void)reg.process_expired();
     std::this_thread::sleep_for(std::chrono::milliseconds{1});
@@ -75,10 +75,10 @@ TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slo
   auto tok2 = reg.add_timer(std::chrono::steady_clock::now() + std::chrono::milliseconds{1},
                             iocoro::detail::make_reactor_op<single_call_state>(
                               single_call_state{&complete, &abort, &done2}));
-  ASSERT_NE(tok2.generation, tok1.generation);
+  ASSERT_NE(tok2.token, tok1.token);
 
-  // Cancelling with stale generation must not affect the new timer.
-  auto stale = reg.cancel(tok1);
+  // Cancelling with a stale token must not affect the new timer.
+  auto stale = reg.cancel(tok1.index, tok1.token);
   EXPECT_FALSE(stale.cancelled);
 
   // Drive expiry; it should complete (not abort) exactly once.
@@ -91,7 +91,7 @@ TEST(timer_registry_test, stale_generation_does_not_cancel_new_timer_in_same_slo
   EXPECT_EQ(abort.load(std::memory_order_relaxed), 1);
 }
 
-TEST(timer_registry_test, stale_generation_after_drain_all_does_not_cancel_new_timer) {
+TEST(timer_registry_test, stale_token_after_drain_all_does_not_cancel_new_timer) {
   iocoro::detail::timer_registry reg;
 
   std::atomic<int> complete{0};
@@ -111,9 +111,9 @@ TEST(timer_registry_test, stale_generation_after_drain_all_does_not_cancel_new_t
                             iocoro::detail::make_reactor_op<single_call_state>(
                               single_call_state{&complete, &abort, &done}));
   ASSERT_EQ(tok2.index, tok1.index);
-  ASSERT_NE(tok2.generation, tok1.generation);
+  ASSERT_NE(tok2.token, tok1.token);
 
-  auto stale = reg.cancel(tok1);
+  auto stale = reg.cancel(tok1.index, tok1.token);
   EXPECT_FALSE(stale.cancelled);
 
   while (!done.load(std::memory_order_acquire)) {

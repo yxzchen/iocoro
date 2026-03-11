@@ -318,7 +318,7 @@ TEST(io_context_impl_test, cancel_timer_requires_shared_ownership) {
     {
       // Intentionally violate the contract: io_context_impl must be shared-owned.
       iocoro::detail::io_context_impl impl{};
-      impl.cancel_timer(/*index=*/1U, /*generation=*/1U);
+      impl.cancel_timer(/*index=*/1U, /*token=*/1U);
     },
     ".*");
 }
@@ -338,7 +338,7 @@ TEST(io_context_impl_test, stress_cancel_timer_from_foreign_thread_does_not_invo
   ASSERT_EQ(abort_calls.load(std::memory_order_relaxed), 0);
   ASSERT_EQ(complete_calls.load(std::memory_order_relaxed), 0);
 
-  std::thread canceller([&] { impl->cancel_timer(h.timer_index, h.timer_generation); });
+  std::thread canceller([&] { impl->cancel_timer(h.timer_index, h.timer_token); });
   canceller.join();
 
   EXPECT_EQ(abort_calls.load(std::memory_order_relaxed), 0);
@@ -455,7 +455,7 @@ TEST(io_context_impl_test, cancel_fd_from_foreign_thread_does_not_invoke_abort_i
   auto h = impl->register_fd_read(fds[0], std::move(op));
   ASSERT_TRUE(static_cast<bool>(h));
 
-  std::thread canceller([&] { impl->cancel_fd_event(h.fd, h.fd_kind, h.token); });
+  std::thread canceller([&] { impl->cancel_fd_event(h.fd, h.fd_kind, h.fd_token); });
   canceller.join();
 
   EXPECT_EQ(abort_calls.load(std::memory_order_relaxed), 0);

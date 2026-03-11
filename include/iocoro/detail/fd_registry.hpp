@@ -36,8 +36,8 @@ class fd_registry {
   //
   // Token model:
   // - Each successful (re)registration assigns a fresh monotonically-increasing token.
-  // - Cancellation/deregistration uses (fd, kind, token) matching to avoid ABA bugs where an old
-  //   cancel request could accidentally cancel a newer operation on the same fd/kind.
+  // - Cancellation uses (fd, kind, token) matching to avoid ABA bugs where an old cancel
+  //   request could accidentally cancel a newer operation on the same fd/kind.
   auto register_read(int fd, reactor_op_ptr op) -> register_result;
   auto register_write(int fd, reactor_op_ptr op) -> register_result;
   auto cancel(int fd, fd_event_kind kind, std::uint64_t token) noexcept -> cancel_result;

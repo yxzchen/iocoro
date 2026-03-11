@@ -232,16 +232,16 @@ inline auto io_context_impl::add_timer(std::chrono::steady_clock::time_point exp
     IOCORO_ENSURE(running_in_this_thread(),
                   "io_context_impl::add_timer(): must run on io_context thread");
   }
-  auto token = timers_.add_timer(expiry, std::move(op));
-  auto h = event_handle::make_timer(weak_from_this(), token.index, token.generation);
+  auto result = timers_.add_timer(expiry, std::move(op));
+  auto h = event_handle::make_timer(weak_from_this(), result.index, result.token);
   return h;
 }
 
-inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint64_t generation) noexcept {
+inline void io_context_impl::cancel_timer(std::uint32_t index, std::uint64_t token) noexcept {
   // Thread-safe entrypoint: always route cancellation to the reactor thread so that
   // registry mutation and abort callbacks occur in a single-threaded context.
-  dispatch_reactor([index, generation](io_context_impl& self) mutable noexcept {
-    auto res = self.timers_.cancel(timer_registry::timer_token{index, generation});
+  dispatch_reactor([index, token](io_context_impl& self) mutable noexcept {
+    auto res = self.timers_.cancel(index, token);
     abort_op(std::move(res.op), error::operation_aborted);
   });
 }
@@ -377,11 +377,11 @@ inline void io_context_impl::cancel_event(event_handle h) noexcept {
     return;
   }
   if (h.type == event_handle::kind::fd) {
-    cancel_fd_event(h.fd, h.fd_kind, h.token);
+    cancel_fd_event(h.fd, h.fd_kind, h.fd_token);
     return;
   }
   if (h.type == event_handle::kind::timer) {
-    cancel_timer(h.timer_index, h.timer_generation);
+    cancel_timer(h.timer_index, h.timer_token);
   }
 }
 
