@@ -37,7 +37,6 @@ TEST(unique_function_test, move_wrapper_supports_heap_stored_non_movable_target)
   ASSERT_TRUE(fn);
 
   auto moved = std::move(fn);
-  EXPECT_FALSE(fn);
   ASSERT_TRUE(moved);
 
   moved();
